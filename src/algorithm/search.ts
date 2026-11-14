@@ -195,7 +195,7 @@ export function createSearcher(ctx: ModelContext, spaces: PaddockSpace[], bounds
       endValue,
       soilHealth: soil,
       water,
-      varietyExcess: varietyExcess(fam, ctx.totalAcres),
+      varietyExcess: varietyExcess(fam),
       switchShare: switched / (ctx.totalAcres * Y),
     };
   }

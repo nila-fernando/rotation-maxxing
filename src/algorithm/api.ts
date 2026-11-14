@@ -103,7 +103,7 @@ function makeCandidate(ctx: ModelContext, seqs: CropId[][], statics: SequenceSta
     water,
     endValue,
     fixedMoney,
-    varietyExcess: varietyExcess(fam, ctx.totalAcres),
+    varietyExcess: varietyExcess(fam),
     switchShare: switched / (ctx.totalAcres * ctx.horizon),
   };
 }

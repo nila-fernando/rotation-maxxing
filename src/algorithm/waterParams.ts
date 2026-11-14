@@ -107,8 +107,13 @@ export interface ResolvedWaterParams {
   row: string | null;
 }
 
-/** Water-balance parameters for a crop: stage lengths + Kc + Ky from here, kc mid / p / roots from croptraits. */
-export function waterParamsFor(cropId: CropId): ResolvedWaterParams {
+/**
+ * Water-balance parameters for a crop: stage lengths + Kc + Ky from here, kc mid / p / roots from croptraits.
+ * Maximum root depth: the LARGER FAO-56 Table 22 value, which the table's footnote 1 gives for
+ * "modeling soil water stress or for rainfed conditions" on soils with no restricting layer,
+ * capped at the soil's restrictive-layer depth (SSURGO) when one is reported.
+ */
+export function waterParamsFor(cropId: CropId, restrictiveDepthM?: number): ResolvedWaterParams {
   const raw = RAW[cropId];
   const c = CROP_BY_ID[cropId];
   const name = c?.name ?? cropId;
@@ -137,8 +142,7 @@ export function waterParamsFor(cropId: CropId): ResolvedWaterParams {
       ky: raw.ky,
       p,
       rootIniM: ROOT_INITIAL_M,
-      // Midpoint of FAO-56 Table 22's range (the range reflects soil and management).
-      rootMaxM: (roots.min + roots.max) / 2,
+      rootMaxM: restrictiveDepthM !== undefined ? Math.max(ROOT_INITIAL_M, Math.min(roots.max, restrictiveDepthM)) : roots.max,
     },
     gap: null,
     row: raw.row,

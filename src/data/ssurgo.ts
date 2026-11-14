@@ -4,18 +4,21 @@
  *
  * We query the map unit at the paddock centroid and use its largest major
  * component: surface horizon for K, pH, EC, OM and texture; AWC is weighted
- * over the top 150 cm (the root zone of most field crops).
+ * over the top 200 cm (the deepest FAO-56 root depths); the shallowest
+ * restrictive layer (corestrictions) caps root depth.
  */
 import type { Drainage, Land, Texture } from '../algorithm/types';
 import type { FetchFn } from './power';
 
 const SDA_URL = 'https://SDMDataAccess.sc.egov.usda.gov/Tabular/post.rest';
-const ROOT_ZONE_CM = 150;
+/** AWC is averaged over this depth: deep enough for the deepest FAO-56 root depths used (2 m). */
+const ROOT_ZONE_CM = 200;
 
 export function ssurgoPointQuery(lng: number, lat: number): string {
   return (
     'SELECT mu.mukey, mu.muname, c.cokey, c.comppct_r, c.compname, c.drainagecl, c.slope_r, c.tfact, ' +
-    'ch.hzdept_r, ch.hzdepb_r, ch.kffact, ch.kwfact, ch.awc_r, ch.ph1to1h2o_r, ch.ec_r, ch.om_r, ch.sandtotal_r, ch.claytotal_r ' +
+    'ch.hzdept_r, ch.hzdepb_r, ch.kffact, ch.kwfact, ch.awc_r, ch.ph1to1h2o_r, ch.ec_r, ch.om_r, ch.sandtotal_r, ch.claytotal_r, ' +
+    '(SELECT MIN(cr.resdept_r) FROM corestrictions cr WHERE cr.cokey = c.cokey) AS resdept_min ' +
     'FROM mapunit mu INNER JOIN component c ON c.mukey = mu.mukey INNER JOIN chorizon ch ON ch.cokey = c.cokey ' +
     `WHERE mu.mukey IN (SELECT * FROM SDA_Get_Mukey_from_intersection_with_WktWgs84('point(${lng.toFixed(6)} ${lat.toFixed(6)})')) ` +
     "AND c.majcompflag = 'Yes' ORDER BY c.comppct_r DESC, c.cokey, ch.hzdept_r"
@@ -85,6 +88,7 @@ export function parseSsurgo(json: unknown): SoilAtPoint {
   const ph = num(surface['ph1to1h2o_r']);
   const om = num(surface['om_r']);
   const slope = num(first['slope_r']);
+  const restrictCm = num(first['resdept_min']);
   if (ec === null) gaps.push('SSURGO reports no EC for this soil; treated as non-saline (0 dS/m).');
   if (ph === null) gaps.push('SSURGO reports no pH for this soil; pH suitability is skipped.');
   if (slope === null) gaps.push('SSURGO reports no slope for this map unit; enter it manually.');
@@ -101,6 +105,7 @@ export function parseSsurgo(json: unknown): SoilAtPoint {
     ...(k !== null ? { kFactor: k } : {}),
     ...(t !== null ? { tFactorTonsPerAcre: t } : {}),
     ...(om !== null ? { organicMatterPct: om } : {}),
+    ...(restrictCm !== null ? { restrictiveDepthM: restrictCm / 100 } : {}),
   };
   return { land, mapUnit: String(first['muname'] ?? ''), component: String(first['compname'] ?? ''), gaps };
 }

@@ -225,6 +225,7 @@ Otherwise it falls back to `kc mid × months occupied / 12`. Fallow is 0 (known:
    ```
    penalty = VARIETY_PENALTY_WEIGHT × λ × mean over years of Σ_family max(0, family share − VARIETY_MAX_FAMILY_SHARE)
    ```
+   It is measured over CROPPED acres: fallow isn't a crop family, and leaving land empty doesn't diversify revenue.
    It is scaled by λ because concentration in one family is a risk. So at risk = 0 it is off, and the max-profit plan is never constrained by it.
 
 ## Stage 6: uncertainty (`montecarlo.ts`)
@@ -311,7 +312,8 @@ CropScape needs EPSG:5070 coordinates; the projection is implemented and checked
 ```
 ET0      FAO-56 Penman-Monteith, daily (checked against FAO-56 Examples 8 and 18)
 ETm      = Kc(day) × ET0          Kc curve from FAO-56 Table 11 stage lengths and Table 12 Kc
-TAW      = 1000 × AWC × Zr        Zr grows from 0.175 m (FAO-56 Annex 8) to the Table 22 midpoint
+TAW      = 1000 × AWC × Zr        Zr grows from 0.175 m (FAO-56 Annex 8) to the LARGER Table 22 value (footnote 1:
+                                  for rainfed stress modelling on unrestricted soils), capped by SSURGO restrictive layers
 Ks       = (TAW − Dr) / ((1 − p) TAW) once depletion passes RAW = p × TAW
 Ya/Ym    = 1 − Ky × (1 − ΣETa / ΣETm)       Ky from FAO-66 Table 1 (FAO-33 values)
 multiplier(field, crop, year) = Ya/Ym ÷ mean dryland Ya/Ym over all years
@@ -341,7 +343,7 @@ The 2012 drought makes the gap much larger in short records.
 - linear root growth
 - the crop before the previous one is forgotten
 
-These make the model drought-sensitive: in the first test, 2012 corn in central Iowa came out at 57% of normal. The backtest is how we check this. **No Ky** is sourced for oats, barley or canola, and **no stage lengths** for canola, alfalfa cutting cycles or rye. Those crops don't vary with weather (gap).
+These make the model drought-sensitive: in the first test, 2012 corn in central Iowa came out at 57% of normal. The backtest checks this: see `reports/`. Kansas summer crops track well (r ≈ 0.9); Iowa is still about 2× too drought-sensitive (likely shallow water table / capillary rise). **No Ky** is sourced for oats, barley or canola, and **no stage lengths** for canola, alfalfa cutting cycles or rye. Those crops don't vary with weather (gap).
 
 ## Erosion (`erosion.ts`)
 

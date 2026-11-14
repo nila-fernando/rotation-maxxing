@@ -77,6 +77,8 @@ export interface CarryoverInput {
   allocationMm: number;
   /** Tillage system (residue left on the surface reduces off-season evaporation). Default 'reduced'. */
   tillage?: Tillage;
+  /** SSURGO restrictive-layer depth, m (caps root depth). */
+  restrictiveDepthM?: number;
 }
 
 /**
@@ -105,7 +107,7 @@ export function mulchedEvaporationLayer(prev: CropId, texture: keyof typeof BARE
  * Null if `prev` has no water-balance parameters or the data doesn't reach.
  */
 export function startDepletionFraction(c: CarryoverInput, prev: CropId, next: CropId, year: number): number | null {
-  const np = waterParamsFor(next).params;
+  const np = waterParamsFor(next, c.restrictiveDepthM).params;
   if (!np) return null;
   const nextStart = plantIndex(c.weather, next, c.state, year);
   if (nextStart < 0) return null;
@@ -122,7 +124,7 @@ export function startDepletionFraction(c: CarryoverInput, prev: CropId, next: Cr
     const dr = off(from, 0);
     return dr === null ? null : dr / taw;
   }
-  const pp = waterParamsFor(prev).params;
+  const pp = waterParamsFor(prev, c.restrictiveDepthM).params;
   if (!pp) return null;
   const prevStart = plantIndex(c.weather, prev, c.state, year - 1);
   if (prevStart < 0 || prevStart >= nextStart) return null;
@@ -182,9 +184,10 @@ export function scenariosFromDailyWeather(farm: Farm, weather: DailyWeather, opt
         irrigated,
         allocationMm,
         tillage: p.tillage ?? DEFAULT_TILLAGE,
+        ...(p.land.restrictiveDepthM !== undefined ? { restrictiveDepthM: p.land.restrictiveDepthM } : {}),
       };
       for (const cropId of cropIds) {
-        const params = waterParamsFor(cropId).params!;
+        const params = waterParamsFor(cropId, p.land.restrictiveDepthM).params!;
         const start = plantIndex(weather, cropId, farm.state, year);
         let any = false;
         for (const prev of predecessors) {

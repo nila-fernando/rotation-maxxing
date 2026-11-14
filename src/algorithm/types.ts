@@ -74,6 +74,8 @@ export interface Land {
   tFactorTonsPerAcre?: number;
   /** Optional, from SSURGO: surface organic matter, %. */
   organicMatterPct?: number;
+  /** Optional, from SSURGO corestrictions: depth of the shallowest root-restricting layer, m (absent = none reported). */
+  restrictiveDepthM?: number;
   /** Optional: RUSLE slope length, ft. */
   slopeLengthFt?: number;
 }

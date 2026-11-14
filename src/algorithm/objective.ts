@@ -47,15 +47,20 @@ export function normalise(bounds: { worst: number; best: number }, value: number
 }
 
 /**
- * Excess family share, averaged over years: sum over families of
- * max(0, share - VARIETY_MAX_FAMILY_SHARE).
- * @param familyAcres per year, acres per family
+ * Excess family share of the CROPPED area, averaged over years: sum over crop
+ * families of max(0, share - VARIETY_MAX_FAMILY_SHARE). Fallow is not a crop
+ * family and not in the denominator: leaving land empty removes revenue, it
+ * doesn't diversify it.
+ * @param familyAcres per year, acres per family (a 'fallow' entry is ignored)
  */
-export function varietyExcess(familyAcres: Map<string, number>[], totalAcres: number): number {
-  if (familyAcres.length === 0 || totalAcres <= 0) return 0;
+export function varietyExcess(familyAcres: Map<string, number>[]): number {
+  if (familyAcres.length === 0) return 0;
   let sum = 0;
   for (const year of familyAcres) {
-    for (const acres of year.values()) sum += Math.max(0, acres / totalAcres - VARIETY_MAX_FAMILY_SHARE);
+    let cropped = 0;
+    for (const [fam, acres] of year) if (fam !== 'fallow') cropped += acres;
+    if (cropped <= 0) continue;
+    for (const [fam, acres] of year) if (fam !== 'fallow') sum += Math.max(0, acres / cropped - VARIETY_MAX_FAMILY_SHARE);
   }
   return sum / familyAcres.length;
 }
