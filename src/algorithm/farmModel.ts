@@ -11,7 +11,7 @@
  */
 import { CROP_BY_ID } from './croptraits';
 import { END_SOIL_WEIGHT, HORIZON_YEARS } from './constants';
-import { economicsStatus, getCrop, operatingCost } from './cropData';
+import { economicsStatus, FALLOW_COST_GAP, getCrop, isFallow, operatingCost } from './cropData';
 import { prepareFarm } from './geometry';
 import { priceInfo, sell, type PriceInfo } from './market';
 import { DEFAULT_N_PRICE, nitrogenCreditReceived, nitrogenLeftBehind, sequenceViolation, timelineOf } from './rotation';
@@ -341,7 +341,10 @@ export function explainPlan(ctx: ModelContext, seqs: CropId[][]): ExplainedPlan 
       terms.push({ label: 'Revenue', value: revenue, unit: '$/ac', basis: 'input' });
       const oc = operatingCost(crop);
       const econ = economicsStatus(crop);
-      if (oc === null) {
+      if (isFallow(crop)) {
+        gaps.add(FALLOW_COST_GAP);
+        terms.push({ label: 'Operating cost (fallow: field operations not costed yet)', value: 0, unit: '$/ac', basis: 'assumption' });
+      } else if (oc === null) {
         gaps.add(
           econ.status === 'incomplete'
             ? `Operating cost for ${crop.name} is not sourced: its gross margin is incomplete (cost shown as $0).`

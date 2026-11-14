@@ -3,7 +3,7 @@
  * never care which model is used. Today: TraitYieldModel (national yield x
  * multipliers). Later: an APSIM lookup-table model.
  */
-import { getCrop, salinityRelativeYield, typicalYield } from './cropData';
+import { getCrop, isFallow, salinityRelativeYield, typicalYield } from './cropData';
 import { productOf, rotationEffect, timelineOf } from './rotation';
 import { computeShade, type ShadeResult } from './shade';
 import type { CropId, CropTable, Factor, Paddock, PaddockId, PreparedFarm, Term, WeatherScenario } from './types';
@@ -85,6 +85,10 @@ export class TraitYieldModel implements YieldModel {
     const cropId = sequence[yearIndex]!;
     const crop = getCrop(crops, cropId);
     const gaps: string[] = [];
+    if (isFallow(crop)) {
+      const terms: Term[] = explain ? [{ label: 'Fallow: no harvest', value: 0, unit: 'per ac', basis: 'sourced' }] : [];
+      return { value: 0, unit: null, terms, gaps, risks: [], shadedFraction: 0 };
+    }
     const base = typicalYield(crop);
     if (base === null) {
       return { value: null, unit: crop.yieldUnit, terms: [], gaps, risks: [], shadedFraction: 0 };

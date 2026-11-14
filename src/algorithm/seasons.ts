@@ -41,6 +41,32 @@ export function monthsOccupied(span: SeasonSpan | null): number {
   return ((span.harvestMonth - span.plantMonth + 12) % 12) + 1;
 }
 
+/** The calendar months (1-12) a span covers, handling spans that wrap the new year. */
+export function monthsIn(span: SeasonSpan | null): number[] {
+  const n = monthsOccupied(span);
+  if (!span) return [];
+  return Array.from({ length: n }, (_, i) => ((span.plantMonth - 1 + i) % 12) + 1);
+}
+
+/**
+ * The window when shade matters for a crop: its sensitiveMonths if set
+ * (winter wheat: Apr-Jun), otherwise its whole season.
+ */
+export function shadeSensitiveWindow(c: CropTraits, state: string | undefined): SeasonSpan | null {
+  return c.sensitiveMonths ?? seasonFor(c, state).span;
+}
+
+/**
+ * Share of `window` months during which `other` is also in the field (0-1).
+ * Used so a crop only shades a neighbour while both are growing.
+ */
+export function seasonOverlapShare(window: SeasonSpan | null, other: SeasonSpan | null): number {
+  const w = monthsIn(window);
+  if (w.length === 0) return 0;
+  const o = new Set(monthsIn(other));
+  return w.filter((m) => o.has(m)).length / w.length;
+}
+
 const DAYS_BEFORE_MONTH = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
 
 /** Day of year (1-365) of the 15th of a month. */

@@ -110,7 +110,7 @@ export const SOURCES = {
   },
   usdaAgHandbook628: {
     title: 'USDA NASS, Agricultural Handbook 628: Usual Planting and Harvesting Dates for U.S. Field Crops (2010 ed.)',
-    url: null,
+    url: 'https://esmis.nal.usda.gov/concern/publications/vm40xr56k',
     covers: 'Usual planting and harvesting months by state (season spans). Values not entered yet',
   },
 } as const;
@@ -189,6 +189,20 @@ export interface CropTraits {
    * Empty until a teammate enters values (IA and KS first).
    */
   season: Record<StateCode, SeasonSpan>;
+
+  /**
+   * Optional: the months when shade hurts this crop most. When present, shade
+   * uses these months (not the whole season) for the sun angle and for the
+   * season-overlap check. A design choice, not sourced data.
+   */
+  sensitiveMonths?: SeasonSpan;
+
+  /**
+   * DESIGN DECISION (not data): true for specialty crops that should only be
+   * recommended when the farmer has a confirmed buyer or contract
+   * (Farm.confirmedBuyers). Thin local markets make an uncontracted crop risky.
+   */
+  requiresBuyer?: boolean;
 
   /** Not yet sourced. Keep null until a source is added. */
   shadeTolerance: null;
@@ -285,6 +299,7 @@ export const CROPS: CropTraits[] = [
     hostsPestGroups: [],
     seasonType: 'winter',
     season: {},
+    sensitiveMonths: { plantMonth: 4, harvestMonth: 6 }, // design choice: spring growth to grain fill (Apr-Jun)
     ...unsourced,
   },
   {
@@ -471,6 +486,7 @@ export const CROPS: CropTraits[] = [
     hostsPestGroups: ['whiteMold'],
     seasonType: 'summer',
     season: {},
+    requiresBuyer: true, // design decision: needs a confirmed buyer
     ...unsourced,
   },
   {
@@ -497,6 +513,7 @@ export const CROPS: CropTraits[] = [
     hostsPestGroups: ['whiteMold'],
     seasonType: 'summer',
     season: {},
+    requiresBuyer: true, // design decision: needs a confirmed buyer
     ...unsourced,
   },
   {
@@ -523,6 +540,7 @@ export const CROPS: CropTraits[] = [
     hostsPestGroups: ['soybeanCystNematode', 'whiteMold'],
     seasonType: 'summer',
     season: {},
+    requiresBuyer: true, // design decision: needs a confirmed buyer
     ...unsourced,
   },
   {
@@ -646,4 +664,7 @@ export const DATA_GAPS = [
   'Price volatility: only 3 marketing years. Pull 10+ years from NASS Quick Stats for the Monte Carlo.',
   'All yields are national. Replace with state or county yields for the farm location.',
   'Season spans by state (Ag Handbook 628) not entered yet: the model uses fallback spans.',
+  'Dry bean margin compares a national yield and US price against a North Dakota cost, so it is likely overstated.',
+  'Legume N credits to wheat and sorghum are not modelled (credits currently go to following corn only).',
+  'Fallow field operations (weed control, tillage passes) are not costed: fallow cost is shown as $0.',
 ];

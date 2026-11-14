@@ -15,7 +15,17 @@ export function getCrop(crops: CropTable, id: CropId): CropTraits {
   return c;
 }
 
+/**
+ * Fallow is not missing data: it is "no crop", so these are KNOWN values,
+ * not guesses. Its field operations (weed control, tillage) are a real cost
+ * we haven't sourced: see FALLOW_COST_GAP.
+ */
+export const FALLOW_KNOWN = { yieldPerAcre: 0, operatingCostPerAcre: 0, kcMid: 0, heightM: 0 } as const;
+export const FALLOW_COST_GAP =
+  'Fallow field operations (weed control, tillage passes) are not costed yet; fallow cost is shown as $0.';
+
 export function typicalYield(c: CropTraits): number | null {
+  if (isFallow(c)) return FALLOW_KNOWN.yieldPerAcre;
   return c.yieldPerAcre?.value.typical ?? null;
 }
 
@@ -24,14 +34,17 @@ export function typicalPrice(c: CropTraits): number | null {
 }
 
 export function operatingCost(c: CropTraits): number | null {
+  if (isFallow(c)) return FALLOW_KNOWN.operatingCostPerAcre;
   return c.operatingCostPerAcre?.value ?? null;
 }
 
 export function heightM(c: CropTraits): number | null {
+  if (isFallow(c)) return FALLOW_KNOWN.heightM;
   return c.maxHeightM?.value ?? null;
 }
 
 export function kcMid(c: CropTraits): number | null {
+  if (isFallow(c)) return FALLOW_KNOWN.kcMid;
   return c.kcMid?.value ?? null;
 }
 
@@ -45,7 +58,7 @@ export function shadeTolerance(c: CropTraits): number | null {
   return typeof v === 'number' ? v : null;
 }
 
-/** Fallow has no crop at all: zero height, zero water use, zero residue, by definition (not a data gap). */
+/** Fallow has no crop at all: zero yield, height, water use and residue, by definition (not a data gap). */
 export function isFallow(c: CropTraits): boolean {
   return c.family === 'fallow';
 }

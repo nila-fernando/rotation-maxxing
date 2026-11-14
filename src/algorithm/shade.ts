@@ -6,16 +6,34 @@
  * is the shadow that sits on the north neighbour longest. Good enough to show
  * that shade is negligible on broadacre paddocks and real on small strips.
  *
- *   sun elevation   = 90 - latitude + declination(midpoint of the SHADED crop's season)
- *   shadow length   = max(0, tall crop height - shaded crop height) / tan(elevation)
- *   shaded fraction = shadow length x shared north edge (E-W width) / shaded paddock area
+ *   window          = shaded crop's sensitiveMonths if set, else its whole season
+ *   sun elevation   = 90 - latitude + declination(midpoint of that window)
+ *   height(month)   = max height x min(1, months since planting / (season length / 2))
+ *                     (ASSUMPTION: linear growth to full height at mid-season; 0 when not in the field)
+ *   shadow(month)   = max(0, tall height(month) - shaded height(month)) / tan(elevation)
+ *   shaded fraction = mean over window months of shadow(month) x shared north edge (E-W width) / area
  *   yield loss      = shaded fraction x (1 - shade tolerance of the shaded crop)
+ *
+ * So a crop only shades a neighbour in months when both are in the field and
+ * it is actually taller: corn (May-Sep) next to winter wheat (sensitive Apr-Jun)
+ * is near zero, because corn is still short in May-June.
  *
  * Northern hemisphere only: a paddock is shaded by the neighbour on its SOUTH side.
  */
 import { MIN_SUN_ELEVATION_DEG, SHADE_TOLERANCE_UNKNOWN_DETERMINISTIC } from './constants';
 import { heightM, isFallow, shadeTolerance } from './cropData';
-import { FALLBACK_SEASONS, noonSunElevationDeg, seasonFor, seasonMidpointDay, solarDeclinationDeg } from './seasons';
+import {
+  FALLBACK_SEASONS,
+  monthsIn,
+  monthsOccupied,
+  noonSunElevationDeg,
+  seasonFor,
+  seasonMidpointDay,
+  seasonOverlapShare,
+  shadeSensitiveWindow,
+  solarDeclinationDeg,
+} from './seasons';
+import type { SeasonSpan } from './croptraits';
 import type { CropTraits, PaddockId, PreparedFarm } from './types';
 
 const DEG = Math.PI / 180;
@@ -23,8 +41,11 @@ const DEG = Math.PI / 180;
 export interface ShadeContribution {
   fromPaddockId: PaddockId;
   fromCropId: string;
-  shadowLengthM: number;
   northEdgeM: number;
+  /** Share of the shaded crop's sensitive window when the tall crop is in the field. */
+  seasonOverlap: number;
+  /** Mean noon shadow over the window (m), after the height ramp. */
+  shadowLengthM: number;
   fraction: number;
 }
 
@@ -51,9 +72,20 @@ export const NO_SHADE: ShadeResult = {
   gaps: [],
 };
 
-/** Sun elevation at noon at the midpoint of this crop's season. */
+/**
+ * Crop height in a calendar month: linear ramp from 0 at planting to full
+ * height at mid-season, full after that, 0 outside the season. (Design assumption.)
+ */
+export function heightInMonth(maxHeight: number, span: SeasonSpan | null, month: number): number {
+  if (!span || !monthsIn(span).includes(month)) return 0;
+  const sincePlanting = ((month - span.plantMonth + 12) % 12) + 0.5; // mid-month
+  const half = monthsOccupied(span) / 2;
+  return maxHeight * Math.min(1, sincePlanting / half);
+}
+
+/** Sun elevation at noon at the midpoint of this crop's shade-sensitive window (or its season). */
 export function sunElevationForCrop(latitude: number, crop: CropTraits, state: string | undefined): number {
-  const span = seasonFor(crop, state).span ?? FALLBACK_SEASONS.summer!;
+  const span = shadeSensitiveWindow(crop, state) ?? FALLBACK_SEASONS.summer!;
   const decl = solarDeclinationDeg(seasonMidpointDay(span));
   return Math.max(MIN_SUN_ELEVATION_DEG, noonSunElevationDeg(latitude, decl));
 }
@@ -77,6 +109,9 @@ export function computeShade(
 
   const gaps: string[] = [];
   const elevation = sunElevationForCrop(farm.latitude, shaded, farm.state);
+  const window = shadeSensitiveWindow(shaded, farm.state);
+  const windowMonths = monthsIn(window);
+  const shadedSpan = seasonFor(shaded, farm.state).span;
   const tanE = Math.tan(elevation * DEG);
   let hShaded = heightM(shaded);
   if (hShaded === null) {
@@ -97,7 +132,15 @@ export function computeShade(
       if (!isFallow(tall)) gaps.push(`Height of ${tall.name} is not sourced; it casts no shade in the model.`);
       hTall = 0;
     }
-    const shadow = Math.max(0, hTall - hShaded) / tanE;
+    const tallSpan = seasonFor(tall, farm.state).span;
+    const overlap = seasonOverlapShare(window, tallSpan);
+    if (overlap <= 0 || windowMonths.length === 0) continue;
+    let shadowSum = 0;
+    for (const m of windowMonths) {
+      const diff = heightInMonth(hTall, tallSpan, m) - heightInMonth(hShaded, shadedSpan, m);
+      if (diff > 0) shadowSum += diff / tanE;
+    }
+    const shadow = shadowSum / windowMonths.length;
     if (shadow <= 0) continue;
     const f = (shadow * fromNb.northEdgeM) / area;
     fraction += f;
@@ -106,6 +149,7 @@ export function computeShade(
       fromCropId: tall.id,
       shadowLengthM: shadow,
       northEdgeM: fromNb.northEdgeM,
+      seasonOverlap: overlap,
       fraction: f,
     });
   }

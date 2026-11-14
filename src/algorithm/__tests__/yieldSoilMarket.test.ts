@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CROP_BY_ID } from '../croptraits';
+import { economicsStatus, kcMid, operatingCost, typicalYield } from '../cropData';
 import { prepareFarm } from '../geometry';
 import { sell } from '../market';
 import { groundCover, nCreditReference, residueReference, residueToCover, soilHealthIndex, waterUseIndex } from '../soilHealth';
@@ -101,6 +102,25 @@ describe('water use index', () => {
     const rye = waterUseIndex(crops, crops['cereal-rye']!, 'IA');
     expect(rye.gap).toMatch(/not sourced/);
     expect(rye.value).toBeGreaterThanOrEqual(corn.value);
+  });
+});
+
+describe('fallow is known values, not missing data', () => {
+  it('scores fallow as the BEST water user of every crop', () => {
+    const fallow = waterUseIndex(crops, crops['fallow']!, 'IA');
+    expect(fallow.value).toBe(0);
+    expect(fallow.gap).toBeNull();
+    for (const c of Object.values(crops)) {
+      if (c.id !== 'fallow') expect(waterUseIndex(crops, c, 'IA').value).toBeGreaterThan(fallow.value);
+    }
+  });
+
+  it('has zero yield, zero operating cost and zero kc', () => {
+    const f = crops['fallow']!;
+    expect(typicalYield(f)).toBe(0);
+    expect(operatingCost(f)).toBe(0);
+    expect(kcMid(f)).toBe(0);
+    expect(economicsStatus(f)).toEqual({ status: 'noRevenue', missing: [] });
   });
 });
 

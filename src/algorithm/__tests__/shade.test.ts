@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { CROP_BY_ID } from '../croptraits';
 import { prepareFarm, SQ_M_PER_ACRE } from '../geometry';
-import { seasonFor, seasonMidpointDay, solarDeclinationDeg } from '../seasons';
-import { computeShade } from '../shade';
+import { seasonFor, seasonMidpointDay, seasonOverlapShare, shadeSensitiveWindow, solarDeclinationDeg } from '../seasons';
+import { computeShade, heightInMonth, sunElevationForCrop } from '../shade';
 import type { CropTraits, Farm } from '../types';
 import { paddock, rect } from './fixtures';
 
@@ -33,12 +33,28 @@ describe('seasons', () => {
     expect(s.gap).toMatch(/not entered yet/);
   });
 
-  it('uses about +20 degrees for summer crops and the winter-wheat season midpoint for wheat', () => {
+  it('uses about +20 degrees for summer crops', () => {
     const summer = solarDeclinationDeg(seasonMidpointDay(seasonFor(corn, 'IA').span!));
     expect(summer).toBeGreaterThan(18);
     expect(summer).toBeLessThan(23.5);
-    const winter = solarDeclinationDeg(seasonMidpointDay(seasonFor(wheat, 'IA').span!));
-    expect(winter).toBeLessThan(summer);
+  });
+
+  it('takes winter wheat\'s sun angle from its sensitive months (Apr-Jun), not its season midpoint', () => {
+    expect(shadeSensitiveWindow(wheat, 'IA')).toEqual({ plantMonth: 4, harvestMonth: 6 });
+    const decl = solarDeclinationDeg(seasonMidpointDay(shadeSensitiveWindow(wheat, 'IA')!));
+    expect(decl).toBeGreaterThan(15); // mid-May, not ~ -8 deg (1 March)
+    const elev = sunElevationForCrop(42, wheat, 'IA');
+    expect(elev).toBeCloseTo(90 - 42 + decl, 5);
+  });
+
+  it('ramps crop height from planting to full height at mid-season', () => {
+    const span = { plantMonth: 5, harvestMonth: 9 };
+    expect(heightInMonth(2, span, 4)).toBe(0);
+    expect(heightInMonth(2, span, 5)).toBeCloseTo(0.4);
+    expect(heightInMonth(2, span, 6)).toBeCloseTo(1.2);
+    expect(heightInMonth(2, span, 8)).toBe(2);
+    expect(seasonOverlapShare({ plantMonth: 4, harvestMonth: 6 }, span)).toBeCloseTo(2 / 3);
+    expect(seasonOverlapShare({ plantMonth: 10, harvestMonth: 3 }, span)).toBe(0);
   });
 });
 
@@ -58,8 +74,8 @@ describe('shade', () => {
     const r = computeShade(prep, 'north', soy, onlyMiddleCorn);
     const side = Math.sqrt(40 * SQ_M_PER_ACRE);
     const big = computeShade(prepareFarm(stack(side, side)), 'north', soy, onlyMiddleCorn);
-    expect(r.shadedFraction).toBeGreaterThan(0.04); // ~0.5 m shadow across a 10 m strip
-    expect(r.yieldLoss).toBeGreaterThan(0.02);
+    expect(r.shadedFraction).toBeGreaterThan(0.03); // ~0.36 m mean shadow across a 10 m strip
+    expect(r.yieldLoss).toBeGreaterThan(0.015);
     expect(r.yieldLoss).toBeGreaterThan(30 * big.yieldLoss);
   });
 
@@ -78,6 +94,14 @@ describe('shade', () => {
     const full = computeShade(prep, 'north', soy, onlyMiddleCorn, 1);
     expect(full.yieldLoss).toBe(0);
     expect(full.shadedFraction).toBeCloseTo(det.shadedFraction);
+  });
+
+  it('needs overlapping seasons: corn next to winter wheat gives near-zero shade', () => {
+    const prep = prepareFarm(stack(200, 10));
+    const onWheat = computeShade(prep, 'north', wheat, (id) => (id === 'middle' ? corn : null));
+    const onSoy = computeShade(prep, 'north', soy, (id) => (id === 'middle' ? corn : null));
+    expect(onWheat.shadedFraction).toBeLessThan(0.005); // corn is still short in May-June
+    expect(onSoy.shadedFraction).toBeGreaterThan(10 * onWheat.shadedFraction);
   });
 
   it('casts no shade between crops of the same height', () => {
