@@ -6,39 +6,24 @@
 //
 // For each: the 3-season cash margin, a bad year (1 in 10), soil health, and how often it beats
 // keeping going; every field's crops for the 3 seasons; the reasons, risks and gaps. Pick a plan per
-// field (the mix is scored too) and save it. "Show on the island" previews a plan's crops in 3D.
+// field (the mix is scored too) and save it. "See them on the farm" (and each plan's "Show on the
+// island") opens the plans on the island itself (src/screens/planFutures.js).
 //
-//   const panel = createPlansPanel({ planSeasons, evaluateMix, onPreview, onSave, onOpen, onClose })
-//   panel.open()   panel.close()
+//   const panel = createPlansPanel({ planSeasons, evaluateMix, onPreview, onFutures, onSave, onOpen, onClose })
+//   panel.open()   panel.close()   panel.ensureData()   panel.getChoice()   panel.setChoice(map)
 import { cropIcon } from '../ui/cropIcons.js';
 import { APP_CROP } from '../plan/farmInput.js';
 import { createPlanBuilder } from './planBuilder.js';
+import { money } from '../ui/money.js';
+import { PLANS, CROP_NAME } from '../plan/planNames.js';
 
-const PLANS = [
-  { kind: 'current', name: 'Keep going', blurb: 'Your rotation as it is' },
-  { kind: 'maxProfit', name: 'Most profit', blurb: 'The most cash over 3 seasons' },
-  { kind: 'priority', name: 'Manami’s pick', blurb: 'The best fit for your priorities' },
-];
-const CROP_NAME = {
-  corn: 'Corn', soybeans: 'Soybeans', 'winter-wheat': 'Winter wheat', 'spring-wheat': 'Spring wheat', sorghum: 'Sorghum',
-  cotton: 'Cotton', alfalfa: 'Alfalfa', oats: 'Oats', barley: 'Barley', sunflower: 'Sunflower', canola: 'Canola',
-  'dry-beans': 'Dry beans', 'cereal-rye': 'Cereal rye', fallow: 'Fallow',
-};
+// (money lives in src/ui/money.js now; it is still exported from here for older callers)
+export { money } from '../ui/money.js';
+
+// a little barn, for "See them on the farm"
+const FARM_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20V10.2L12 4l8.5 6.2V20z" fill="currentColor" fill-opacity=".2"/><path d="M9 20v-5.5h6V20M9 14.5l6 5.5M15 14.5L9 20M10 10h4"/></svg>';
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-/** "$417k", "$1.2M", "−$12k", "$950". */
-export function money(v) {
-  if (!Number.isFinite(v)) return '–';
-  const a = Math.abs(v);
-  const sign = v < 0 && Math.round(a) > 0 ? '−' : '';
-  // the unit is chosen from the rounded amount, so $999.6k reads "$1.0M", not "$1000k"
-  if (a >= 1e6 || (a >= 1e4 && Math.round(a / 1e3) >= 1000)) {
-    const m = a / 1e6;
-    return `${sign}$${m >= 9.95 ? Math.round(m) : m.toFixed(1)}M`;
-  }
-  if (a >= 1e4) return `${sign}$${Math.round(a / 1e3)}k`;
-  return `${sign}$${Math.round(a).toLocaleString('en-US')}`;
-}
 
 /** The first season the plans start with: next year's once this year's harvest is in (from August). */
 export function firstSeason(today = new Date()) {
@@ -50,12 +35,13 @@ export function firstSeason(today = new Date()) {
  * @param {() => Promise<{result, gaps, weather, farm}>} o.planSeasons
  * @param {(plan: object) => Promise<object>} [o.evaluateMix]   scores a mixed plan
  * @param {(info: {label: string, keysByYear: Map<string, string>[], startYear: number}) => void} [o.onPreview]
+ * @param {(kind: string, opts: {reel: boolean}) => void} [o.onFutures]   the plans on the island (planFutures)
  * @param {(plan: object, info: object) => void} [o.onSave]
  * @param {() => void} [o.onOpen]   [o.onClose]
  * @param {() => Date} [o.today]
  * @param {() => object|null} [o.getSaved]  the plan the farmer saved last (the builder starts from it)
  */
-export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onSave, onIsland, onOpen, onClose, today = () => new Date(), getSaved = () => null }) {
+export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFutures, onSave, onIsland, onOpen, onClose, today = () => new Date(), getSaved = () => null }) {
   const root = document.getElementById('plans');
   const body = document.getElementById('plansBody');
   const title = document.getElementById('plansTitle');
@@ -115,17 +101,44 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onSave, 
     try {
       const fresh = await pending;
       if (id !== run || root.hidden) return;
-      if (data?.result !== fresh.result) {
-        // keep the picks for fields that are still there; new fields start on Manami's pick
-        choice = Object.fromEntries(fresh.result.plans.priority.paddocks.map((p) => [p.paddockId, choice[p.paddockId] && fresh.result.plans[choice[p.paddockId]] ? choice[p.paddockId] : 'priority']));
-        data = fresh;
-      }
+      adopt(fresh);
       setBusy(false);
       render();
     } catch (e) {
       if (id !== run) return;
       body.innerHTML = `<p class="plans__error">I couldn’t work out the plans this time (${esc(e.message)}). Try again in a moment.</p>`;
     }
+  }
+
+  /** New plans become the ones on show (the same ones again change nothing). */
+  function adopt(fresh) {
+    if (data?.result === fresh.result) return;
+    // keep the picks for fields that are still there; new fields start on Manami's pick
+    choice = Object.fromEntries(fresh.result.plans.priority.paddocks.map((p) => [p.paddockId, choice[p.paddockId] && fresh.result.plans[choice[p.paddockId]] ? choice[p.paddockId] : 'priority']));
+    data = fresh;
+  }
+
+  /** The plans for the farm as it stands (worked out if they aren't yet, or if the farm changed). */
+  async function ensureData() {
+    const fresh = await planSeasons();
+    adopt(fresh);
+    return data;
+  }
+
+  /** The pick per field (a copy). */
+  const getChoice = () => ({ ...choice });
+
+  /** The picks made elsewhere (the plans on the island): the table's radios and the mix follow. */
+  function setChoice(map) {
+    choice = { ...choice, ...map };
+    const cells = body.querySelectorAll('.plan-cell');
+    if (!cells.length) return;
+    for (const b of cells) {
+      const on = (choice[b.dataset.field] || 'priority') === b.dataset.kind;
+      b.classList.toggle('is-on', on);
+      b.setAttribute('aria-checked', String(on));
+    }
+    scoreMix();
   }
 
   /** Old plans on show while new ones are worked out: greyed, not clickable, and said so. */
@@ -204,7 +217,8 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onSave, 
     const beats = Math.round((pick.probBeatsCurrent ?? 0) * 100);
     const manami = gain > 1
       ? `My pick earns about <b>${money(gain)}</b> more than keeping going over 3 seasons, and comes out ahead in <b>${beats}%</b> of the weather years I tried.`
-      : `Your rotation is already a good fit. My pick changes little: ${esc(result.priceOfPriorities.summary)}`;
+      : 'Your rotation is already a good fit. My pick changes little.';
+    const farmBtn = onFutures ? `<button class="btn btn--primary btn--small plans__farm" type="button" data-act="futures">${FARM_ICON}See them on the farm</button>` : '';
 
     const cards = PLANS.map(({ kind, name, blurb }) => {
       const p = planOf(kind);
@@ -236,7 +250,7 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onSave, 
     const gaps = [...new Set([...data.gaps, ...(pick.informationGaps || []), ...(pick.localReview || [])])];
 
     body.innerHTML = `${tabs()}<div role="tabpanel" id="plansView" aria-labelledby="plansTab-compare">
-      <div class="plans__manami"><img src="/manami.svg" alt="" width="40" height="36"><p>${manami}</p></div>
+      <div class="plans__manami"><img src="/manami.svg" alt="" width="40" height="36"><p>${manami}</p>${farmBtn}</div>
       <div class="plans__cards">${cards}</div>
       <p class="plans__price">${esc(result.priceOfPriorities.summary)}</p>
 
@@ -303,7 +317,18 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onSave, 
       scoreMix();
       return;
     }
+    if (e.target.closest('[data-act="futures"]')) {
+      close({ restoreFocus: false });
+      onFutures?.('priority', { reel: true });
+      return;
+    }
     const show = e.target.closest('[data-show]');
+    if (show && onFutures) {
+      // the island opens on that plan, without the walk
+      close({ restoreFocus: false });
+      onFutures(show.dataset.show, { reel: false });
+      return;
+    }
     if (show) {
       const plan = planOf(show.dataset.show).plan;
       const name = PLANS.find((p) => p.kind === show.dataset.show).name;
@@ -324,5 +349,8 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onSave, 
     return open();
   }
 
-  return { open, openBuild, close, saveBuilt, get isOpen() { return !root.hidden; }, get data() { return data; } };
+  /** Saves a plan picked elsewhere (the plans on the island), the same way "Use this plan" does. */
+  const saveChosen = (plan, info) => onSave?.(plan, info);
+
+  return { open, openBuild, close, saveBuilt, saveChosen, ensureData, getChoice, setChoice, get isOpen() { return !root.hidden; }, get data() { return data; } };
 }

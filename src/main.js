@@ -5,6 +5,8 @@
 //   4. Island reveal                                  src/screens/reveal.js
 //   5. The island hub, home from here on              src/screens/hub.js
 //      with each field's check-up panel               src/screens/fieldPanel.js
+//      and the plans on the island ("See them on the farm", loaded when first opened)
+//                                                     src/screens/planFutures.js
 import './styles.css';
 import { INTRO, LANDING_URL } from './config.js';
 import { DEMO_FARM } from './data/demoFarm.js';
@@ -76,6 +78,8 @@ const fieldsStep = createFieldsStep({
 const planner = createPlanner();
 /** Three plans for the next 3 seasons for the farm as it stands (see src/plan/planner.js). */
 const planSeasons = () => planner.plans({ fields: app.fields, place: app.farm, profile: app.farmProfile, county: farmData.getCounty(), firstSeason: firstSeason(today()) });
+/** Scores a plan picked field by field (or built by hand) on the farm as it stands. */
+const evaluateMix = (plan) => planner.evaluate({ fields: app.fields, place: app.farm, profile: app.farmProfile, county: farmData.getCounty(), plan, firstSeason: firstSeason(today()) });
 
 /** Manami steps aside (out of sight and the tab order) while the check-up or the plans are open. */
 function syncManami() {
@@ -128,7 +132,7 @@ const hub = createHub({
     app.openFieldId = null;
     fieldPanel.close();
   },
-  getPanelInsets: () => fieldPanel.insets(),
+  getPanelInsets: () => (planFutures?.active ? planFutures.insets() : fieldPanel.insets()),
   panelEl: fieldPanel.el,
   onPlan: () => plansPanel.open(),
 });
@@ -138,8 +142,9 @@ const plansPanel = createPlansPanel({
   planSeasons,
   today: () => today(),
   getSaved: () => app.plan?.plan || null, // "Build your own" starts from the plan saved last
-  evaluateMix: (plan) => planner.evaluate({ fields: app.fields, place: app.farm, profile: app.farmProfile, county: farmData.getCounty(), plan, firstSeason: firstSeason(today()) }),
+  evaluateMix,
   onOpen: () => {
+    planFutures?.stop(); // back from the plans on the island
     islandPlanner.stop(); // back from planning on the island, or opened over it
     hub.overview(); // the whole farm behind it, any field check-up closed
     document.getElementById('hubPanel').inert = true; // the field list waits while the plans are open
@@ -150,15 +155,50 @@ const plansPanel = createPlansPanel({
     syncManami();
   },
   onPreview: (info) => showPlanOnIsland(info, 0),
+  onFutures: (kind, opts) => openFutures(kind, opts),
   onIsland: (builder, { startYear }) => {
     if (!app.island?.view) return;
     islandPlanner.start(builder, { startYear, view: app.island.view });
   },
   onSave: (plan, info) => {
     app.plan = { plan, ...info }; // the season loop (Phase 5) builds on this
-    manami.say(`Saved. That’s your plan for ${info.startYear} to ${info.startYear + 2}. You can change it any time from “Plan my next seasons”.`, { focus: true });
+    // a plan picked plan by plan can be seen on the farm again (a hand-built one is "Plan on the island")
+    const actions = info.choice ? [{ label: 'See it on the farm', onClick: () => openFutures('mix', { reel: false }) }] : [];
+    manami.say(`Saved. That’s your plan for ${info.startYear} to ${info.startYear + 2}. You can change it any time from “Plan my next seasons”.`, { actions, focus: true });
   },
 });
+
+// "See them on the farm": the plans on the island itself, flipped season by season (its own chunk,
+// loaded the first time it opens)
+let futuresMod = null;
+let planFutures = null;
+async function openFutures(kind, opts = {}) {
+  futuresMod ??= await import('./screens/planFutures.js');
+  planFutures ??= futuresMod.createPlanFutures({
+    hub,
+    timeTravel,
+    manami,
+    getData: () => plansPanel.ensureData(),
+    getCurrentData: () => plansPanel.data,
+    getChoice: () => plansPanel.getChoice(),
+    setChoice: (c) => plansPanel.setChoice(c),
+    evaluateMix,
+    onStart: () => {
+      islandPlanner.stop();
+      if (app.openFieldId) hub.overview(); // any field check-up closes (the plan view's camera takes over)
+      document.getElementById('hubPanel').inert = true; // the field list waits while the plans are on the island
+    },
+    onStop: () => {
+      document.getElementById('hubPanel').inert = false;
+      syncManami();
+    },
+    onSave: (plan, info) => plansPanel.saveChosen(plan, info),
+    onBack: () => plansPanel.open(),
+    onBuild: () => plansPanel.openBuild(),
+  });
+  if (!app.island?.view) return;
+  return planFutures.start(kind, { ...opts, view: app.island.view, startYear: firstSeason(today()) });
+}
 
 // "Plan on the island": the "Build your own" plan, edited by dragging crops onto the fields
 const islandPlanner = createIslandPlanner({
@@ -221,12 +261,18 @@ const reveal = createReveal({
     hub.show(island); // the farm's home screen from here on
     paintStatuses();
     timeTravel.show(island, { history: cropHistories(), today: today(), hour: hourParam(), liveDate: !params.has('today') });
+    // dev shortcut: ?hub=5&futures=1 opens the plans on the island with Manami's walk, &futures=explore without
+    if (import.meta.env.DEV && params.has('futures') && !app.futuresShown) {
+      app.futuresShown = true;
+      plansPanel.ensureData().then(() => openFutures('priority', { reel: params.get('futures') !== 'explore' }));
+    }
   },
 });
 
 function startReveal({ instant = false } = {}) {
   document.body.classList.remove('reveal-done');
   fieldPanel.close();
+  planFutures?.stop();
   islandPlanner.stop();
   timeTravel.hide();
   hub.hide();
@@ -296,6 +342,7 @@ function handle(event) {
       app.fields = [];
       app.farmProfile = null;
       fieldPanel.close();
+      planFutures?.stop();
       islandPlanner.stop();
       timeTravel.hide();
       hub.hide();
@@ -338,7 +385,7 @@ function testFields(n) {
   return out;
 }
 
-if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields }; // for poking at in the console
+if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures }; // for poking at in the console
 
 // ---------------------------------------------------------------- the first five seconds
 (async function intro() {

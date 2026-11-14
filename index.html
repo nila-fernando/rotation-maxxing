@@ -201,6 +201,44 @@
     </div>
   </section>
 
+  <!-- "See them on the farm": the island flips between the plans (src/screens/planFutures.js) -->
+  <div class="fut-chips" id="futChips" aria-hidden="true"></div>
+  <section class="fut-dock" id="futDock" role="region" aria-labelledby="futTitle" hidden>
+    <div class="fut-dock__row fut-dock__row--top">
+      <h2 class="fut-dock__title" id="futTitle" tabindex="-1">Your next 3 seasons</h2>
+      <div class="fut-plans" id="futPlans" role="radiogroup" aria-label="Plan on the island"></div>
+      <button class="fut-close" id="futClose" type="button" aria-label="Leave the plan view">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="fut-dock__row fut-dock__row--mid">
+      <div class="fut-seasons" id="futSeasons" role="radiogroup" aria-label="Season"></div>
+      <div class="fut-score" id="futScore"></div>
+      <button class="fut-more btn btn--quiet btn--small" id="futMore" type="button" aria-expanded="false" aria-controls="futScore">More</button>
+    </div>
+    <div class="fut-dock__row fut-dock__row--foot">
+      <p class="fut-caption" id="futCaption"></p>
+      <p class="fut-mix" id="futMix" aria-live="polite"></p>
+      <div class="fut-dock__go">
+        <button class="btn btn--quiet btn--small fut-iconbtn" id="futFields" type="button" aria-controls="futCard" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="6.6" height="6.6" rx="1.4" fill="currentColor" fill-opacity=".2"/><rect x="13.4" y="4" width="6.6" height="6.6" rx="1.4"/><rect x="4" y="13.4" width="6.6" height="6.6" rx="1.4"/><rect x="13.4" y="13.4" width="6.6" height="6.6" rx="1.4" fill="currentColor" fill-opacity=".2"/></svg><span>Fields</span>
+        </button>
+        <button class="btn btn--quiet btn--small fut-iconbtn" id="futNotesBtn" type="button" aria-haspopup="dialog" aria-controls="futNotes" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.6C10.2 5.2 7.4 4.6 3.6 4.8v13.4c3.8-.2 6.6.4 8.4 1.8z" fill="currentColor" fill-opacity=".2"/><path d="M12 6.6c1.8-1.4 4.6-2 8.4-1.8v13.4c-3.8-.2-6.6.4-8.4 1.8z"/></svg><span>Why and watch out</span>
+        </button>
+        <button class="btn btn--quiet btn--small fut-iconbtn" id="futBack" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 12H5M11 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Back to the plans</span>
+        </button>
+        <button class="btn btn--primary btn--small fut-save" id="futSave" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.6l4.4 4.4L19 7.4"/></svg><span>Use my pick</span>
+        </button>
+      </div>
+    </div>
+    <p class="sr-only" id="futStatus" role="status" aria-live="polite"></p>
+  </section>
+  <aside class="fut-card" id="futCard" aria-labelledby="futCardTitle" hidden></aside>
+  <section class="fut-notes" id="futNotes" role="dialog" aria-modal="false" aria-labelledby="futNotesTitle" hidden></section>
+
   <!-- Part 4 · "Plan my next seasons": the planner's three plans (src/screens/plansPanel.js) -->
   <section class="plans" id="plans" role="dialog" aria-labelledby="plansTitle" hidden>
     <div class="plans__top">
