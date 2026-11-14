@@ -300,6 +300,11 @@ describe('checkPlacement', () => {
     expect(checkPlacement({ ...farm, confirmedBuyers: ['canola'] }, empty, 'north', 1, 'canola').some((x) => x.lens === 'market')).toBe(false);
   });
 
+  it('flags a crop that needs missing equipment (land, severity 3)', () => {
+    const f = { ...farm, constraints: { missingEquipment: ['hayEquipment' as const] } };
+    expect(checkPlacement(f, empty, 'north', 1, 'alfalfa').find((x) => x.lens === 'land')).toMatchObject({ severity: 3 });
+  });
+
   it('flags unavailable crops (land) and over-supply (market)', () => {
     const f = { ...farm, paddocks: farm.paddocks.map((p) => ({ ...p, availableCrops: ['corn', 'soybeans'] })) };
     expect(checkPlacement(f, empty, 'south', 0, 'cotton')[0]).toMatchObject({ lens: 'land', severity: 3 });

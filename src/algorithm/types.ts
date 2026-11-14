@@ -130,7 +130,21 @@ export interface Farm {
    * recommended when listed here.
    */
   confirmedBuyers?: CropId[];
+  /** Water and equipment limits. */
+  constraints?: FarmConstraints;
   paddocks: Paddock[];
+}
+
+/** Harvest/field equipment that some crops need (see EQUIPMENT_NEEDED in constants.ts). */
+export type EquipmentId = 'hayEquipment' | 'cottonPicker';
+
+export interface FarmConstraints {
+  /** Default 'dryland'. Irrigated farms are scored on irrigation water applied. */
+  irrigation?: 'dryland' | 'irrigated';
+  /** Seasonal irrigation water available per acre, inches (irrigated farms). Unlimited if absent. */
+  irrigationAllocationIn?: number;
+  /** Equipment the farmer doesn't have and won't hire; crops that need it are excluded. */
+  missingEquipment?: EquipmentId[];
 }
 
 /** A neighbour as seen from one paddock. */
@@ -223,7 +237,7 @@ export interface Warning {
 
 export interface Exclusion {
   cropId: CropId;
-  kind: 'availability' | 'buyer' | 'land' | 'economics' | 'rotation';
+  kind: 'availability' | 'buyer' | 'equipment' | 'land' | 'economics' | 'rotation';
   reason: string;
 }
 

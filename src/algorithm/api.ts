@@ -287,7 +287,7 @@ export function generatePlans(
   const lambda = riskLambda(priorities);
 
   // Stage 1: hard filters.
-  const screens = ctx.paddocks.map((p) => screenCrops(ctx.crops, p, true, ctx.prepared.farm.confirmedBuyers));
+  const screens = ctx.paddocks.map((p) => screenCrops(ctx.crops, p, true, ctx.prepared.farm.confirmedBuyers, ctx.prepared.farm.constraints?.missingEquipment));
   const exclusions: Record<PaddockId, Exclusion[]> = {};
   ctx.paddocks.forEach((p, i) => (exclusions[p.id] = screens[i]!.exclusions));
   const allowed = screens.map((s) => s.allowed);
@@ -447,7 +447,7 @@ export function evaluatePlan(
   const lambda = riskLambda(priorities);
 
   const seqs = sequencesFromPlan(plan, ctx.paddocks, ctx.horizon, new Set(Object.keys(ctx.crops)));
-  const screens = ctx.paddocks.map((p) => screenCrops(ctx.crops, p, true, ctx.prepared.farm.confirmedBuyers));
+  const screens = ctx.paddocks.map((p) => screenCrops(ctx.crops, p, true, ctx.prepared.farm.confirmedBuyers, ctx.prepared.farm.constraints?.missingEquipment));
   const bounds = createSearcher(ctx, buildSpaces(ctx, screens.map((s) => s.allowed))).bounds;
   const allowedSets = screens.map((s) => new Set(s.allowed));
 

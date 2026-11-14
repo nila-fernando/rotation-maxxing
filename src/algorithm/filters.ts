@@ -3,10 +3,10 @@
  * which 3-year sequences are allowed. Every exclusion gets a plain-English
  * reason: these are the mascot's "why not X?" answers.
  */
-import { SALINITY_MIN_RELATIVE_YIELD } from './constants';
+import { EQUIPMENT_NAMES, EQUIPMENT_NEEDED, SALINITY_MIN_RELATIVE_YIELD } from './constants';
 import { economicsStatus, salinityRelativeYield } from './cropData';
 import { hardRuleViolation, sequenceViolation, timelineOf } from './rotation';
-import type { CropId, CropTable, Exclusion, Paddock } from './types';
+import type { CropId, CropTable, EquipmentId, Exclusion, Paddock } from './types';
 
 export interface CropScreen {
   allowed: CropId[];
@@ -29,11 +29,21 @@ export function needsBuyerReason(cropName: string): string {
  *   requiresBuyer crops without a confirmed buyer, are excluded too.
  * @param confirmedBuyers crops the farmer has a buyer/contract for (Farm.confirmedBuyers).
  */
+/** Equipment the crop needs that the farmer lacks (empty if none). */
+export function missingEquipmentFor(cropId: CropId, missing: readonly EquipmentId[] = []): EquipmentId[] {
+  return (EQUIPMENT_NEEDED[cropId] ?? []).filter((e) => missing.includes(e));
+}
+
+export function equipmentReason(cropName: string, missing: EquipmentId[]): string {
+  return `${cropName} needs ${missing.map((e) => EQUIPMENT_NAMES[e]).join(' and ')}, which you've said you don't have.`;
+}
+
 export function screenCrops(
   crops: CropTable,
   paddock: Paddock,
   forRecommendation = true,
   confirmedBuyers: readonly CropId[] = [],
+  missingEquipment: readonly EquipmentId[] = [],
 ): CropScreen {
   const allowed: CropId[] = [];
   const exclusions: Exclusion[] = [];
@@ -45,6 +55,11 @@ export function screenCrops(
     const c = crops[id]!;
     if (!available.has(id)) {
       exclusions.push({ cropId: id, kind: 'availability', reason: `${c.name} seed isn't available locally for ${paddock.name}.` });
+      continue;
+    }
+    const noKit = missingEquipmentFor(id, missingEquipment);
+    if (noKit.length > 0) {
+      exclusions.push({ cropId: id, kind: 'equipment', reason: equipmentReason(c.name, noKit) });
       continue;
     }
     if (forRecommendation && c.requiresBuyer && !buyers.has(id)) {
