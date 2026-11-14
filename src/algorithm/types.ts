@@ -300,6 +300,9 @@ export interface YearResult {
   yieldUnit: string | null;
   grossMarginPerAcre: number;
   soilHealthIndex: number;
+  /** RUSLE soil loss, tons/acre/year (null when K, R or C is unknown). */
+  erosionTonsPerAcre: number | null;
+  /** Inches of shortfall (dryland) or irrigation (irrigated) when NASA POWER data is used; otherwise a kc index. */
   waterUseIndex: number;
   /** Yield, price, revenue, cost, N credit, soil and water terms. */
   terms: Term[];

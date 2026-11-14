@@ -4,9 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { parsePowerDaily } from '../../data/power';
 import { annualErosivity, dailyErosivity, scenariosFromDailyWeather } from '../climate';
 import { meanScenario } from '../yieldModel';
+import { evaluatePlan } from '../api';
+import { planFromCrops } from '../plans';
 import { waterParamsFor } from '../waterParams';
 import type { Farm } from '../types';
-import { gridFarm, land } from './fixtures';
+import { gridFarm, land, NEUTRAL } from './fixtures';
 
 const weather = parsePowerDaily(JSON.parse(readFileSync(join(__dirname, '../../data/__tests__/fixtures/power_ames_2011_2014.json'), 'utf8')), 42.03).weather;
 const farm: Farm = gridFarm(2, 1, 40, { land: land({ awcInPerIn: 0.2 }) });
@@ -59,6 +61,35 @@ describe('weather pool from NASA POWER', () => {
     const r = scenariosFromDailyWeather(gridFarm(1, 1, 40), weather);
     expect(r.scenarios).toHaveLength(0);
     expect(r.gaps.join()).toMatch(/available-water-capacity/);
+  });
+});
+
+describe('NASA POWER pool in the planner', () => {
+  const soilFarm: Farm = gridFarm(2, 1, 40, {
+    land: land({ awcInPerIn: 0.2, kFactor: 0.28, tFactorTonsPerAcre: 5, slopePct: 6, slopeLengthFt: 200 }),
+  });
+  const pool = scenariosFromDailyWeather(soilFarm, weather).scenarios;
+  const plan = planFromCrops({ p00: ['corn', 'soybeans', 'fallow'], p01: ['soybeans', 'corn', 'soybeans'] });
+  const r = evaluatePlan(soilFarm, plan, NEUTRAL, {}, pool, { mcSamples: 40 });
+
+  it('scores erosion in tons with RUSLE, and fallow loses the most soil', () => {
+    const years = r.paddocks[0]!.years;
+    for (const y of years) expect(y.erosionTonsPerAcre).not.toBeNull();
+    expect(years[2]!.erosionTonsPerAcre!).toBeGreaterThan(years[0]!.erosionTonsPerAcre!);
+    const t = years[0]!.terms.find((x) => x.label.startsWith('Erosion (RUSLE)'))!;
+    expect(t.sources).toEqual(expect.arrayContaining(['ah703', 'nasaPower', 'ssurgo']));
+  });
+
+  it('scores water as the field\'s shortfall in inches from the water balance', () => {
+    const corn = r.paddocks[0]!.years[0]!;
+    const w = corn.terms.find((x) => x.label.startsWith('Water shortfall'))!;
+    expect(w.unit).toBe('in');
+    expect(corn.waterUseIndex).toBeGreaterThan(0);
+    expect(r.paddocks[0]!.years[2]!.waterUseIndex).toBe(0); // fallow
+  });
+
+  it('varies yields with the observed weather years in Monte Carlo', () => {
+    expect(r.expectedGM - r.p10GM).toBeGreaterThan(0);
   });
 });
 

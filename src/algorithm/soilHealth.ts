@@ -14,7 +14,8 @@ import { isFallow, kcMid, nCreditMid, typicalYield } from './cropData';
 import { sourceIds } from './evidence';
 import { monthsOccupied, seasonFor } from './seasons';
 import { ALFALFA_C_FACTOR, COVER_REFERENCE, DEFAULT_TILLAGE, RESIDUE_FACTORS, TILLAGE_RESIDUE_RETENTION } from './soilData';
-import type { CropId, CropTable, CropTraits, Paddock, Term, Tillage } from './types';
+import { cFactor, soilLoss } from './erosion';
+import type { CropId, CropTable, CropTraits, FieldWater, Paddock, Term, Tillage } from './types';
 
 export interface ComponentScore {
   value: number | null;
@@ -114,10 +115,14 @@ export interface SoilYearInput {
   /** Optional component overrides from a process-based yield model. */
   override?: { groundCover?: Term; organicMatter?: Term };
   refs: { residueLb: number; nCreditLb: number };
+  /** Mean annual RUSLE R for the farm (from NASA POWER). Enables the erosion score. */
+  erosivityR?: number;
 }
 
 export interface SoilHealthResult {
   value: number;
+  /** RUSLE soil loss, tons/acre/year, when it could be estimated. */
+  erosionTonsPerAcre: number | null;
   components: Term[];
   gaps: string[];
 }
@@ -131,12 +136,21 @@ export function soilHealthIndex(input: SoilYearInput): SoilHealthResult {
   const gaps: string[] = [];
   const components: Term[] = [];
 
-  // (a) ground cover / erosion
+  // (a) ground cover / erosion. Preferred: RUSLE erosion vs tolerable loss (needs K, T, R).
   let cover: number;
+  let erosionTonsPerAcre: number | null = null;
+  const tillage = paddock.tillage ?? DEFAULT_TILLAGE;
+  const loss = input.erosivityR !== undefined ? soilLoss(paddock.land, input.erosivityR, cFactor(crop, yieldPerAcre, tillage)) : null;
+  if (loss) erosionTonsPerAcre = loss.tonsPerAcre;
   if (override?.groundCover) {
     cover = override.groundCover.value;
     components.push(override.groundCover);
+  } else if (loss && loss.score !== null) {
+    cover = loss.score;
+    components.push({ label: loss.label, value: loss.score, unit: 'index 0-1', basis: 'sourced', sources: loss.sources });
+    gaps.push(...loss.gaps);
   } else {
+    if (loss) gaps.push(...loss.gaps);
     const gc = groundCover(crop, yieldPerAcre, paddock.tillage ?? DEFAULT_TILLAGE, state);
     cover = gc.value ?? 0;
     if (gc.term) components.push(gc.term);
@@ -189,12 +203,43 @@ export function soilHealthIndex(input: SoilYearInput): SoilHealthResult {
   }
 
   const value = W.groundCover * cover + W.nitrogen * nScore + W.diversity * diversity + W.organicMatter * om;
-  return { value, components, gaps };
+  return { value, erosionTonsPerAcre, components, gaps };
 }
 
 // ---------------------------------------------------------------------------
 // Water
 // ---------------------------------------------------------------------------
+
+/** Field water from the NASA POWER water balance (expected over the weather pool). */
+export interface FieldWaterInput {
+  byCrop: Record<string, FieldWater>;
+  irrigated: boolean;
+}
+
+/**
+ * Field-specific water score, inches per season (lower is better):
+ *   irrigated: irrigation water needed
+ *   dryland:   shortfall between crop demand and what rain + soil supplied
+ * Crops not in the water balance get the worst value on this field (flagged).
+ */
+export function fieldWaterIndex(crop: CropTraits, field: FieldWaterInput): { value: number; term: Term; gap: string | null } {
+  const pick = (w: FieldWater) => (field.irrigated ? w.irrigationMm : w.deficitMm) / 25.4;
+  const sources = ['nasaPower', 'fao56Tables', 'fao66', 'ssurgo'];
+  const w = field.byCrop[crop.id];
+  if (!w) {
+    const worst = Math.max(0, ...Object.values(field.byCrop).map(pick));
+    return {
+      value: worst,
+      term: { label: `Water: ${crop.name} isn't in the water balance (worst case on this field assumed)`, value: worst, unit: 'in', basis: 'assumption' },
+      gap: `${crop.name} has no sourced water-balance parameters; its water score is the worst on the field.`,
+    };
+  }
+  const v = pick(w);
+  const label = field.irrigated
+    ? `Irrigation needed: ${v.toFixed(1)} in of ${(w.demandMm / 25.4).toFixed(1)} in crop demand`
+    : `Water shortfall: ${v.toFixed(1)} in of ${(w.demandMm / 25.4).toFixed(1)} in crop demand not met by rain and soil`;
+  return { value: v, term: { label, value: v, unit: 'in', basis: 'sourced', sources }, gap: null };
+}
 
 /**
  * Water-use index = kc mid (FAO-56) x share of the year the crop occupies.
@@ -205,10 +250,12 @@ export function waterUseIndex(
   crops: CropTable,
   crop: CropTraits,
   state: string | undefined,
+  field?: FieldWaterInput,
 ): { value: number; term: Term; gap: string | null } {
   if (isFallow(crop)) {
-    return { value: 0, term: { label: 'Water use: fallow (no crop)', value: 0, unit: 'index', basis: 'sourced' }, gap: null };
+    return { value: 0, term: { label: 'Water use: fallow (no crop)', value: 0, unit: field ? 'in' : 'index', basis: 'sourced' }, gap: null };
   }
+  if (field) return fieldWaterIndex(crop, field);
   const months = monthsOccupied(seasonFor(crop, state).span);
   const kc = kcMid(crop);
   if (kc === null) {

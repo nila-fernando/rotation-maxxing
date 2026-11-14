@@ -16,12 +16,13 @@ import { sourceIds } from './evidence';
 import { prepareFarm } from './geometry';
 import { priceInfo, sell, type PriceInfo } from './market';
 import { DEFAULT_N_PRICE, nitrogenCreditReceived, nitrogenLeftBehind, sequenceViolation, timelineOf } from './rotation';
-import { nCreditReference, residueReference, soilHealthIndex, waterUseIndex } from './soilHealth';
+import { nCreditReference, residueReference, soilHealthIndex, waterUseIndex, type FieldWaterInput } from './soilHealth';
 import { meanScenario, TraitYieldModel, withCalibration, type YieldModel } from './yieldModel';
 import type {
   CropId,
   CropTable,
   Farm,
+  FieldWater,
   Market,
   Paddock,
   PaddockId,
@@ -115,6 +116,32 @@ export function createContext(
   };
 }
 
+/** RUSLE R for the soil index, when the weather pool came from daily rain. */
+function erosionInput(ctx: ModelContext): { erosivityR?: number } {
+  const r = ctx.expectedWeather.erosivityR;
+  return r !== undefined ? { erosivityR: r } : {};
+}
+
+/**
+ * Expected field water for a paddock from the water balance, or the farm
+ * average where this field had no soil data. Undefined if the pool has no water results.
+ */
+export function fieldWater(ctx: ModelContext, paddockId: PaddockId): FieldWaterInput | undefined {
+  const all = ctx.expectedWeather.water;
+  if (!all || Object.keys(all).length === 0) return undefined;
+  const irrigated = ctx.prepared.farm.constraints?.irrigation === 'irrigated';
+  const own = all[paddockId];
+  if (own) return { byCrop: own, irrigated };
+  const byCrop: Record<CropId, FieldWater> = {};
+  const crops = new Set(Object.values(all).flatMap((r) => Object.keys(r)));
+  for (const c of crops) {
+    const vals = Object.values(all).flatMap((r) => (r[c] ? [r[c]] : []));
+    const avg = (k: keyof FieldWater) => vals.reduce((a, v) => a + v[k], 0) / vals.length;
+    byCrop[c] = { demandMm: avg('demandMm'), deficitMm: avg('deficitMm'), irrigationMm: avg('irrigationMm') };
+  }
+  return { byCrop, irrigated };
+}
+
 // ---------------------------------------------------------------------------
 // Per-sequence statics
 // ---------------------------------------------------------------------------
@@ -187,10 +214,11 @@ export function sequenceStatics(
       yieldPerAcre: yv || null,
       state,
       refs: ctx.refs,
+      ...erosionInput(ctx),
     }).value;
     soilSum += soil;
     if (y === seq.length - 1) endSoil = soil;
-    water += waterUseIndex(crops, crop, state).value;
+    water += waterUseIndex(crops, crop, state, fieldWater(ctx, paddock.id)).value;
   }
   const n = seq.length;
   const endW = ctx.endOfHorizon ? END_SOIL_WEIGHT : 0;
@@ -398,11 +426,12 @@ export function explainPlan(ctx: ModelContext, seqs: CropId[][]): ExplainedPlan 
         yieldPerAcre: sequenceYieldShadeFree(ctx, pad, seq, y),
         state: ctx.prepared.farm.state,
         refs: ctx.refs,
+        ...erosionInput(ctx),
         ...(est.soil ? { override: est.soil } : {}),
       });
       sh.gaps.forEach((g) => gaps.add(g));
       terms.push(...sh.components, { label: 'Soil health index', value: sh.value, unit: 'index 0-1', basis: 'design' });
-      const w = waterUseIndex(crops, crop, ctx.prepared.farm.state);
+      const w = waterUseIndex(crops, crop, ctx.prepared.farm.state, fieldWater(ctx, pad.id));
       if (w.gap) gaps.add(w.gap);
       terms.push(w.term);
       soilSum += sh.value;
@@ -416,6 +445,7 @@ export function explainPlan(ctx: ModelContext, seqs: CropId[][]): ExplainedPlan 
         yieldUnit: crop.yieldUnit,
         grossMarginPerAcre: gm,
         soilHealthIndex: sh.value,
+        erosionTonsPerAcre: sh.erosionTonsPerAcre,
         waterUseIndex: w.value,
         terms,
       });
