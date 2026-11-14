@@ -50,6 +50,11 @@ export const ROTATION_RULES = {
    * ROTATION_EFFECTS instead; alfalfa (a continuing stand) and fallow are exempt.
    */
   sameCropRepeatUnsourced: 0.03,
+  /**
+   * Pest groups where a one-year break is enough, so only last year counts.
+   * Corn rootworm: corn after soybean generally needs no rootworm control (isuRotationEcon).
+   */
+  oneYearBreakGroups: ['cornRootworm'] as readonly string[],
 } as const;
 
 /**
