@@ -108,6 +108,11 @@ export const SOURCES = {
     url: 'https://pubdev.silo.lib.ia.us/16704/1/nldec11.pdf',
     covers: 'Corn after soybean generally needs no rootworm control and less N',
   },
+  usdaAgHandbook628: {
+    title: 'USDA NASS, Agricultural Handbook 628: Usual Planting and Harvesting Dates for U.S. Field Crops (2010 ed.)',
+    url: null,
+    covers: 'Usual planting and harvesting months by state (season spans). Values not entered yet',
+  },
 } as const;
 
 export type SourceId = keyof typeof SOURCES;
@@ -117,6 +122,22 @@ export type SourceId = keyof typeof SOURCES;
 // ---------------------------------------------------------------------------
 
 export type YieldUnit = 'bu' | 'lb' | 'ton';
+
+/** Two-letter USPS state code, e.g. 'IA', 'KS'. */
+export type StateCode = string;
+
+/** Month numbers 1-12. A span may wrap the new year (winter wheat: 10 -> 7). */
+export interface SeasonSpan {
+  plantMonth: number;
+  harvestMonth: number;
+}
+
+/**
+ * Broad season class. Used only to pick a fallback span when the farm's state
+ * has no Handbook 628 entry yet (see seasons.ts). This is a classification,
+ * not a measured value.
+ */
+export type SeasonType = 'summer' | 'winter' | 'perennial' | 'none';
 
 export interface Sourced<T> {
   value: T;
@@ -160,6 +181,15 @@ export interface CropTraits {
   /** Pest/disease groups this crop hosts (keys of PEST_GROUPS). */
   hostsPestGroups: string[];
 
+  /** Broad season class (fallback when `season` has no entry for the state). */
+  seasonType: SeasonType;
+
+  /**
+   * Usual planting and harvest months BY STATE, from USDA Ag Handbook 628.
+   * Empty until a teammate enters values (IA and KS first).
+   */
+  season: Record<StateCode, SeasonSpan>;
+
   /** Not yet sourced. Keep null until a source is added. */
   shadeTolerance: null;
   frostTolerance: null;
@@ -202,6 +232,8 @@ export const CROPS: CropTraits[] = [
     salinity: { value: { thresholdECe: 1.7, slopePctPerDsM: 12, rating: 'MS' }, source: 'fao61Salinity' },
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: ['cornRootworm'],
+    seasonType: 'summer',
+    season: {},
     ...unsourced,
   },
   {
@@ -226,6 +258,8 @@ export const CROPS: CropTraits[] = [
     salinity: { value: { thresholdECe: 5.0, slopePctPerDsM: 20, rating: 'MT' }, source: 'fao61Salinity' },
     nCreditToNextCornLbPerAcre: { value: { low: 30, high: 40 }, source: ['mdaLegumeCredits', 'uwLegumeCredits'] },
     hostsPestGroups: ['soybeanCystNematode', 'whiteMold'],
+    seasonType: 'summer',
+    season: {},
     ...unsourced,
   },
   {
@@ -249,6 +283,8 @@ export const CROPS: CropTraits[] = [
     salinity: { value: { thresholdECe: 6.0, slopePctPerDsM: 7.1, rating: 'MT' }, source: 'fao61Salinity', note: 'Semi-dwarf wheat is more tolerant: 8.6 / 3.0, T' },
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: [],
+    seasonType: 'winter',
+    season: {},
     ...unsourced,
   },
   {
@@ -272,6 +308,8 @@ export const CROPS: CropTraits[] = [
     salinity: { value: { thresholdECe: 6.0, slopePctPerDsM: 7.1, rating: 'MT' }, source: 'fao61Salinity' },
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: [],
+    seasonType: 'summer',
+    season: {},
     ...unsourced,
   },
   {
@@ -296,6 +334,8 @@ export const CROPS: CropTraits[] = [
     salinity: { value: { thresholdECe: 6.8, slopePctPerDsM: 16, rating: 'MT' }, source: 'fao61Salinity' },
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: [],
+    seasonType: 'summer',
+    season: {},
     ...unsourced,
   },
   {
@@ -321,6 +361,8 @@ export const CROPS: CropTraits[] = [
     salinity: { value: { thresholdECe: 7.7, slopePctPerDsM: 5.2, rating: 'T' }, source: 'fao61Salinity' },
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: [],
+    seasonType: 'summer',
+    season: {},
     ...unsourced,
   },
   {
@@ -350,6 +392,8 @@ export const CROPS: CropTraits[] = [
       note: 'Depends on stand density; UW gives 190/160/130 for good/fair/poor stands, plus ~50 in year 2',
     },
     hostsPestGroups: ['whiteMold'],
+    seasonType: 'perennial',
+    season: {},
     ...unsourced,
   },
   {
@@ -373,6 +417,8 @@ export const CROPS: CropTraits[] = [
     salinity: { value: { thresholdECe: null, slopePctPerDsM: null, rating: 'T' }, source: 'fao61Salinity', note: 'Rated tolerant; no threshold/slope published' },
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: [],
+    seasonType: 'summer',
+    season: {},
     ...unsourced,
   },
   {
@@ -397,6 +443,8 @@ export const CROPS: CropTraits[] = [
     salinity: { value: { thresholdECe: 8.0, slopePctPerDsM: 5.0, rating: 'T' }, source: 'fao61Salinity', note: 'Less tolerant as a seedling: keep ECe under 4-5' },
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: [],
+    seasonType: 'summer',
+    season: {},
     ...unsourced,
   },
   {
@@ -421,6 +469,8 @@ export const CROPS: CropTraits[] = [
     salinity: { value: { thresholdECe: 4.8, slopePctPerDsM: 5.0, rating: 'MT' }, source: 'fao61Salinity' },
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: ['whiteMold'],
+    seasonType: 'summer',
+    season: {},
     ...unsourced,
   },
   {
@@ -445,6 +495,8 @@ export const CROPS: CropTraits[] = [
     salinity: { value: { thresholdECe: 11.0, slopePctPerDsM: 13, rating: 'T' }, source: 'fao61Salinity', note: 'B. napus; B. rapa is 9.7 / 14' },
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: ['whiteMold'],
+    seasonType: 'summer',
+    season: {},
     ...unsourced,
   },
   {
@@ -469,6 +521,8 @@ export const CROPS: CropTraits[] = [
     salinity: { value: { thresholdECe: 1.0, slopePctPerDsM: 19, rating: 'S' }, source: 'fao61Salinity' },
     nCreditToNextCornLbPerAcre: { value: { low: 20, high: 20 }, source: ['mdaLegumeCredits', 'uwLegumeCredits'] },
     hostsPestGroups: ['soybeanCystNematode', 'whiteMold'],
+    seasonType: 'summer',
+    season: {},
     ...unsourced,
   },
   {
@@ -486,6 +540,8 @@ export const CROPS: CropTraits[] = [
     salinity: { value: { thresholdECe: 11.4, slopePctPerDsM: 10.8, rating: 'T' }, source: 'fao61Salinity', note: 'Grain-yield basis' },
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: [],
+    seasonType: 'winter',
+    season: {},
     ...unsourced,
   },
   {
@@ -503,6 +559,8 @@ export const CROPS: CropTraits[] = [
     salinity: null,
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: [],
+    seasonType: 'none',
+    season: {},
     ...unsourced,
   },
 ];
@@ -587,4 +645,5 @@ export const DATA_GAPS = [
   'Canola, sunflower and dry bean costs are North Dakota only, and include crop insurance (ERS costs do not).',
   'Price volatility: only 3 marketing years. Pull 10+ years from NASS Quick Stats for the Monte Carlo.',
   'All yields are national. Replace with state or county yields for the farm location.',
+  'Season spans by state (Ag Handbook 628) not entered yet: the model uses fallback spans.',
 ];
