@@ -1,0 +1,2178 @@
+{
+  "meta": {
+    "note": "Demo farm for offline use. Field outlines, acres and 2018-2025 crop history are real USDA NASS Crop Sequence Boundaries (CSB) records from Story County, Iowa; the farm name is made up and the operator is fictional. Everything listed under \"placeholder\" is a realistic stand-in for Story County and will be replaced by real data (SSURGO, SRTM, Sentinel-2, NASA POWER, NASS, ERS) later.",
+    "generated": "2026-11-14",
+    "real": [
+      "fields[].geometry",
+      "fields[].acres",
+      "fields[].cropHistory",
+      "fields[].sourceId",
+      "farm.center"
+    ],
+    "placeholder": [
+      "farm.name",
+      "fields[].name",
+      "fields[].soil",
+      "fields[].slopePct",
+      "fields[].elevationM",
+      "fields[].ndvi",
+      "weather.growingSeasonRainMm",
+      "weather.avg30yrRainMm",
+      "county.yields",
+      "county.prices",
+      "county.costsPerAcre"
+    ],
+    "sources": {
+      "fields": "USDA NASS Crop Sequence Boundaries 2018-2025 (NationalCSB_2018-2025_rev23), via public/data/fields/story-ia-usda.geojson; acres = the USDA record's own acres value (within 0.25 ac of the geodesic area of the published outline)",
+      "farmCenter": "Demo pin the app flies to (src/data/demoFarm.js); it lies inside field f1",
+      "soil": "Placeholder modelled on Story County SSURGO map units (f1 Nicollet, f2 Webster, f3 Clarion 6-9% moderately eroded, f4 Clarion 2-6%, f5 Canisteo); replace with USDA NRCS SSURGO",
+      "terrain": "Placeholder; replace with NASA SRTM 1 arc-second (slopePct = mean field slope, elevationM = mean field elevation). f3 gets the steep slope because its ragged west edge follows an uncropped drainageway (the draw)",
+      "ndvi": "Placeholder 2025 Sentinel-2-style NDVI curves following each field's 2025 crop; f4 is null to represent a field with no usable imagery",
+      "weather": "Placeholder April-September precipitation for central Iowa, shaped on known dry (1988, 2012) and wet (1993, 2008, 2010) seasons; replace with NASA POWER (PRECTOTCORR)",
+      "yields": "Placeholder Story County yields shaped on USDA NASS county estimates (trend plus the 2012 drought dip); replace with NASS Quick Stats",
+      "prices": "Placeholder late-2025 Iowa cash price levels; replace with USDA AMS / NASS",
+      "costsPerAcre": "Placeholder scaled to Iowa State University Ag Decision Maker A1-20 \"Estimated Costs of Crop Production in Iowa\"; replace with USDA ERS / ISU"
+    },
+    "cropKeyMapping": {
+      "Corn": "corn",
+      "Sweet Corn": "corn",
+      "Soybeans": "soybeans",
+      "Dbl Crop WinWht/Soybeans": "soybeans",
+      "Alfalfa": "alfalfa",
+      "Other Hay/Non Alfalfa": "hay",
+      "Oats": "oats",
+      "Winter Wheat": "wheat",
+      "Spring Wheat": "wheat",
+      "Grassland/Pasture": "pasture",
+      "Fallow/Idle Cropland": "fallow",
+      "*": "other"
+    },
+    "units": {
+      "acres": "acres",
+      "slopePct": "percent",
+      "elevationM": "metres above sea level",
+      "soil.organicMatterPct": "percent (surface layer)",
+      "soil.waterHoldingIn": "inches of available water in the top 60 in of soil",
+      "ndvi": "unitless 0-1",
+      "growingSeasonRainMm": "mm of precipitation, April 1 - September 30",
+      "avg30yrRainMm": "mm, mean of 1991-2020 from growingSeasonRainMm",
+      "yields": "bushels per acre (buPerAcre) for corn, soybeans, oats, wheat; short tons per acre (tonsPerAcre) for alfalfa and hay",
+      "prices": "USD per bushel for corn, soybeans, oats, wheat; USD per short ton for alfalfa and hay",
+      "costsPerAcre": "USD per acre, excluding land rent / land cost (machinery, seed, fertilizer, chemicals, labour, interest, insurance)"
+    },
+    "requiredCases": {
+      "cornThreeYearsInARow": [
+        "f1",
+        "f2",
+        "f3",
+        "f4",
+        "f5"
+      ],
+      "noLegumeEightYears": [
+        "f5"
+      ],
+      "slopeAboveSixPct": [
+        "f3"
+      ],
+      "ndviNull": [
+        "f4"
+      ],
+      "noLegumeFieldDistanceFromPinKm": {
+        "centroid": 5.83,
+        "nearestEdge": 5.35
+      }
+    }
+  },
+  "farm": {
+    "name": "Sheeeep Hollow",
+    "county": "Story",
+    "state": "IA",
+    "center": [
+      -93.3555,
+      42.0255
+    ]
+  },
+  "fields": [
+    {
+      "id": "f1",
+      "name": "Home place",
+      "acres": 114.8,
+      "sourceId": "usda-191825001177203",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -93.34776,
+              42.03027
+            ],
+            [
+              -93.34821,
+              42.03027
+            ],
+            [
+              -93.34839,
+              42.02992
+            ],
+            [
+              -93.35001,
+              42.02992
+            ],
+            [
+              -93.35001,
+              42.02974
+            ],
+            [
+              -93.35217,
+              42.02974
+            ],
+            [
+              -93.35253,
+              42.02965
+            ],
+            [
+              -93.35253,
+              42.02722
+            ],
+            [
+              -93.35279,
+              42.02722
+            ],
+            [
+              -93.35279,
+              42.02614
+            ],
+            [
+              -93.35818,
+              42.02614
+            ],
+            [
+              -93.35818,
+              42.0256
+            ],
+            [
+              -93.35756,
+              42.0256
+            ],
+            [
+              -93.3572,
+              42.02551
+            ],
+            [
+              -93.3572,
+              42.02273
+            ],
+            [
+              -93.35253,
+              42.02273
+            ],
+            [
+              -93.35253,
+              42.023
+            ],
+            [
+              -93.35279,
+              42.023
+            ],
+            [
+              -93.35279,
+              42.02336
+            ],
+            [
+              -93.35253,
+              42.02363
+            ],
+            [
+              -93.35235,
+              42.02372
+            ],
+            [
+              -93.35217,
+              42.02363
+            ],
+            [
+              -93.35217,
+              42.023
+            ],
+            [
+              -93.3519,
+              42.02273
+            ],
+            [
+              -93.34776,
+              42.02273
+            ],
+            [
+              -93.34776,
+              42.02866
+            ],
+            [
+              -93.34758,
+              42.02866
+            ],
+            [
+              -93.34758,
+              42.02992
+            ],
+            [
+              -93.34776,
+              42.03027
+            ]
+          ]
+        ]
+      },
+      "cropHistory": [
+        {
+          "year": 2018,
+          "crop": "corn"
+        },
+        {
+          "year": 2019,
+          "crop": "soybeans"
+        },
+        {
+          "year": 2020,
+          "crop": "corn"
+        },
+        {
+          "year": 2021,
+          "crop": "corn"
+        },
+        {
+          "year": 2022,
+          "crop": "soybeans"
+        },
+        {
+          "year": 2023,
+          "crop": "corn"
+        },
+        {
+          "year": 2024,
+          "crop": "corn"
+        },
+        {
+          "year": 2025,
+          "crop": "corn"
+        }
+      ],
+      "soil": {
+        "texture": "clay loam",
+        "drainage": "somewhat poorly drained",
+        "organicMatterPct": 4.4,
+        "waterHoldingIn": 10.6
+      },
+      "slopePct": 1.8,
+      "elevationM": 308,
+      "ndvi": [
+        {
+          "date": "2025-04-28",
+          "value": 0.22
+        },
+        {
+          "date": "2025-05-14",
+          "value": 0.25
+        },
+        {
+          "date": "2025-05-30",
+          "value": 0.34
+        },
+        {
+          "date": "2025-06-15",
+          "value": 0.56
+        },
+        {
+          "date": "2025-06-29",
+          "value": 0.74
+        },
+        {
+          "date": "2025-07-13",
+          "value": 0.86
+        },
+        {
+          "date": "2025-07-26",
+          "value": 0.9
+        },
+        {
+          "date": "2025-08-09",
+          "value": 0.86
+        },
+        {
+          "date": "2025-08-24",
+          "value": 0.78
+        },
+        {
+          "date": "2025-09-07",
+          "value": 0.62
+        },
+        {
+          "date": "2025-09-20",
+          "value": 0.44
+        },
+        {
+          "date": "2025-10-03",
+          "value": 0.3
+        }
+      ]
+    },
+    {
+      "id": "f2",
+      "name": "West 140",
+      "acres": 138.3,
+      "sourceId": "usda-191825001177208",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -93.35729,
+              42.02965
+            ],
+            [
+              -93.35756,
+              42.02965
+            ],
+            [
+              -93.35756,
+              42.02929
+            ],
+            [
+              -93.3607,
+              42.02929
+            ],
+            [
+              -93.3607,
+              42.02965
+            ],
+            [
+              -93.36411,
+              42.02965
+            ],
+            [
+              -93.36411,
+              42.02929
+            ],
+            [
+              -93.36474,
+              42.02929
+            ],
+            [
+              -93.36474,
+              42.02965
+            ],
+            [
+              -93.36573,
+              42.02965
+            ],
+            [
+              -93.36573,
+              42.02938
+            ],
+            [
+              -93.36537,
+              42.02929
+            ],
+            [
+              -93.36537,
+              42.02812
+            ],
+            [
+              -93.36573,
+              42.02812
+            ],
+            [
+              -93.36573,
+              42.02821
+            ],
+            [
+              -93.36595,
+              42.02835
+            ],
+            [
+              -93.36636,
+              42.0283
+            ],
+            [
+              -93.36663,
+              42.02812
+            ],
+            [
+              -93.36672,
+              42.02803
+            ],
+            [
+              -93.36672,
+              42.02399
+            ],
+            [
+              -93.36663,
+              42.02336
+            ],
+            [
+              -93.36663,
+              42.02273
+            ],
+            [
+              -93.3616,
+              42.02273
+            ],
+            [
+              -93.3616,
+              42.023
+            ],
+            [
+              -93.35944,
+              42.023
+            ],
+            [
+              -93.35944,
+              42.02273
+            ],
+            [
+              -93.3572,
+              42.02273
+            ],
+            [
+              -93.3572,
+              42.02551
+            ],
+            [
+              -93.35756,
+              42.0256
+            ],
+            [
+              -93.35818,
+              42.0256
+            ],
+            [
+              -93.35818,
+              42.02614
+            ],
+            [
+              -93.35783,
+              42.02614
+            ],
+            [
+              -93.35783,
+              42.02677
+            ],
+            [
+              -93.35756,
+              42.02677
+            ],
+            [
+              -93.35729,
+              42.02686
+            ],
+            [
+              -93.35729,
+              42.02965
+            ]
+          ]
+        ]
+      },
+      "cropHistory": [
+        {
+          "year": 2018,
+          "crop": "corn"
+        },
+        {
+          "year": 2019,
+          "crop": "corn"
+        },
+        {
+          "year": 2020,
+          "crop": "corn"
+        },
+        {
+          "year": 2021,
+          "crop": "soybeans"
+        },
+        {
+          "year": 2022,
+          "crop": "corn"
+        },
+        {
+          "year": 2023,
+          "crop": "corn"
+        },
+        {
+          "year": 2024,
+          "crop": "corn"
+        },
+        {
+          "year": 2025,
+          "crop": "corn"
+        }
+      ],
+      "soil": {
+        "texture": "silty clay loam",
+        "drainage": "poorly drained",
+        "organicMatterPct": 5.6,
+        "waterHoldingIn": 11.3
+      },
+      "slopePct": 0.9,
+      "elevationM": 309,
+      "ndvi": [
+        {
+          "date": "2025-04-28",
+          "value": 0.23
+        },
+        {
+          "date": "2025-05-14",
+          "value": 0.25
+        },
+        {
+          "date": "2025-05-30",
+          "value": 0.33
+        },
+        {
+          "date": "2025-06-15",
+          "value": 0.53
+        },
+        {
+          "date": "2025-06-29",
+          "value": 0.73
+        },
+        {
+          "date": "2025-07-13",
+          "value": 0.85
+        },
+        {
+          "date": "2025-07-26",
+          "value": 0.88
+        },
+        {
+          "date": "2025-08-09",
+          "value": 0.85
+        },
+        {
+          "date": "2025-08-24",
+          "value": 0.78
+        },
+        {
+          "date": "2025-09-07",
+          "value": 0.63
+        },
+        {
+          "date": "2025-09-20",
+          "value": 0.45
+        },
+        {
+          "date": "2025-10-03",
+          "value": 0.3
+        }
+      ]
+    },
+    {
+      "id": "f3",
+      "name": "North draw",
+      "acres": 125.3,
+      "sourceId": "usda-191825001177179",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -93.34866,
+              42.03414
+            ],
+            [
+              -93.34929,
+              42.03414
+            ],
+            [
+              -93.35001,
+              42.03423
+            ],
+            [
+              -93.35279,
+              42.03423
+            ],
+            [
+              -93.35279,
+              42.03405
+            ],
+            [
+              -93.35693,
+              42.03405
+            ],
+            [
+              -93.35756,
+              42.03369
+            ],
+            [
+              -93.35818,
+              42.03342
+            ],
+            [
+              -93.35845,
+              42.03342
+            ],
+            [
+              -93.35845,
+              42.03306
+            ],
+            [
+              -93.35756,
+              42.03306
+            ],
+            [
+              -93.35756,
+              42.03342
+            ],
+            [
+              -93.3572,
+              42.03342
+            ],
+            [
+              -93.35693,
+              42.03315
+            ],
+            [
+              -93.35693,
+              42.03225
+            ],
+            [
+              -93.35666,
+              42.03225
+            ],
+            [
+              -93.35666,
+              42.03252
+            ],
+            [
+              -93.35603,
+              42.03252
+            ],
+            [
+              -93.35603,
+              42.03189
+            ],
+            [
+              -93.3563,
+              42.03189
+            ],
+            [
+              -93.3563,
+              42.03099
+            ],
+            [
+              -93.35666,
+              42.03099
+            ],
+            [
+              -93.35666,
+              42.03126
+            ],
+            [
+              -93.35693,
+              42.03126
+            ],
+            [
+              -93.35693,
+              42.03036
+            ],
+            [
+              -93.35756,
+              42.03036
+            ],
+            [
+              -93.35756,
+              42.02992
+            ],
+            [
+              -93.35729,
+              42.02992
+            ],
+            [
+              -93.35729,
+              42.02686
+            ],
+            [
+              -93.35756,
+              42.02677
+            ],
+            [
+              -93.35783,
+              42.02677
+            ],
+            [
+              -93.35783,
+              42.02614
+            ],
+            [
+              -93.35279,
+              42.02614
+            ],
+            [
+              -93.35279,
+              42.02722
+            ],
+            [
+              -93.35253,
+              42.02722
+            ],
+            [
+              -93.35253,
+              42.02965
+            ],
+            [
+              -93.35217,
+              42.02974
+            ],
+            [
+              -93.35001,
+              42.02974
+            ],
+            [
+              -93.35001,
+              42.02992
+            ],
+            [
+              -93.34929,
+              42.02992
+            ],
+            [
+              -93.34938,
+              42.03027
+            ],
+            [
+              -93.34938,
+              42.0309
+            ],
+            [
+              -93.34929,
+              42.03117
+            ],
+            [
+              -93.34776,
+              42.03117
+            ],
+            [
+              -93.34776,
+              42.03405
+            ],
+            [
+              -93.34866,
+              42.03414
+            ]
+          ]
+        ]
+      },
+      "cropHistory": [
+        {
+          "year": 2018,
+          "crop": "corn"
+        },
+        {
+          "year": 2019,
+          "crop": "soybeans"
+        },
+        {
+          "year": 2020,
+          "crop": "corn"
+        },
+        {
+          "year": 2021,
+          "crop": "corn"
+        },
+        {
+          "year": 2022,
+          "crop": "corn"
+        },
+        {
+          "year": 2023,
+          "crop": "soybeans"
+        },
+        {
+          "year": 2024,
+          "crop": "corn"
+        },
+        {
+          "year": 2025,
+          "crop": "soybeans"
+        }
+      ],
+      "soil": {
+        "texture": "loam",
+        "drainage": "well drained",
+        "organicMatterPct": 2.7,
+        "waterHoldingIn": 8.9
+      },
+      "slopePct": 6.8,
+      "elevationM": 302,
+      "ndvi": [
+        {
+          "date": "2025-04-28",
+          "value": 0.21
+        },
+        {
+          "date": "2025-05-14",
+          "value": 0.22
+        },
+        {
+          "date": "2025-05-30",
+          "value": 0.26
+        },
+        {
+          "date": "2025-06-15",
+          "value": 0.38
+        },
+        {
+          "date": "2025-06-29",
+          "value": 0.56
+        },
+        {
+          "date": "2025-07-13",
+          "value": 0.72
+        },
+        {
+          "date": "2025-07-26",
+          "value": 0.81
+        },
+        {
+          "date": "2025-08-09",
+          "value": 0.85
+        },
+        {
+          "date": "2025-08-24",
+          "value": 0.84
+        },
+        {
+          "date": "2025-09-07",
+          "value": 0.71
+        },
+        {
+          "date": "2025-09-20",
+          "value": 0.45
+        },
+        {
+          "date": "2025-10-03",
+          "value": 0.28
+        }
+      ]
+    },
+    {
+      "id": "f4",
+      "name": "South 40",
+      "acres": 35.6,
+      "sourceId": "usda-191825001177241",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -93.35756,
+              42.01923
+            ],
+            [
+              -93.35756,
+              42.02138
+            ],
+            [
+              -93.35738,
+              42.02138
+            ],
+            [
+              -93.35738,
+              42.02255
+            ],
+            [
+              -93.36133,
+              42.02255
+            ],
+            [
+              -93.36196,
+              42.02246
+            ],
+            [
+              -93.36196,
+              42.02237
+            ],
+            [
+              -93.36232,
+              42.0221
+            ],
+            [
+              -93.36232,
+              42.01949
+            ],
+            [
+              -93.36223,
+              42.01932
+            ],
+            [
+              -93.36007,
+              42.01932
+            ],
+            [
+              -93.36007,
+              42.01923
+            ],
+            [
+              -93.35756,
+              42.01923
+            ]
+          ]
+        ]
+      },
+      "cropHistory": [
+        {
+          "year": 2018,
+          "crop": "soybeans"
+        },
+        {
+          "year": 2019,
+          "crop": "corn"
+        },
+        {
+          "year": 2020,
+          "crop": "corn"
+        },
+        {
+          "year": 2021,
+          "crop": "corn"
+        },
+        {
+          "year": 2022,
+          "crop": "soybeans"
+        },
+        {
+          "year": 2023,
+          "crop": "corn"
+        },
+        {
+          "year": 2024,
+          "crop": "soybeans"
+        },
+        {
+          "year": 2025,
+          "crop": "corn"
+        }
+      ],
+      "soil": {
+        "texture": "loam",
+        "drainage": "well drained",
+        "organicMatterPct": 3.2,
+        "waterHoldingIn": 9.6
+      },
+      "slopePct": 2.6,
+      "elevationM": 311,
+      "ndvi": null
+    },
+    {
+      "id": "f5",
+      "name": "East place",
+      "acres": 127.8,
+      "sourceId": "usda-191825004236532",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -93.29963,
+              42.00106
+            ],
+            [
+              -93.29999,
+              42.00079
+            ],
+            [
+              -93.29999,
+              42.00043
+            ],
+            [
+              -93.30026,
+              42.00043
+            ],
+            [
+              -93.30026,
+              41.99917
+            ],
+            [
+              -93.29999,
+              41.99917
+            ],
+            [
+              -93.29999,
+              41.99791
+            ],
+            [
+              -93.29963,
+              41.99756
+            ],
+            [
+              -93.29937,
+              41.99756
+            ],
+            [
+              -93.29937,
+              41.99729
+            ],
+            [
+              -93.29838,
+              41.99729
+            ],
+            [
+              -93.29838,
+              41.99702
+            ],
+            [
+              -93.29802,
+              41.99666
+            ],
+            [
+              -93.29748,
+              41.99666
+            ],
+            [
+              -93.29748,
+              41.99639
+            ],
+            [
+              -93.29676,
+              41.99567
+            ],
+            [
+              -93.29676,
+              41.9954
+            ],
+            [
+              -93.29586,
+              41.9954
+            ],
+            [
+              -93.2955,
+              41.99504
+            ],
+            [
+              -93.29487,
+              41.99378
+            ],
+            [
+              -93.2946,
+              41.9936
+            ],
+            [
+              -93.29424,
+              41.9936
+            ],
+            [
+              -93.29241,
+              41.99355
+            ],
+            [
+              -93.29173,
+              41.99351
+            ],
+            [
+              -93.29011,
+              41.99351
+            ],
+            [
+              -93.29011,
+              41.99791
+            ],
+            [
+              -93.29173,
+              41.99791
+            ],
+            [
+              -93.29173,
+              41.99854
+            ],
+            [
+              -93.29083,
+              41.99854
+            ],
+            [
+              -93.29083,
+              41.99818
+            ],
+            [
+              -93.29047,
+              41.99818
+            ],
+            [
+              -93.29047,
+              42.00052
+            ],
+            [
+              -93.29056,
+              42.00079
+            ],
+            [
+              -93.29371,
+              42.00079
+            ],
+            [
+              -93.29371,
+              42.00052
+            ],
+            [
+              -93.2946,
+              42.00052
+            ],
+            [
+              -93.29487,
+              42.00079
+            ],
+            [
+              -93.29963,
+              42.00079
+            ],
+            [
+              -93.29963,
+              42.00106
+            ]
+          ]
+        ]
+      },
+      "cropHistory": [
+        {
+          "year": 2018,
+          "crop": "corn"
+        },
+        {
+          "year": 2019,
+          "crop": "corn"
+        },
+        {
+          "year": 2020,
+          "crop": "corn"
+        },
+        {
+          "year": 2021,
+          "crop": "corn"
+        },
+        {
+          "year": 2022,
+          "crop": "corn"
+        },
+        {
+          "year": 2023,
+          "crop": "corn"
+        },
+        {
+          "year": 2024,
+          "crop": "corn"
+        },
+        {
+          "year": 2025,
+          "crop": "corn"
+        }
+      ],
+      "soil": {
+        "texture": "clay loam",
+        "drainage": "poorly drained",
+        "organicMatterPct": 5.9,
+        "waterHoldingIn": 11.5
+      },
+      "slopePct": 1.4,
+      "elevationM": 297,
+      "ndvi": [
+        {
+          "date": "2025-04-28",
+          "value": 0.22
+        },
+        {
+          "date": "2025-05-14",
+          "value": 0.26
+        },
+        {
+          "date": "2025-05-30",
+          "value": 0.32
+        },
+        {
+          "date": "2025-06-15",
+          "value": 0.51
+        },
+        {
+          "date": "2025-07-13",
+          "value": 0.84
+        },
+        {
+          "date": "2025-07-26",
+          "value": 0.86
+        },
+        {
+          "date": "2025-08-09",
+          "value": 0.84
+        },
+        {
+          "date": "2025-08-24",
+          "value": 0.77
+        },
+        {
+          "date": "2025-09-07",
+          "value": 0.62
+        },
+        {
+          "date": "2025-10-03",
+          "value": 0.31
+        }
+      ]
+    }
+  ],
+  "weather": {
+    "growingSeasonRainMm": [
+      {
+        "year": 1981,
+        "value": 598
+      },
+      {
+        "year": 1982,
+        "value": 571
+      },
+      {
+        "year": 1983,
+        "value": 548
+      },
+      {
+        "year": 1984,
+        "value": 512
+      },
+      {
+        "year": 1985,
+        "value": 536
+      },
+      {
+        "year": 1986,
+        "value": 655
+      },
+      {
+        "year": 1987,
+        "value": 520
+      },
+      {
+        "year": 1988,
+        "value": 392
+      },
+      {
+        "year": 1989,
+        "value": 451
+      },
+      {
+        "year": 1990,
+        "value": 668
+      },
+      {
+        "year": 1991,
+        "value": 574
+      },
+      {
+        "year": 1992,
+        "value": 563
+      },
+      {
+        "year": 1993,
+        "value": 742
+      },
+      {
+        "year": 1994,
+        "value": 498
+      },
+      {
+        "year": 1995,
+        "value": 541
+      },
+      {
+        "year": 1996,
+        "value": 587
+      },
+      {
+        "year": 1997,
+        "value": 482
+      },
+      {
+        "year": 1998,
+        "value": 612
+      },
+      {
+        "year": 1999,
+        "value": 579
+      },
+      {
+        "year": 2000,
+        "value": 478
+      },
+      {
+        "year": 2001,
+        "value": 532
+      },
+      {
+        "year": 2002,
+        "value": 504
+      },
+      {
+        "year": 2003,
+        "value": 471
+      },
+      {
+        "year": 2004,
+        "value": 609
+      },
+      {
+        "year": 2005,
+        "value": 518
+      },
+      {
+        "year": 2006,
+        "value": 527
+      },
+      {
+        "year": 2007,
+        "value": 633
+      },
+      {
+        "year": 2008,
+        "value": 712
+      },
+      {
+        "year": 2009,
+        "value": 596
+      },
+      {
+        "year": 2010,
+        "value": 701
+      },
+      {
+        "year": 2011,
+        "value": 523
+      },
+      {
+        "year": 2012,
+        "value": 405
+      },
+      {
+        "year": 2013,
+        "value": 548
+      },
+      {
+        "year": 2014,
+        "value": 662
+      },
+      {
+        "year": 2015,
+        "value": 619
+      },
+      {
+        "year": 2016,
+        "value": 627
+      },
+      {
+        "year": 2017,
+        "value": 491
+      },
+      {
+        "year": 2018,
+        "value": 684
+      },
+      {
+        "year": 2019,
+        "value": 641
+      },
+      {
+        "year": 2020,
+        "value": 438
+      },
+      {
+        "year": 2021,
+        "value": 476
+      },
+      {
+        "year": 2022,
+        "value": 459
+      },
+      {
+        "year": 2023,
+        "value": 431
+      },
+      {
+        "year": 2024,
+        "value": 602
+      },
+      {
+        "year": 2025,
+        "value": 566
+      }
+    ],
+    "avg30yrRainMm": 570
+  },
+  "county": {
+    "yields": {
+      "corn": [
+        {
+          "year": 1995,
+          "buPerAcre": 131
+        },
+        {
+          "year": 1996,
+          "buPerAcre": 148
+        },
+        {
+          "year": 1997,
+          "buPerAcre": 150
+        },
+        {
+          "year": 1998,
+          "buPerAcre": 157
+        },
+        {
+          "year": 1999,
+          "buPerAcre": 158
+        },
+        {
+          "year": 2000,
+          "buPerAcre": 155
+        },
+        {
+          "year": 2001,
+          "buPerAcre": 159
+        },
+        {
+          "year": 2002,
+          "buPerAcre": 172
+        },
+        {
+          "year": 2003,
+          "buPerAcre": 168
+        },
+        {
+          "year": 2004,
+          "buPerAcre": 185
+        },
+        {
+          "year": 2005,
+          "buPerAcre": 178
+        },
+        {
+          "year": 2006,
+          "buPerAcre": 172
+        },
+        {
+          "year": 2007,
+          "buPerAcre": 177
+        },
+        {
+          "year": 2008,
+          "buPerAcre": 178
+        },
+        {
+          "year": 2009,
+          "buPerAcre": 192
+        },
+        {
+          "year": 2010,
+          "buPerAcre": 168
+        },
+        {
+          "year": 2011,
+          "buPerAcre": 176
+        },
+        {
+          "year": 2012,
+          "buPerAcre": 141
+        },
+        {
+          "year": 2013,
+          "buPerAcre": 166
+        },
+        {
+          "year": 2014,
+          "buPerAcre": 194
+        },
+        {
+          "year": 2015,
+          "buPerAcre": 200
+        },
+        {
+          "year": 2016,
+          "buPerAcre": 210
+        },
+        {
+          "year": 2017,
+          "buPerAcre": 207
+        },
+        {
+          "year": 2018,
+          "buPerAcre": 198
+        },
+        {
+          "year": 2019,
+          "buPerAcre": 196
+        },
+        {
+          "year": 2020,
+          "buPerAcre": 184
+        },
+        {
+          "year": 2021,
+          "buPerAcre": 209
+        },
+        {
+          "year": 2022,
+          "buPerAcre": 200
+        },
+        {
+          "year": 2023,
+          "buPerAcre": 206
+        },
+        {
+          "year": 2024,
+          "buPerAcre": 212
+        },
+        {
+          "year": 2025,
+          "buPerAcre": 214
+        }
+      ],
+      "soybeans": [
+        {
+          "year": 1995,
+          "buPerAcre": 44
+        },
+        {
+          "year": 1996,
+          "buPerAcre": 45
+        },
+        {
+          "year": 1997,
+          "buPerAcre": 46
+        },
+        {
+          "year": 1998,
+          "buPerAcre": 48
+        },
+        {
+          "year": 1999,
+          "buPerAcre": 46
+        },
+        {
+          "year": 2000,
+          "buPerAcre": 47
+        },
+        {
+          "year": 2001,
+          "buPerAcre": 47
+        },
+        {
+          "year": 2002,
+          "buPerAcre": 51
+        },
+        {
+          "year": 2003,
+          "buPerAcre": 41
+        },
+        {
+          "year": 2004,
+          "buPerAcre": 51
+        },
+        {
+          "year": 2005,
+          "buPerAcre": 52
+        },
+        {
+          "year": 2006,
+          "buPerAcre": 52
+        },
+        {
+          "year": 2007,
+          "buPerAcre": 50
+        },
+        {
+          "year": 2008,
+          "buPerAcre": 49
+        },
+        {
+          "year": 2009,
+          "buPerAcre": 53
+        },
+        {
+          "year": 2010,
+          "buPerAcre": 54
+        },
+        {
+          "year": 2011,
+          "buPerAcre": 52
+        },
+        {
+          "year": 2012,
+          "buPerAcre": 46
+        },
+        {
+          "year": 2013,
+          "buPerAcre": 47
+        },
+        {
+          "year": 2014,
+          "buPerAcre": 55
+        },
+        {
+          "year": 2015,
+          "buPerAcre": 56
+        },
+        {
+          "year": 2016,
+          "buPerAcre": 60
+        },
+        {
+          "year": 2017,
+          "buPerAcre": 57
+        },
+        {
+          "year": 2018,
+          "buPerAcre": 56
+        },
+        {
+          "year": 2019,
+          "buPerAcre": 52
+        },
+        {
+          "year": 2020,
+          "buPerAcre": 55
+        },
+        {
+          "year": 2021,
+          "buPerAcre": 60
+        },
+        {
+          "year": 2022,
+          "buPerAcre": 58
+        },
+        {
+          "year": 2023,
+          "buPerAcre": 59
+        },
+        {
+          "year": 2024,
+          "buPerAcre": 61
+        },
+        {
+          "year": 2025,
+          "buPerAcre": 62
+        }
+      ],
+      "oats": [
+        {
+          "year": 1995,
+          "buPerAcre": 64
+        },
+        {
+          "year": 1996,
+          "buPerAcre": 67
+        },
+        {
+          "year": 1997,
+          "buPerAcre": 64
+        },
+        {
+          "year": 1998,
+          "buPerAcre": 63
+        },
+        {
+          "year": 1999,
+          "buPerAcre": 67
+        },
+        {
+          "year": 2000,
+          "buPerAcre": 69
+        },
+        {
+          "year": 2001,
+          "buPerAcre": 65
+        },
+        {
+          "year": 2002,
+          "buPerAcre": 66
+        },
+        {
+          "year": 2003,
+          "buPerAcre": 70
+        },
+        {
+          "year": 2004,
+          "buPerAcre": 69
+        },
+        {
+          "year": 2005,
+          "buPerAcre": 66
+        },
+        {
+          "year": 2006,
+          "buPerAcre": 69
+        },
+        {
+          "year": 2007,
+          "buPerAcre": 72
+        },
+        {
+          "year": 2008,
+          "buPerAcre": 70
+        },
+        {
+          "year": 2009,
+          "buPerAcre": 68
+        },
+        {
+          "year": 2010,
+          "buPerAcre": 72
+        },
+        {
+          "year": 2011,
+          "buPerAcre": 74
+        },
+        {
+          "year": 2012,
+          "buPerAcre": 60
+        },
+        {
+          "year": 2013,
+          "buPerAcre": 70
+        },
+        {
+          "year": 2014,
+          "buPerAcre": 75
+        },
+        {
+          "year": 2015,
+          "buPerAcre": 75
+        },
+        {
+          "year": 2016,
+          "buPerAcre": 71
+        },
+        {
+          "year": 2017,
+          "buPerAcre": 73
+        },
+        {
+          "year": 2018,
+          "buPerAcre": 78
+        },
+        {
+          "year": 2019,
+          "buPerAcre": 75
+        },
+        {
+          "year": 2020,
+          "buPerAcre": 73
+        },
+        {
+          "year": 2021,
+          "buPerAcre": 77
+        },
+        {
+          "year": 2022,
+          "buPerAcre": 79
+        },
+        {
+          "year": 2023,
+          "buPerAcre": 76
+        },
+        {
+          "year": 2024,
+          "buPerAcre": 75
+        },
+        {
+          "year": 2025,
+          "buPerAcre": 80
+        }
+      ],
+      "wheat": [
+        {
+          "year": 1995,
+          "buPerAcre": 46
+        },
+        {
+          "year": 1996,
+          "buPerAcre": 49
+        },
+        {
+          "year": 1997,
+          "buPerAcre": 47
+        },
+        {
+          "year": 1998,
+          "buPerAcre": 46
+        },
+        {
+          "year": 1999,
+          "buPerAcre": 49
+        },
+        {
+          "year": 2000,
+          "buPerAcre": 50
+        },
+        {
+          "year": 2001,
+          "buPerAcre": 48
+        },
+        {
+          "year": 2002,
+          "buPerAcre": 48
+        },
+        {
+          "year": 2003,
+          "buPerAcre": 52
+        },
+        {
+          "year": 2004,
+          "buPerAcre": 52
+        },
+        {
+          "year": 2005,
+          "buPerAcre": 49
+        },
+        {
+          "year": 2006,
+          "buPerAcre": 52
+        },
+        {
+          "year": 2007,
+          "buPerAcre": 55
+        },
+        {
+          "year": 2008,
+          "buPerAcre": 53
+        },
+        {
+          "year": 2009,
+          "buPerAcre": 51
+        },
+        {
+          "year": 2010,
+          "buPerAcre": 55
+        },
+        {
+          "year": 2011,
+          "buPerAcre": 56
+        },
+        {
+          "year": 2012,
+          "buPerAcre": 48
+        },
+        {
+          "year": 2013,
+          "buPerAcre": 54
+        },
+        {
+          "year": 2014,
+          "buPerAcre": 58
+        },
+        {
+          "year": 2015,
+          "buPerAcre": 58
+        },
+        {
+          "year": 2016,
+          "buPerAcre": 55
+        },
+        {
+          "year": 2017,
+          "buPerAcre": 57
+        },
+        {
+          "year": 2018,
+          "buPerAcre": 60
+        },
+        {
+          "year": 2019,
+          "buPerAcre": 59
+        },
+        {
+          "year": 2020,
+          "buPerAcre": 57
+        },
+        {
+          "year": 2021,
+          "buPerAcre": 60
+        },
+        {
+          "year": 2022,
+          "buPerAcre": 62
+        },
+        {
+          "year": 2023,
+          "buPerAcre": 60
+        },
+        {
+          "year": 2024,
+          "buPerAcre": 60
+        },
+        {
+          "year": 2025,
+          "buPerAcre": 63
+        }
+      ],
+      "alfalfa": [
+        {
+          "year": 1995,
+          "tonsPerAcre": 3.6
+        },
+        {
+          "year": 1996,
+          "tonsPerAcre": 3.8
+        },
+        {
+          "year": 1997,
+          "tonsPerAcre": 3.6
+        },
+        {
+          "year": 1998,
+          "tonsPerAcre": 3.5
+        },
+        {
+          "year": 1999,
+          "tonsPerAcre": 3.8
+        },
+        {
+          "year": 2000,
+          "tonsPerAcre": 3.9
+        },
+        {
+          "year": 2001,
+          "tonsPerAcre": 3.6
+        },
+        {
+          "year": 2002,
+          "tonsPerAcre": 3.7
+        },
+        {
+          "year": 2003,
+          "tonsPerAcre": 4.0
+        },
+        {
+          "year": 2004,
+          "tonsPerAcre": 3.9
+        },
+        {
+          "year": 2005,
+          "tonsPerAcre": 3.7
+        },
+        {
+          "year": 2006,
+          "tonsPerAcre": 3.9
+        },
+        {
+          "year": 2007,
+          "tonsPerAcre": 4.1
+        },
+        {
+          "year": 2008,
+          "tonsPerAcre": 3.9
+        },
+        {
+          "year": 2009,
+          "tonsPerAcre": 3.8
+        },
+        {
+          "year": 2010,
+          "tonsPerAcre": 4.1
+        },
+        {
+          "year": 2011,
+          "tonsPerAcre": 4.2
+        },
+        {
+          "year": 2012,
+          "tonsPerAcre": 3.1
+        },
+        {
+          "year": 2013,
+          "tonsPerAcre": 4.0
+        },
+        {
+          "year": 2014,
+          "tonsPerAcre": 4.2
+        },
+        {
+          "year": 2015,
+          "tonsPerAcre": 4.2
+        },
+        {
+          "year": 2016,
+          "tonsPerAcre": 4.0
+        },
+        {
+          "year": 2017,
+          "tonsPerAcre": 4.1
+        },
+        {
+          "year": 2018,
+          "tonsPerAcre": 4.4
+        },
+        {
+          "year": 2019,
+          "tonsPerAcre": 4.2
+        },
+        {
+          "year": 2020,
+          "tonsPerAcre": 4.1
+        },
+        {
+          "year": 2021,
+          "tonsPerAcre": 4.3
+        },
+        {
+          "year": 2022,
+          "tonsPerAcre": 4.5
+        },
+        {
+          "year": 2023,
+          "tonsPerAcre": 4.3
+        },
+        {
+          "year": 2024,
+          "tonsPerAcre": 4.2
+        },
+        {
+          "year": 2025,
+          "tonsPerAcre": 4.5
+        }
+      ],
+      "hay": [
+        {
+          "year": 1995,
+          "tonsPerAcre": 2.2
+        },
+        {
+          "year": 1996,
+          "tonsPerAcre": 2.3
+        },
+        {
+          "year": 1997,
+          "tonsPerAcre": 2.2
+        },
+        {
+          "year": 1998,
+          "tonsPerAcre": 2.2
+        },
+        {
+          "year": 1999,
+          "tonsPerAcre": 2.3
+        },
+        {
+          "year": 2000,
+          "tonsPerAcre": 2.3
+        },
+        {
+          "year": 2001,
+          "tonsPerAcre": 2.2
+        },
+        {
+          "year": 2002,
+          "tonsPerAcre": 2.2
+        },
+        {
+          "year": 2003,
+          "tonsPerAcre": 2.4
+        },
+        {
+          "year": 2004,
+          "tonsPerAcre": 2.4
+        },
+        {
+          "year": 2005,
+          "tonsPerAcre": 2.2
+        },
+        {
+          "year": 2006,
+          "tonsPerAcre": 2.3
+        },
+        {
+          "year": 2007,
+          "tonsPerAcre": 2.5
+        },
+        {
+          "year": 2008,
+          "tonsPerAcre": 2.4
+        },
+        {
+          "year": 2009,
+          "tonsPerAcre": 2.3
+        },
+        {
+          "year": 2010,
+          "tonsPerAcre": 2.4
+        },
+        {
+          "year": 2011,
+          "tonsPerAcre": 2.5
+        },
+        {
+          "year": 2012,
+          "tonsPerAcre": 1.8
+        },
+        {
+          "year": 2013,
+          "tonsPerAcre": 2.4
+        },
+        {
+          "year": 2014,
+          "tonsPerAcre": 2.5
+        },
+        {
+          "year": 2015,
+          "tonsPerAcre": 2.5
+        },
+        {
+          "year": 2016,
+          "tonsPerAcre": 2.4
+        },
+        {
+          "year": 2017,
+          "tonsPerAcre": 2.5
+        },
+        {
+          "year": 2018,
+          "tonsPerAcre": 2.6
+        },
+        {
+          "year": 2019,
+          "tonsPerAcre": 2.5
+        },
+        {
+          "year": 2020,
+          "tonsPerAcre": 2.4
+        },
+        {
+          "year": 2021,
+          "tonsPerAcre": 2.6
+        },
+        {
+          "year": 2022,
+          "tonsPerAcre": 2.7
+        },
+        {
+          "year": 2023,
+          "tonsPerAcre": 2.5
+        },
+        {
+          "year": 2024,
+          "tonsPerAcre": 2.5
+        },
+        {
+          "year": 2025,
+          "tonsPerAcre": 2.7
+        }
+      ]
+    },
+    "prices": {
+      "corn": 4.2,
+      "soybeans": 10.5,
+      "oats": 3.1,
+      "wheat": 5.3,
+      "alfalfa": 210,
+      "hay": 160
+    },
+    "costsPerAcre": {
+      "corn": 600,
+      "soybeans": 420,
+      "oats": 270,
+      "wheat": 330,
+      "alfalfa": 480,
+      "hay": 290
+    }
+  }
+}

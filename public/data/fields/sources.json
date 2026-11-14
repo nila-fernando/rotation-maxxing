@@ -1,0 +1,81 @@
+{
+  "generated": "2026-11-14",
+  "area": {
+    "name": "Story County, Iowa",
+    "fips": "19169",
+    "demo_point": {
+      "lat": 42.0255,
+      "lon": -93.3555
+    }
+  },
+  "layers": {
+    "usda": {
+      "file": "story-ia-usda.geojson",
+      "dataset": "USDA NASS Crop Sequence Boundaries (CSB)",
+      "version": "NationalCSB_2018-2025_rev23 (2025 edition, released 2026-03-27)",
+      "years": [
+        2018,
+        2019,
+        2020,
+        2021,
+        2022,
+        2023,
+        2024,
+        2025
+      ],
+      "urls": [
+        "https://www.nass.usda.gov/Research_and_Science/Crop-Sequence-Boundaries/",
+        "https://www.nass.usda.gov/sites/default/files/Research_and_Science/Crop-Sequence-Boundaries/datasets/NationalCSB_2018-2025_rev23.zip",
+        "https://www.nass.usda.gov/research-and-science/crop-sequence-boundaries/metadata-crop-sequence-boundaries-2025"
+      ],
+      "source_layer": "CSB1825.gdb / national1825 (CRS: NAD83 Conus Albers, equivalent to EPSG:5070)",
+      "licence": "Public domain (USDA NASS: 'provided to the public as is and are considered public domain and free to redistribute')",
+      "attribution": "Field boundaries: USDA NASS Crop Sequence Boundaries 2018-2025 (public domain)",
+      "crop_legend": "CDL2018..CDL2025 codes mapped to names using the full Cropland Data Layer category list (135 codes) from the data dictionary in NationalCSB_2018-2025_rev23_metadata.htm shipped inside the zip; no unmapped codes occurred",
+      "feature_count": 6027,
+      "file_size_bytes": 4466797,
+      "clipping": "Attribute filter STATEFIPS = '19' AND CNTYFIPS = '169' on the national layer (6027 source polygons, cross-checked against a bbox read). No geometric clipping; polygons are whole CSB fields as assigned to Story County by NASS.",
+      "processing": [
+        "Reprojected NAD83 Albers -> WGS84 lon/lat with PROJ (pyproj 3.7.1); NAD83 treated as WGS84 (no datum shift, ~1 m)",
+        "180 source polygons were invalid (self-intersections) and were repaired with GEOS make_valid, keeping polygonal parts",
+        "Coordinates rounded to 5 decimals (6 decimals gave 5.85 MB)",
+        "Redundant collinear vertices removed with a 0.01 m Douglas-Peucker tolerance in the source Albers CRS (a 1 m tolerance gave no meaningful further reduction, so it was not used)",
+        "Exterior rings counter-clockwise (RFC 7946); fields < 1 acre dropped (none were)",
+        "acres = geodesic area on the WGS84 ellipsoid of the published geometry (pyproj Geod), 1 decimal; agrees with NASS CSBACRES within 0.4 acre"
+      ]
+    },
+    "ai": {
+      "file": "story-ia-ai.geojson",
+      "dataset": "Fields of The World (FTW) - Global field boundaries, PRUE model on Sentinel-2 (vectors 'alpha', results-by-admin-conf)",
+      "version": "predictions/vectors/alpha, partition US_IA (fiboa GeoParquet with confidence column)",
+      "years": [
+        2025
+      ],
+      "urls": [
+        "https://source.coop/ftw/global-data",
+        "https://data.source.coop/ftw/global-data/llms.txt",
+        "https://data.source.coop/ftw/global-data/predictions/vectors/collection.json",
+        "https://data.source.coop/ftw/global-data/predictions/vectors/alpha/results-by-admin-conf/admin%3Acountry_code%3DUS/US_IA.json",
+        "https://data.source.coop/ftw/global-data/predictions/vectors/alpha/results-by-admin-conf/admin%3Acountry_code%3DUS/US_IA.parquet",
+        "https://www2.census.gov/geo/tiger/TIGER2024/COUNTY/tl_2024_us_county.zip"
+      ],
+      "licence": "CC-BY-4.0",
+      "attribution": "AI field boundaries: Fields of The World (Taylor Geospatial et al.), CC BY 4.0",
+      "citation": "Robinson, C. et al. (2026). The first global agricultural field boundary map at 10 m resolution. arXiv:2605.11055",
+      "feature_count": 3409,
+      "file_size_bytes": 7060950,
+      "clipping": "Kept 2025 predictions (determination:datetime year) whose bbox intersects the Story County outline, then only polygons whose centroid lies inside the Census TIGER/Line 2024 county polygon GEOID 19169 (3797 polygons); 388 under 1 acre dropped. Polygons are not cut at the county line.",
+      "processing": [
+        "Source geometry already WGS84 (EPSG:4326)",
+        "Coordinates rounded to 5 decimals (6 decimals gave 7.69 MB); simplification at 0.01 m and 1 m was tried but did not shrink the file (10 m raster stair-step outlines have no redundant vertices), so geometry is otherwise unmodified. File remains above the ~4 MB target.",
+        "Exterior rings counter-clockwise (RFC 7946)",
+        "acres = geodesic area on the WGS84 ellipsoid, 1 decimal",
+        "id = ai-<n>, numbered in order of the upstream FTW id"
+      ],
+      "notes": [
+        "confidence (0-100, FTW-derived from the 500 m confidence COG) is null for every field in Story County: per the dataset README, null means the field lies outside the modelled-confidence layer's coverage, not a low score",
+        "FTW polygons are remote-sensing field units (connected field pixels at 10 m), not legal parcels; 2024 predictions are also available in the same file"
+      ]
+    }
+  }
+}
