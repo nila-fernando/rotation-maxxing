@@ -98,7 +98,9 @@ describe('water use index', () => {
   it('uses kc x season months; fallow uses none; unknown kc is worst case', () => {
     const corn = waterUseIndex(crops, crops['corn']!, 'IA');
     expect(corn.value).toBeCloseTo(1.2 * (8 / 12)); // Handbook 628 IA: Apr-Nov
-    expect(waterUseIndex(crops, crops['fallow']!, 'IA').value).toBe(0);
+    const fallow = waterUseIndex(crops, crops['fallow']!, 'IA');
+    expect(fallow.value).toBeCloseTo(0.15 * (5 / 12)); // FAO-56 dry bare-soil minimum, lower bound
+    expect(fallow.gap).toMatch(/needs daily weather/);
     const rye = waterUseIndex(crops, crops['cereal-rye']!, 'IA');
     expect(rye.gap).toMatch(/not sourced/);
     expect(rye.value).toBeGreaterThanOrEqual(corn.value);
@@ -106,10 +108,9 @@ describe('water use index', () => {
 });
 
 describe('fallow is known values, not missing data', () => {
-  it('scores fallow as the BEST water user of every crop', () => {
+  it('scores fallow as the BEST water user of every crop (without daily weather: the dry bare-soil minimum)', () => {
     const fallow = waterUseIndex(crops, crops['fallow']!, 'IA');
-    expect(fallow.value).toBe(0);
-    expect(fallow.gap).toBeNull();
+    expect(fallow.value).toBeGreaterThan(0);
     for (const c of Object.values(crops)) {
       if (c.id !== 'fallow') expect(waterUseIndex(crops, c, 'IA').value).toBeGreaterThan(fallow.value);
     }

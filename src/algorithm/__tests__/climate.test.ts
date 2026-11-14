@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { parsePowerDaily } from '../../data/power';
 import { annualErosivity, dailyErosivity, scenariosFromDailyWeather } from '../climate';
 import { meanScenario } from '../yieldModel';
-import { evaluatePlan } from '../api';
+import { evaluatePlan, generatePlans } from '../api';
 import { planFromCrops } from '../plans';
 import { waterParamsFor } from '../waterParams';
 import type { Farm } from '../types';
@@ -80,16 +80,28 @@ describe('NASA POWER pool in the planner', () => {
     expect(t.sources).toEqual(expect.arrayContaining(['ah703', 'nasaPower', 'ssurgo']));
   });
 
-  it('scores water as the field\'s shortfall in inches from the water balance', () => {
+  it('scores dryland water as water used (inches), and fallow is no longer free', () => {
     const corn = r.paddocks[0]!.years[0]!;
-    const w = corn.terms.find((x) => x.label.startsWith('Water shortfall'))!;
+    const w = corn.terms.find((x) => x.label.startsWith('Water used'))!;
     expect(w.unit).toBe('in');
-    expect(corn.waterUseIndex).toBeGreaterThan(0);
-    expect(r.paddocks[0]!.years[2]!.waterUseIndex).toBe(0); // fallow
+    expect(corn.waterUseIndex).toBeGreaterThan(5);
+    const fallow = r.paddocks[0]!.years[2]!;
+    expect(fallow.waterUseIndex).toBeGreaterThan(2); // bare-soil evaporation, May-Sep
+    expect(fallow.waterUseIndex).toBeLessThan(corn.waterUseIndex);
+    expect(fallow.terms.find((x) => x.label.startsWith('Water lost'))!.sources).toContain('fao56Ch11');
   });
 
   it('varies yields with the observed weather years in Monte Carlo', () => {
     expect(r.expectedGM - r.p10GM).toBeGreaterThan(0);
+  });
+});
+
+describe('fallow with real weather (regression)', () => {
+  it('neutral priorities on Iowa ground after soy-soy no longer choose fallow', () => {
+    const f = gridFarm(4, 2, 40, { history: ['corn', 'soybeans', 'soybeans'], land: land({ awcInPerIn: 0.18, kFactor: 0.28, tFactorTonsPerAcre: 5 }) });
+    const pool = scenariosFromDailyWeather(f, weather).scenarios;
+    const r = generatePlans(f, NEUTRAL, {}, pool, { seed: 1, mcSamples: 60, rankJitterSamples: 30 });
+    expect(r.plans.priority.paddocks.flatMap((p) => p.sequence)).not.toContain('fallow');
   });
 });
 

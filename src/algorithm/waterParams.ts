@@ -55,6 +55,16 @@ export const WATER_SOURCES = {
     url: 'https://cropwatch.unl.edu/2018/rain-fed-corn-growth-and-development-following-cover-crops-2017/',
     covers: 'Rye uses about 1 in of soil water per 1,000 lb/ac biomass; a Nebraska trial used about 2 in',
   },
+  fao56Ch7: {
+    title: 'Allen et al. 1998, FAO-56 Ch. 7 (soil evaporation, eqs. 71-78; Table 19 REW/TEW by soil type; Table 18 Kcb 0.15 for bare soil)',
+    url: 'http://www.fao.org/4/x0490e/x0490e0c.htm',
+    covers: 'Bare-soil evaporation: Ke = Kr x Kc max, Kc max = 1.2 for bare soil (h = 0), stage 1/2 drying with REW and TEW',
+  },
+  fao56Ch11: {
+    title: 'Allen et al. 1998, FAO-56 Ch. 11 (ETc during non-growing periods)',
+    url: 'http://www.fao.org/4/x0490e/x0490e0h.htm',
+    covers: 'Bare soil in the dual-Kc approach: set Kcb and Kc min to 0 and run the daily evaporation balance',
+  },
   isuA120_2026: {
     title: 'Hart 2026, Iowa State Ag Decision Maker A1-20, Estimated Costs of Crop Production in Iowa-2026',
     url: 'https://www.extension.iastate.edu/agdm/crops/pdf/a1-20.pdf',
@@ -134,6 +144,26 @@ export function waterParamsFor(cropId: CropId): ResolvedWaterParams {
     row: raw.row,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Bare-soil (fallow) evaporation: FAO-56 Ch. 7 + Ch. 11
+// ---------------------------------------------------------------------------
+
+/**
+ * FAO-56 Table 19 REW and TEW (Ze = 0.10 m), midpoints of the printed ranges,
+ * for the row matching each of our texture classes (midpoint choice is design).
+ *   sand 2-7 / 6-12, loam 8-10 / 16-22, silt 8-11 / 22-26, clay 8-12 / 22-29 mm.
+ */
+export const BARE_SOIL_EVAPORATION = {
+  sand: { rewMm: 4.5, tewMm: 9 },
+  loam: { rewMm: 9, tewMm: 19 },
+  silt: { rewMm: 9.5, tewMm: 24 },
+  clay: { rewMm: 10, tewMm: 25.5 },
+} as const;
+/** Eq. 72 with plant height h = 0 (bare soil) and Kcb = 0 (Ch. 11): Kc max = 1.2. */
+export const KC_MAX_BARE_SOIL = 1.2;
+/** FAO-56 Kc min for dry bare soil (0.15-0.20; Table 18 Kcb ini 0.15). Used only when no daily weather is available. */
+export const KC_MIN_DRY_BARE_SOIL = 0.15;
 
 // ---------------------------------------------------------------------------
 // Erosion (RUSLE, AH703) and erosivity

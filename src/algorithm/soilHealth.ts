@@ -12,7 +12,8 @@
 import { BARE_MONTH_COVER_DISCOUNT, COVER_CROP_MONTHS, DIVERSITY_DEDUCTIONS, SOIL_INDEX_WEIGHTS } from './constants';
 import { isFallow, kcMid, nCreditMid, typicalYield } from './cropData';
 import { sourceIds } from './evidence';
-import { monthsOccupied, seasonFor } from './seasons';
+import { FALLBACK_SEASONS, monthsOccupied, seasonFor } from './seasons';
+import { KC_MIN_DRY_BARE_SOIL } from './waterParams';
 import { ALFALFA_C_FACTOR, COVER_REFERENCE, DEFAULT_TILLAGE, RESIDUE_FACTORS, residueRetention } from './soilData';
 import { cFactor, soilLoss } from './erosion';
 import type { CropId, CropTable, CropTraits, FieldWater, Paddock, Term, Tillage } from './types';
@@ -260,8 +261,10 @@ export interface FieldWaterInput {
  * Crops not in the water balance get the worst value on this field (flagged).
  */
 export function fieldWaterIndex(crop: CropTraits, field: FieldWaterInput): { value: number; term: Term; gap: string | null } {
-  const pick = (w: FieldWater) => (field.irrigated ? w.irrigationMm : w.deficitMm) / 25.4;
-  const sources = ['nasaPower', 'fao56Tables', 'fao66', 'ssurgo'];
+  // Irrigated: irrigation water applied. Dryland: water used from the field (crop ET or
+  // bare-soil evaporation). The shortfall itself is already in yield, so it isn't counted again.
+  const pick = (w: FieldWater) => (field.irrigated ? w.irrigationMm : w.etMm) / 25.4;
+  const sources = isFallow(crop) ? ['nasaPower', 'fao56Ch7', 'fao56Ch11', 'ssurgo'] : ['nasaPower', 'fao56Tables', 'fao66', 'ssurgo'];
   const w = field.byCrop[crop.id];
   if (!w) {
     const worst = Math.max(0, ...Object.values(field.byCrop).map(pick));
@@ -273,8 +276,10 @@ export function fieldWaterIndex(crop: CropTraits, field: FieldWaterInput): { val
   }
   const v = pick(w);
   const label = field.irrigated
-    ? `Irrigation needed: ${v.toFixed(1)} in of ${(w.demandMm / 25.4).toFixed(1)} in crop demand`
-    : `Water shortfall: ${v.toFixed(1)} in of ${(w.demandMm / 25.4).toFixed(1)} in crop demand not met by rain and soil`;
+    ? `Irrigation needed: ${v.toFixed(1)} in${isFallow(crop) ? ' (fallow)' : ` of ${(w.demandMm / 25.4).toFixed(1)} in crop demand`}`
+    : isFallow(crop)
+      ? `Water lost: ${v.toFixed(1)} in evaporated from bare fallow soil, May-Sep (FAO-56 bare-soil method)`
+      : `Water used: ${v.toFixed(1)} in crop ET (${(w.deficitMm / 25.4).toFixed(1)} in short of ${(w.demandMm / 25.4).toFixed(1)} in demand)`;
   return { value: v, term: { label, value: v, unit: 'in', basis: 'sourced', sources }, gap: null };
 }
 
@@ -289,10 +294,16 @@ export function waterUseIndex(
   state: string | undefined,
   field?: FieldWaterInput,
 ): { value: number; term: Term; gap: string | null } {
-  if (isFallow(crop)) {
-    return { value: 0, term: { label: 'Water use: fallow (no crop)', value: 0, unit: field ? 'in' : 'index', basis: 'sourced' }, gap: null };
-  }
   if (field) return fieldWaterIndex(crop, field);
+  if (isFallow(crop)) {
+    // No daily weather: FAO-56's dry bare-soil minimum over the summer window (a lower bound).
+    const v = KC_MIN_DRY_BARE_SOIL * (monthsOccupied(FALLBACK_SEASONS.summer) / 12);
+    return {
+      value: v,
+      term: { label: `Water use: fallow, dry bare-soil minimum (Kc ${KC_MIN_DRY_BARE_SOIL}; lower bound)`, value: v, unit: 'index', basis: 'sourced', sources: ['fao56Ch7'] },
+      gap: 'Fallow evaporation needs daily weather (NASA POWER); without it the dry bare-soil minimum is used, which understates fallow water loss.',
+    };
+  }
   const months = monthsOccupied(seasonFor(crop, state).span);
   const kc = kcMid(crop);
   if (kc === null) {

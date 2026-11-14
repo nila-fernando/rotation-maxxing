@@ -139,7 +139,7 @@ export function fieldWater(ctx: ModelContext, paddockId: PaddockId): FieldWaterI
   for (const c of crops) {
     const vals = Object.values(all).flatMap((r) => (r[c] ? [r[c]] : []));
     const avg = (k: keyof FieldWater) => vals.reduce((a, v) => a + v[k], 0) / vals.length;
-    byCrop[c] = { demandMm: avg('demandMm'), deficitMm: avg('deficitMm'), irrigationMm: avg('irrigationMm') };
+    byCrop[c] = { demandMm: avg('demandMm'), deficitMm: avg('deficitMm'), irrigationMm: avg('irrigationMm'), etMm: avg('etMm') };
   }
   return { byCrop, irrigated };
 }

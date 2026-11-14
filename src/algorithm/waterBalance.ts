@@ -146,6 +146,44 @@ export function simulateSeason(w: DailyWeather, crop: CropWaterParams, o: Season
   };
 }
 
+export interface BareSoilResult {
+  /** Evaporation from the bare surface over the window, mm. */
+  evaporationMm: number;
+  rainMm: number;
+  /** Reference ET over the window, mm (for context). */
+  et0Mm: number;
+}
+
+/**
+ * Daily evaporation from bare (fallow) soil, FAO-56 Ch. 11 dual-Kc method:
+ * Kcb = Kc min = 0, few = 1 (rain wets the whole bare surface), so
+ *   Ke  = Kr x Kc max                                  (eq. 71)
+ *   Kr  = 1 while De <= REW, else (TEW - De) / (TEW - REW)   (eq. 74)
+ *   De  = De - rain + E, kept within 0..TEW            (eqs. 77, 78; runoff and Tew ignored)
+ * The surface starts dry (De = TEW), as FAO-56 advises after a long dry spell.
+ */
+export function simulateBareSoil(
+  w: DailyWeather,
+  o: { startIndex: number; days: number; rewMm: number; tewMm: number; kcMax: number; et0?: number[] },
+): BareSoilResult | null {
+  if (o.startIndex < 0 || o.startIndex + o.days > w.dates.length) return null;
+  const et0 = o.et0 ?? dailyEt0(w);
+  let de = o.tewMm;
+  let evap = 0, rain = 0, ref = 0;
+  for (let d = 0; d < o.days; d++) {
+    const i = o.startIndex + d;
+    const r = w.rainMm[i]!;
+    rain += r;
+    ref += et0[i]!;
+    de = Math.max(0, de - r);
+    const kr = de <= o.rewMm ? 1 : Math.max(0, (o.tewMm - de) / (o.tewMm - o.rewMm));
+    const e = Math.min(kr * o.kcMax * et0[i]!, o.tewMm - de);
+    evap += e;
+    de = Math.min(o.tewMm, de + e);
+  }
+  return { evaporationMm: evap, rainMm: rain, et0Mm: ref };
+}
+
 /** Index of YYYY-MM-DD in the series, or -1. */
 export function indexOfDate(w: DailyWeather, iso: string): number {
   // Dates are consecutive days; jump straight there.

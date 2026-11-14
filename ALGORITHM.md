@@ -189,7 +189,7 @@ Special cases:
 **Water-use index.** Lower is better.
 
 With a NASA POWER weather pool, the water score is field-specific, in inches per season:
-- **dryland:** the shortfall between crop demand (ETm) and what rain and soil supplied (ETa)
+- **dryland:** water used from the field (crop ET, or bare-soil evaporation for fallow)
 - **irrigated:** irrigation water applied
 
 Otherwise it falls back to `kc mid × months occupied / 12`. Fallow is 0 (known: no crop). A crop missing from the water balance gets the field's worst value, and a gap is recorded.
@@ -412,14 +412,24 @@ With `NASS_API_KEY` set, it also pulls QuickStats county yields, detrends them l
 
 Without a key it lists the model's worst years. 2012 is the worst for every county and crop.
 
-## Open modelling issue: fallow and the water criterion
+## Fallow and the water score (FAO-56 bare-soil evaporation)
 
-Fallow is known to use no crop water, so it scores best on water. Under neutral priorities, on Iowa ground after a soy–soy history, the priority plan can choose fallow for a year. That is consistent with the objective, but agronomically odd where water isn't scarce.
+Fallow isn't free on water: bare soil evaporates. With daily weather, fallow follows FAO-56 Ch. 11 for non-growing periods. That is the Ch. 7 evaporation balance with Kcb = Kc min = 0:
 
-Options, pending a decision:
-1. count bare-soil evaporation for fallow (FAO-56 ch. 7, needs sourcing)
-2. score dryland water as shortfall per unit of production
-3. let the water slider default lower for dryland farms
+```
+Ke = Kr × Kc max,  Kc max = 1.2 (eq. 72 with h = 0)
+Kr = 1 while De ≤ REW, else (TEW − De)/(TEW − REW)          (eq. 74)
+De = De − rain + E, within 0..TEW                            (eqs. 77, 78)
+REW/TEW: FAO-56 Table 19 midpoints for the field's texture (sand 4.5/9, loam 9/19, silt 9.5/24, clay 10/25.5 mm)
+```
+
+Fallow is scored over the same May–Sep window as summer crops. The surface starts dry; runoff and frozen-soil effects are ignored.
+
+**The dryland water score is now water used**, in inches: crop ET, or bare-soil evaporation for fallow. The shortfall is no longer used, because it already lowers yield and would be counted twice. Irrigated farms are still scored on irrigation applied.
+
+**Without daily weather,** fallow gets FAO-56's dry bare-soil minimum (Kc 0.15). That is a lower bound, and it's flagged.
+
+**Result.** With NASA POWER weather, neutral priorities on an Iowa farm after soy–soy no longer choose fallow; fallow appears only when the water slider is high. With the no-weather fallback it can still appear.
 
 ## Everything a teammate can tune or needs to source
 
@@ -478,7 +488,7 @@ Also:
 | Season spans for states other than IA and KS | `cropTraitsUpdate.ts` `SEASONS` | Fallback spans used |
 | Ky for oats, barley, canola; FAO-56 stage lengths for canola, alfalfa, rye | `waterParams.ts` | Not sourced: these crops don't vary with weather |
 | RUSLE C, Kc and biomass for a rye cover crop | `waterParams.ts` | Not sourced |
-| Bare-soil evaporation for fallow | — | Not modelled (see open issue) |
+| Fallow evaporation without daily weather | `waterParams.ts` | Dry bare-soil minimum (lower bound) |
 | Fallow field operations cost | `cropData.ts` | Shown as $0 (gap) |
 | Crop height through the season | `shade.ts` | Linear ramp assumption |
 | Dry bean margin | `croptraits.ts` | National yield and US price vs a North Dakota cost: likely overstated |

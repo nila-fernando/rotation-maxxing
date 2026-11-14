@@ -122,8 +122,8 @@ export function meanScenario(pool: WeatherScenario[]): WeatherScenario {
       out.water[p] = {};
       for (const c of crops) {
         const vals = pool.flatMap((w) => (w.water?.[p]?.[c] ? [w.water[p][c]] : []));
-        const avg = (k: 'demandMm' | 'deficitMm' | 'irrigationMm') => vals.reduce((a, v) => a + v[k], 0) / vals.length;
-        out.water[p][c] = { demandMm: avg('demandMm'), deficitMm: avg('deficitMm'), irrigationMm: avg('irrigationMm') };
+        const avg = (k: 'demandMm' | 'deficitMm' | 'irrigationMm' | 'etMm') => vals.reduce((a, v) => a + v[k], 0) / vals.length;
+        out.water[p][c] = { demandMm: avg('demandMm'), deficitMm: avg('deficitMm'), irrigationMm: avg('irrigationMm'), etMm: avg('etMm') };
       }
     }
   }

@@ -12,8 +12,9 @@
  */
 import { CROP_BY_ID } from './croptraits';
 import { seasonFor } from './seasons';
-import { dailyEt0, indexOfDate, simulateSeason } from './waterBalance';
-import { DAILY_EROSIVITY, R_SI_TO_US, waterParamsFor } from './waterParams';
+import { FALLBACK_SEASONS } from './seasons';
+import { dailyEt0, indexOfDate, simulateBareSoil, simulateSeason } from './waterBalance';
+import { BARE_SOIL_EVAPORATION, DAILY_EROSIVITY, KC_MAX_BARE_SOIL, R_SI_TO_US, waterParamsFor } from './waterParams';
 import type { CropId, DailyWeather, Farm, FieldWater, PaddockId, WeatherScenario } from './types';
 
 export interface ClimateOptions {
@@ -102,10 +103,26 @@ export function scenariosFromDailyWeather(farm: Farm, weather: DailyWeather, opt
         yearRuns.push([`${p.id}|${cropId}`, {
           dry: dry.yieldRatio,
           actual: actual.yieldRatio,
-          water: { demandMm: actual.etmMm, deficitMm: actual.deficitMm, irrigationMm: actual.irrigationMm },
+          water: { demandMm: actual.etmMm, deficitMm: actual.deficitMm, irrigationMm: actual.irrigationMm, etMm: actual.etaMm },
         }]);
       }
       if (!complete) break;
+      // Fallow: FAO-56 bare-soil evaporation over the same summer window crops are scored on.
+      const bare = BARE_SOIL_EVAPORATION[p.land.texture];
+      const fs = FALLBACK_SEASONS.summer!;
+      const start = indexOfDate(weather, `${year}-${pad2(fs.plantMonth)}-01`);
+      const end = indexOfDate(weather, `${year}-${pad2(fs.harvestMonth)}-30`);
+      const fallow =
+        start >= 0 && end > start
+          ? simulateBareSoil(weather, { startIndex: start, days: end - start + 1, rewMm: bare.rewMm, tewMm: bare.tewMm, kcMax: KC_MAX_BARE_SOIL, et0 })
+          : null;
+      if (fallow) {
+        yearRuns.push([`${p.id}|fallow`, {
+          dry: 1,
+          actual: 1,
+          water: { demandMm: fallow.evaporationMm, deficitMm: 0, irrigationMm: 0, etMm: fallow.evaporationMm },
+        }]);
+      }
     }
     if (!complete) continue;
     usableYears.push(year);
@@ -134,6 +151,8 @@ export function scenariosFromDailyWeather(farm: Farm, weather: DailyWeather, opt
     for (const p of fieldsWithSoil) {
       byPaddock[p.id] = {};
       water[p.id] = {};
+      const fw = runs.get(`${p.id}|fallow`)?.get(year);
+      if (fw) water[p.id]!['fallow'] = fw.water;
       for (const cropId of cropIds) {
         const k = `${p.id}|${cropId}`;
         const r = runs.get(k)?.get(year);
@@ -154,7 +173,7 @@ export function scenariosFromDailyWeather(farm: Farm, weather: DailyWeather, opt
       byPaddock,
       water,
       ...(r !== undefined ? { erosivityR: r } : {}),
-      sources: [weather.source, 'fao56Tables', 'fao66'],
+      sources: [weather.source, 'fao56Tables', 'fao66', 'fao56Ch7', 'fao56Ch11'],
     };
   });
   const rs = Object.values(erosivity);

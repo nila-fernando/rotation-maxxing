@@ -257,6 +257,8 @@ export interface FieldWater {
   deficitMm: number;
   /** Irrigation applied, mm (irrigated farms). */
   irrigationMm: number;
+  /** Water actually used from the field, mm: crop ET, or bare-soil evaporation for fallow. */
+  etMm: number;
 }
 
 // ---------------------------------------------------------------------------

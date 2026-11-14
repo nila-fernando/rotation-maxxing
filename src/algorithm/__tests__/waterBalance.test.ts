@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parsePowerDaily } from '../../data/power';
-import { dailyEt0, indexOfDate, kcOnDay, rootDepthOnDay, simulateSeason, type CropWaterParams } from '../waterBalance';
+import { dailyEt0, indexOfDate, kcOnDay, rootDepthOnDay, simulateBareSoil, simulateSeason, type CropWaterParams } from '../waterBalance';
 
 // TEST-ONLY parameters shaped like a summer grain crop. NOT sourced data:
 // the engine is tested here; the sourced table lives in waterParams.ts.
@@ -55,5 +55,38 @@ describe('water balance (FAO-56 ch. 8 + FAO-33)', () => {
 
   it('returns null when the season runs past the data', () => {
     expect(simulateSeason(weather, TEST_CROP, { startIndex: indexOfDate(weather, '2014-11-01'), awc: 0.17 })).toBeNull();
+  });
+});
+
+describe('bare-soil (fallow) evaporation, FAO-56 Ch. 7 / Ch. 11', () => {
+  // Synthetic days: ET0 4.5 mm/day (FAO-56 Example 31), a soaking rain on day 1, then dry.
+  const days = 12;
+  const w = {
+    dates: Array.from({ length: days }, (_, i) => `2020-07-${String(i + 1).padStart(2, '0')}`),
+    tmaxC: [], tminC: [], solarMJ: [], rhPct: [], wind2m: [],
+    rainMm: [40, ...Array(days - 1).fill(0)],
+    latitude: 42, elevationM: 300, source: 'test',
+  } as unknown as import('../types').DailyWeather;
+  const et0 = Array(days).fill(4.5);
+  const loam = { rewMm: 9, tewMm: 20, kcMax: 1.2 }; // Example 31: TEW ~20, REW ~9, Kc max 1.20
+
+  it('evaporates at Kc max x ET0 on a wet day (Example 31 day 1: 5.4 mm with Kcb = 0)', () => {
+    const one = simulateBareSoil(w, { startIndex: 0, days: 1, ...loam, et0 })!;
+    expect(one.evaporationMm).toBeCloseTo(5.4);
+  });
+
+  it('slows once the surface dries past REW and never evaporates more than TEW from one wetting', () => {
+    const r = simulateBareSoil(w, { startIndex: 0, days, ...loam, et0 })!;
+    expect(r.evaporationMm).toBeLessThanOrEqual(20 + 1e-9);
+    expect(r.evaporationMm).toBeGreaterThan(9);
+    expect(r.evaporationMm).toBeLessThan(days * 5.4);
+  });
+
+  it('gives a plausible Iowa summer fallow loss, well below crop ET', () => {
+    const start = indexOfDate(weather, '2013-05-01');
+    const r = simulateBareSoil(weather, { startIndex: start, days: 153, ...loam, et0: dailyEt0(weather) })!;
+    expect(r.evaporationMm).toBeGreaterThan(0.2 * r.et0Mm);
+    expect(r.evaporationMm).toBeLessThan(r.rainMm + 20);
+    expect(r.evaporationMm).toBeLessThan(season(2013).etaMm);
   });
 });
