@@ -93,10 +93,25 @@ describe('stage 1 filters', () => {
 
   it('excludes crops that are too salt-sensitive', () => {
     const p = pad(['corn', 'soybeans', 'corn'], { land: land({ salinityECe: 6 }) });
-    const s = screenCrops(crops, p);
+    const s = screenCrops(crops, p, true, ['dry-beans']);
     expect(s.allowed).not.toContain('dry-beans');
     expect(s.allowed).toContain('barley');
     expect(s.exclusions.find((e) => e.cropId === 'dry-beans')?.kind).toBe('land');
+  });
+
+  it('gates dry beans, sunflower and canola on a confirmed buyer (recommendations only)', () => {
+    const p = pad(['corn', 'soybeans', 'corn']);
+    const none = screenCrops(crops, p);
+    for (const c of ['dry-beans', 'sunflower', 'canola']) {
+      expect(none.allowed).not.toContain(c);
+      const e = none.exclusions.find((x) => x.cropId === c)!;
+      expect(e.kind).toBe('buyer');
+      expect(e.reason).toMatch(/^Needs a confirmed buyer/);
+    }
+    const withBuyer = screenCrops(crops, p, true, ['sunflower']);
+    expect(withBuyer.allowed).toContain('sunflower');
+    expect(withBuyer.allowed).not.toContain('canola');
+    expect(screenCrops(crops, p, false).allowed).toContain('dry-beans'); // farmer's own plan
   });
 
   it('excludes crops with incomplete economics from recommendations only', () => {

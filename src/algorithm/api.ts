@@ -209,7 +209,8 @@ function buildResult(
     expectedGM: mc.expected,
     p10GM: mc.p10,
     probBeatsCurrent: extra.baseline && extra.baseline !== c ? probBeats(mc.totals, extra.baseline.mc!.totals) : null,
-    endOfHorizonValue: c.endValue,
+    nitrogenCarriedForward: c.endValue,
+    marginBreakdown: marginBreakdown(mc.expected, c.statics.reduce((a, s) => a + s.nCredit, 0), c.endValue),
     riskAdjustedProfit: riskAdjusted(mc.expected, mc.p10, extra.lambda) + c.endValue,
     soilHealth: c.soil,
     endSoilHealth: c.endSoil,
@@ -221,6 +222,24 @@ function buildResult(
     risks: [...new Set(risks)],
     informationGaps: [...new Set([...explained.gaps, ...extra.gaps])],
   };
+}
+
+function marginBreakdown(cashExpected: number, nCreditsUsed: number, carriedForward: number): Term[] {
+  return [
+    { label: 'Cash margin, expected over the plan', value: cashExpected, unit: '$', basis: 'input' },
+    {
+      label: '  of which: N credits used within the plan (fertiliser you don\'t buy)',
+      value: nCreditsUsed,
+      unit: '$',
+      basis: 'sourced',
+    },
+    {
+      label: 'Nitrogen carried forward: NOT cash (fertiliser saved after the plan, only if corn follows)',
+      value: carriedForward,
+      unit: '$',
+      basis: 'sourced',
+    },
+  ];
 }
 
 function currentCandidate(ctx: ModelContext, allowedByPaddock: Set<CropId>[]): { cand: Candidate; gaps: string[] } {
@@ -259,7 +278,7 @@ export function generatePlans(
   const lambda = riskLambda(priorities);
 
   // Stage 1: hard filters.
-  const screens = ctx.paddocks.map((p) => screenCrops(ctx.crops, p, true));
+  const screens = ctx.paddocks.map((p) => screenCrops(ctx.crops, p, true, ctx.prepared.farm.confirmedBuyers));
   const exclusions: Record<PaddockId, Exclusion[]> = {};
   ctx.paddocks.forEach((p, i) => (exclusions[p.id] = screens[i]!.exclusions));
   const allowed = screens.map((s) => s.allowed);
@@ -340,8 +359,8 @@ export function generatePlans(
     ...extraBase,
     rankStability: stabilityOf(maxProfit),
     reasons: [
-      `Highest expected gross margin of the plans checked: ${money(maxProfit.mc!.expected)} over ${ctx.horizon} years, ` +
-        `plus ${money(maxProfit.endValue)} of nitrogen left for next year. Bad-year (P10) margin: ${money(maxProfit.mc!.p10)}.`,
+      `Highest expected value of the plans checked: ${money(maxProfit.mc!.expected)} cash margin over ${ctx.horizon} years ` +
+        `(bad-year P10: ${money(maxProfit.mc!.p10)}), plus ${money(maxProfit.endValue)} of nitrogen carried forward, which is not cash.`,
     ],
   });
   const priorityResult = buildResult(ctx, 'priority', priority, explainPlan(ctx, priority.seqs), {
@@ -368,15 +387,15 @@ export function generatePlans(
 }
 
 export function priceOfPriorities(maxProfit: PlanResult, priority: PlanResult): PriceOfPriorities {
-  const mpTotal = maxProfit.expectedGM + maxProfit.endOfHorizonValue;
-  const prTotal = priority.expectedGM + priority.endOfHorizonValue;
+  const mpTotal = maxProfit.expectedGM + maxProfit.nitrogenCarriedForward;
+  const prTotal = priority.expectedGM + priority.nitrogenCarriedForward;
   const profitCost = mpTotal - prTotal;
   const soilHealthGain = priority.soilHealth - maxProfit.soilHealth;
   const waterUseReduction = maxProfit.waterUse - priority.waterUse;
   const p10Change = priority.p10GM - maxProfit.p10GM;
   const terms: Term[] = [
-    { label: 'Expected gross margin given up', value: -(maxProfit.expectedGM - priority.expectedGM), unit: '$', basis: 'design' },
-    { label: 'Change in N left for next year', value: priority.endOfHorizonValue - maxProfit.endOfHorizonValue, unit: '$', basis: 'design' },
+    { label: 'Cash margin given up (expected)', value: -(maxProfit.expectedGM - priority.expectedGM), unit: '$', basis: 'design' },
+    { label: 'Change in nitrogen carried forward (not cash)', value: priority.nitrogenCarriedForward - maxProfit.nitrogenCarriedForward, unit: '$', basis: 'design' },
     { label: 'Soil health index gained', value: soilHealthGain, unit: 'index 0-1', basis: 'design' },
     { label: 'Water-use index saved', value: waterUseReduction, unit: 'index', basis: 'design' },
     { label: 'Bad-year (P10) margin change', value: p10Change, unit: '$', basis: 'design' },
@@ -419,7 +438,7 @@ export function evaluatePlan(
   const lambda = riskLambda(priorities);
 
   const seqs = sequencesFromPlan(plan, ctx.paddocks, ctx.horizon, new Set(Object.keys(ctx.crops)));
-  const screens = ctx.paddocks.map((p) => screenCrops(ctx.crops, p, true));
+  const screens = ctx.paddocks.map((p) => screenCrops(ctx.crops, p, true, ctx.prepared.farm.confirmedBuyers));
   const bounds = createSearcher(ctx, buildSpaces(ctx, screens.map((s) => s.allowed))).bounds;
   const allowedSets = screens.map((s) => new Set(s.allowed));
 

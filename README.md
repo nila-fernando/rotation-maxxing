@@ -56,6 +56,9 @@ const farm: Farm = {
   ],
 };
 
+// Specialty crops (dry beans, sunflower, canola) are only recommended with a confirmed buyer:
+farm.confirmedBuyers = ['sunflower'];
+
 const priorities: Priorities = { profit: 60, soilHealth: 50, water: 30, risk: 40 }; // 0-100, 50 = neutral
 
 const market: Market = {
@@ -65,8 +68,10 @@ const market: Market = {
 const scenarios = syntheticWeatherForTestsOnly(1, 30, ['corn', 'soybeans', 'winter-wheat', 'oats']); // pass real scenarios in production
 
 const result = generatePlans(farm, priorities, market, scenarios, { seed: 42 });
-result.plans.priority.expectedGM;      // $ over 3 years
-result.plans.priority.p10GM;           // bad-year (10th percentile) $
+result.plans.priority.expectedGM;      // CASH margin, $ over 3 years
+result.plans.priority.p10GM;           // bad-year (10th percentile) cash margin $
+result.plans.priority.nitrogenCarriedForward; // N left after year 3, $: NOT cash
+result.plans.priority.marginBreakdown; // labelled cash vs carried-forward N
 result.plans.priority.paddocks[0]?.years[0]?.terms; // labelled explanation
 result.priceOfPriorities.summary;      // "Your priorities cost about $X ... In return: ..."
 result.exclusions['north40'];          // "why not X?" answers

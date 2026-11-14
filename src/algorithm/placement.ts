@@ -14,6 +14,7 @@ import {
 } from './constants';
 import { depletionP, getCrop, isFallow, kcMid, nCreditMid, salinityRelativeYield, typicalYield } from './cropData';
 import { prepareFarm } from './geometry';
+import { needsBuyerReason } from './filters';
 import { hardRuleViolation, rotationEffect } from './rotation';
 import { computeShade } from './shade';
 import { DEFAULT_TILLAGE } from './soilData';
@@ -78,6 +79,7 @@ export function checkPlacement(
 
   // land
   if (!paddock.availableCrops.includes(cropId)) add('land', 3, `${crop.name} seed isn't available locally for ${paddock.name}.`);
+  if (crop.requiresBuyer && !(prepared.farm.confirmedBuyers ?? []).includes(cropId)) add('market', 2, needsBuyerReason(crop.name));
   const sal = salinityRelativeYield(crop, paddock.land.salinityECe);
   if (sal.value < 1) {
     add(

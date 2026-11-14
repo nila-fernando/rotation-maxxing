@@ -17,6 +17,8 @@ All code is in `src/algorithm/`. Every function is pure: there is no I/O, no clo
 
 A `null` in the data is a real data gap. The code never fills it with a guess. The term is skipped, scores 0, or gets a worst-case or midpoint value (rules below), and the plan's `informationGaps` says so.
 
+**Fallow is not missing data.** It means "no crop", so its yield, operating cost, kc (water use) and height are known zeros (`FALLOW_KNOWN` in `cropData.ts`). That makes fallow the best water user and gives it zero revenue. Its field operations (weed control, tillage passes) are a real cost we haven't sourced, so that is flagged as a gap.
+
 ---
 
 ## Stage 1: hard filters (`filters.ts`, `rotation.ts`)
@@ -24,6 +26,7 @@ A `null` in the data is a real data gap. The code never fills it with a guess. T
 A crop is removed from a paddock, with a plain-English reason (the mascot's "why not X?"), when any of these holds:
 
 1. **Seed availability.** It isn't in `paddock.availableCrops`.
+1. **Contract-market gate.** This is a design decision, not data. Dry beans, sunflower and canola are marked `requiresBuyer: true` in `croptraits.ts`, because their local markets are thin. They are recommended only if they appear in `farm.confirmedBuyers`; otherwise the reason is "Needs a confirmed buyer". Farmers can still place them in their own plan, where `checkPlacement` raises a `market` warning.
 2. **Salinity.** Maas–Hoffman relative yield
    `relYield = 1 − slope/100 × (ECe − threshold)` (FAO-61) is below `SALINITY_MIN_RELATIVE_YIELD`.
    Crops rated tolerant with no published threshold (oats) are allowed, and that is recorded as a gap.
@@ -113,20 +116,25 @@ Both prices are scaled by the optional `outlook`. The effective price per paddoc
 
 ## Stage 4: shade as an edge effect (`shade.ts`, `seasons.ts`, `geometry.ts`)
 
-Northern hemisphere only. Latitude < 0 throws a clear error. A tall crop shades the neighbour on its **north** side:
+Northern hemisphere only. Latitude < 0 throws a clear error. A tall crop shades the neighbour on its **north** side, and only in months when **both crops are in the field and it is actually taller**:
 
 ```
-declination      = 23.44° × sin(360° × (284 + day) / 365), at the midpoint of the SHADED crop's season
+window           = shaded crop's sensitiveMonths if set (winter wheat: Apr–Jun), else its whole season
+declination      = 23.44° × sin(360° × (284 + day) / 365), at the midpoint of that window
 sun elevation    = 90° − latitude + declination                     (floored at MIN_SUN_ELEVATION_DEG)
-shadow length    = max(0, tall height − shaded height) / tan(elevation)
-shaded fraction  = shadow length × shared north edge (east-west width) / shaded paddock area
+height(month)    = max height × min(1, months since planting / (season length / 2)), 0 outside the season
+shadow(month)    = max(0, tall height(month) − shaded height(month)) / tan(elevation)
+shaded fraction  = mean over window months of shadow(month) × shared north edge (east-west width) / shaded paddock area
 yield loss       = shaded fraction × (1 − shade tolerance of the shaded crop)
 ```
+
+**Height ramp: an assumption.** Height grows linearly from 0 at planting to the FAO-56 maximum at mid-season, then stays there. It is not sourced and there are no per-crop growth curves. It is what makes corn (May–Sep) next to winter wheat (sensitive Apr–Jun) close to zero: corn is still short in May and June.
 
 **Inputs and units**
 - Polygons can be lat/lng. They are converted to local metres (equirectangular around the farm centroid, +y north), and adjacency is computed from shared edges.
 - Heights are FAO-56 maximum heights in metres.
-- The **season midpoint** comes from the crop's per-state span (Handbook 628, not entered yet). Until then it uses the fallback spans: summer crops May–Sep (about +21.5°), winter wheat Oct–Jul. The winter-wheat midpoint is about 1 March, which gives **about −8°, not the +5° first discussed**. Changing the rule to "critical period" would be a one-line change in `sunElevationForCrop`.
+- Seasons come from the crop's per-state span (Handbook 628, not entered yet). Until then they use the fallback spans: summer crops May–Sep (window midpoint mid-July, about +21.5°), winter wheat Oct–Jul.
+- Winter wheat has `sensitiveMonths` Apr–Jun (a design choice), so its sun angle comes from mid-May (about +19°), not its season midpoint around 1 March (about −8°).
 
 **Unknown shade tolerance** (currently every crop):
 - The deterministic search uses `SHADE_TOLERANCE_UNKNOWN_DETERMINISTIC` (0.5), labelled "Shade (tolerance unknown, midpoint assumed)".
@@ -210,6 +218,14 @@ Fallow is 0. An unknown kc (cereal rye) gets the table's worst value, and a gap 
    It is scaled by λ because concentration in one family is a risk. So at risk = 0 it is off, and the max-profit plan is never constrained by it.
 
 ## Stage 6: uncertainty (`montecarlo.ts`)
+
+### Cash vs nitrogen carried forward
+
+Every plan reports these separately so the farmer never reads leftover N as cash:
+- `expectedGM` / `p10GM`: the **cash** margin. This includes N credits used *within* the plan, which is fertiliser you don't buy.
+- `nitrogenCarriedForward`: the value of N left after the final year. It is **not cash**, and is realised only if corn follows.
+
+`marginBreakdown` gives both as labelled terms. Ranking (the max-profit pick and the profit criterion) uses their sum.
 
 Monte Carlo runs only on:
 - the top `MC_TOP_K` candidates by deterministic objective
@@ -305,20 +321,26 @@ Each plan also carries `objectiveTerms`, `reasons`, `risks` and `informationGaps
 | `MARKET_WARNING_EXCESS` | >0 / 25% / 50% | Share sold at the distant price |
 | `WATER_HIGH_KC` / `WATER_SENSITIVE_P` | 1.15 / 0.45 | Water lens on sandy soil |
 
-Also: `FALLBACK_SEASONS` in `seasons.ts` (summer May–Sep, winter Oct–Jul, perennial uses summer). These are used until Handbook 628 values are entered.
+Also:
+- `FALLBACK_SEASONS` in `seasons.ts`: summer May–Sep, winter Oct–Jul, perennial uses summer. Used until Handbook 628 values are entered.
+- The linear **height ramp** in `shade.ts` (`heightInMonth`): an assumption.
+- In `croptraits.ts`: `sensitiveMonths` (winter wheat Apr–Jun) and `requiresBuyer` (dry beans, sunflower, canola). Both are design decisions, not data.
 
 ### Placeholders and data to source
 
 | Item | Where | Status |
 |---|---|---|
 | Tillage residue retention (0.3 / 0.6 / 0.9) | `soilData.ts` `TILLAGE_RESIDUE_RETENTION` | **Placeholder**: a teammate will supply |
-| Season spans by state (IA, KS first) | `croptraits.ts` `season` | Empty: Ag Handbook 628 |
+| Season spans by state (IA, KS first) | `croptraits.ts` `season` | Empty: [Ag Handbook 628](https://esmis.nal.usda.gov/concern/publications/vm40xr56k) |
+| Fallow field operations cost | `cropData.ts` | Shown as $0 (gap) |
+| Crop height through the season | `shade.ts` | Linear ramp assumption |
+| Dry bean margin | `croptraits.ts` | National yield and US price vs a North Dakota cost: likely overstated |
 | Shade tolerance, frost, waterlogging, pH range | `croptraits.ts` | null for every crop |
 | Residue factors for canola, sunflower, dry beans, cotton, oats, barley, cereal rye | `soilData.ts` | Not sourced |
 | Alfalfa operating cost and establishment-year yield | `croptraits.ts`, `constants.ts` | Not sourced (alfalfa is not recommended until then) |
 | Cereal rye cover and fallow costs; rye height, roots, kc | `croptraits.ts` | Not sourced |
 | Magnitudes of the pest-repeat and white-mold penalties | `constants.ts` | Unsourced design values |
-| N credits to crops other than corn | — | Not modelled |
+| Legume N credits to wheat and sorghum | — | Not modelled (corn only) |
 | Corn/soy price correlation; 10+ years of prices for σ | — | Not modelled / 3 years only |
 | Slope suitability per crop | — | Not checked (only the erosion warning) |
 | State/county yields instead of national | `croptraits.ts` | National only |

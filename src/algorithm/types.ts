@@ -88,6 +88,12 @@ export interface Farm {
   latitude: number;
   /** Two-letter state code, used to look up season spans. */
   state?: StateCode;
+  /**
+   * Crops the farmer has a confirmed buyer or contract for. Crops marked
+   * `requiresBuyer` in croptraits.ts (dry beans, sunflower, canola) are only
+   * recommended when listed here.
+   */
+  confirmedBuyers?: CropId[];
   paddocks: Paddock[];
 }
 
@@ -179,7 +185,7 @@ export interface Warning {
 
 export interface Exclusion {
   cropId: CropId;
-  kind: 'availability' | 'land' | 'economics' | 'rotation';
+  kind: 'availability' | 'buyer' | 'land' | 'economics' | 'rotation';
   reason: string;
 }
 
@@ -211,15 +217,25 @@ export interface PlanResult {
   kind: 'current' | 'maxProfit' | 'priority' | 'custom';
   plan: Plan;
   paddocks: PaddockResult[];
-  /** Mean over Monte Carlo samples of farm gross margin summed over the horizon, $. */
+  /**
+   * Expected CASH margin: mean over Monte Carlo samples of farm gross margin
+   * summed over the horizon, $. Includes N credits used within the plan
+   * (fertiliser you don't have to buy). Excludes nitrogenCarriedForward.
+   */
   expectedGM: number;
-  /** 10th percentile of the same, $. */
+  /** 10th percentile of the same cash margin, $. */
   p10GM: number;
   /** Share of samples where this plan's GM beats the current rotation's (same weather and prices). */
   probBeatsCurrent: number | null;
-  /** $ value of the N left behind for the next (corn) crop. */
-  endOfHorizonValue: number;
-  /** expected - lambda * (expected - P10) + end-of-horizon value, $. */
+  /**
+   * NOT CASH: fertiliser value of the N left in the soil after the final
+   * year, $ (only realised if corn follows). Kept separate so leftover N is
+   * never read as cash.
+   */
+  nitrogenCarriedForward: number;
+  /** Cash margin vs nitrogen carried forward, as labelled terms for display. */
+  marginBreakdown: Term[];
+  /** expected - lambda * (expected - P10) + nitrogen carried forward, $ (used for ranking). */
   riskAdjustedProfit: number;
   /** Acre-weighted mean soilHealthIndex (0-1) over the horizon, final year weighted up. */
   soilHealth: number;

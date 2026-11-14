@@ -47,7 +47,7 @@ describe('generatePlans', () => {
   });
 
   it('max-profit has the highest expected GM + end value of the three', () => {
-    const v = (p: PlanResult) => p.expectedGM + p.endOfHorizonValue;
+    const v = (p: PlanResult) => p.expectedGM + p.nitrogenCarriedForward;
     expect(v(res.plans.maxProfit)).toBeGreaterThanOrEqual(v(res.plans.priority) - 1e-6);
     expect(res.priceOfPriorities.profitCost).toBeGreaterThanOrEqual(-1e-6);
   });
@@ -88,8 +88,29 @@ describe('generatePlans', () => {
     expect(res.exclusions['p00']!.find((e) => e.cropId === 'alfalfa')?.kind).toBe('economics');
   });
 
+  it('only recommends dry beans, sunflower and canola with a confirmed buyer', () => {
+    for (const p of [res.plans.maxProfit, res.plans.priority]) {
+      for (const c of ['dry-beans', 'sunflower', 'canola']) expect(cropsIn(p).has(c)).toBe(false);
+    }
+    expect(res.exclusions['p00']!.find((e) => e.cropId === 'dry-beans')?.reason).toMatch(/^Needs a confirmed buyer/);
+    const f = { ...gridFarm(2, 2, 40), confirmedBuyers: ['dry-beans'] };
+    const r = generatePlans(f, PROFIT_ONLY, {}, weather, fast);
+    expect(cropsIn(r.plans.maxProfit).has('dry-beans')).toBe(true);
+  });
+
+  it('splits cash margin from nitrogen carried forward', () => {
+    for (const p of Object.values(res.plans)) {
+      const [cash, , carried] = p.marginBreakdown;
+      expect(cash!.label).toMatch(/Cash margin/);
+      expect(cash!.value).toBe(p.expectedGM);
+      expect(carried!.label).toMatch(/NOT cash/);
+      expect(carried!.value).toBe(p.nitrogenCarriedForward);
+    }
+    expect(res.plans.maxProfit.reasons[0]).toMatch(/which is not cash/);
+  });
+
   it('the market cap stops the farm going all-in on the highest-margin crop', () => {
-    const f = gridFarm(2, 2, 40);
+    const f = { ...gridFarm(2, 2, 40), confirmedBuyers: ['dry-beans'] };
     const open = generatePlans(f, PROFIT_ONLY, {}, weather, fast);
     const allIn = open.plans.maxProfit.paddocks.every((p) => p.sequence[0] === 'dry-beans');
     expect(allIn).toBe(true); // without a market, dry beans everywhere in year 1
@@ -110,7 +131,7 @@ describe('generatePlans', () => {
   });
 
   it('the variety penalty stops the whole farm planting one family in one year', () => {
-    const f = gridFarm(2, 2, 40);
+    const f = { ...gridFarm(2, 2, 40), confirmedBuyers: ['dry-beans'] };
     const noRisk = generatePlans(f, PROFIT_ONLY, {}, weather, fast);
     expect(maxFamilyShare(noRisk.plans.priority)).toBe(1);
     const cautious = generatePlans(f, { profit: 100, soilHealth: 0, water: 0, risk: 100 }, {}, weather, fast);
@@ -271,6 +292,12 @@ describe('checkPlacement', () => {
     expect(w2.find((x) => x.lens === 'shade')?.reason).toMatch(/of north \(to the north\) in noon shade/);
     const w3 = checkPlacement(farm, empty, 'north', 0, 'corn'); // corn north of soybeans shades nothing on the farm
     expect(lenses(w3)).not.toContain('shade');
+  });
+
+  it('flags a buyer-gated crop without a confirmed buyer (market)', () => {
+    const w = checkPlacement(farm, empty, 'north', 1, 'canola');
+    expect(w.find((x) => x.lens === 'market')?.reason).toMatch(/^Needs a confirmed buyer/);
+    expect(checkPlacement({ ...farm, confirmedBuyers: ['canola'] }, empty, 'north', 1, 'canola').some((x) => x.lens === 'market')).toBe(false);
   });
 
   it('flags unavailable crops (land) and over-supply (market)', () => {

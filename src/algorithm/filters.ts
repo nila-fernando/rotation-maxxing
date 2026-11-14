@@ -18,20 +18,37 @@ export interface CropScreen {
 export const UNSOURCED_LAND_CHECKS =
   'pH, drainage/waterlogging, frost and slope suitability are not sourced for any crop yet, so only salinity is checked.';
 
+/** The "why not X?" text for the contract-market gate (requiresBuyer is a design decision). */
+export function needsBuyerReason(cropName: string): string {
+  return `Needs a confirmed buyer: ${cropName} is a specialty crop with thin local markets, so we only recommend it when you've marked a buyer or contract for it.`;
+}
+
 /**
  * Screen every crop the farmer listed for this paddock.
- * @param forRecommendation if true, crops whose gross margin can't be computed are excluded too.
+ * @param forRecommendation if true, crops whose gross margin can't be computed, and
+ *   requiresBuyer crops without a confirmed buyer, are excluded too.
+ * @param confirmedBuyers crops the farmer has a buyer/contract for (Farm.confirmedBuyers).
  */
-export function screenCrops(crops: CropTable, paddock: Paddock, forRecommendation = true): CropScreen {
+export function screenCrops(
+  crops: CropTable,
+  paddock: Paddock,
+  forRecommendation = true,
+  confirmedBuyers: readonly CropId[] = [],
+): CropScreen {
   const allowed: CropId[] = [];
   const exclusions: Exclusion[] = [];
   const gaps = new Set<string>([UNSOURCED_LAND_CHECKS]);
   const available = new Set(paddock.availableCrops);
+  const buyers = new Set(confirmedBuyers);
 
   for (const id of Object.keys(crops)) {
     const c = crops[id]!;
     if (!available.has(id)) {
       exclusions.push({ cropId: id, kind: 'availability', reason: `${c.name} seed isn't available locally for ${paddock.name}.` });
+      continue;
+    }
+    if (forRecommendation && c.requiresBuyer && !buyers.has(id)) {
+      exclusions.push({ cropId: id, kind: 'buyer', reason: needsBuyerReason(c.name) });
       continue;
     }
     const sal = salinityRelativeYield(c, paddock.land.salinityECe);
