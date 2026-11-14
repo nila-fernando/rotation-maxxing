@@ -9,7 +9,7 @@
  *
  * Also here: the water-use index (kc mid x share of the year occupied).
  */
-import { BARE_MONTH_COVER_DISCOUNT, DIVERSITY_DEDUCTIONS, SOIL_INDEX_WEIGHTS } from './constants';
+import { BARE_MONTH_COVER_DISCOUNT, COVER_CROP_MONTHS, DIVERSITY_DEDUCTIONS, SOIL_INDEX_WEIGHTS } from './constants';
 import { isFallow, kcMid, nCreditMid, typicalYield } from './cropData';
 import { sourceIds } from './evidence';
 import { monthsOccupied, seasonFor } from './seasons';
@@ -46,16 +46,24 @@ export function groundCover(
   yieldPerAcre: number | null,
   tillage: Tillage,
   state: string | undefined,
+  coverMonths = 0,
 ): ComponentScore & { bareMonths: number } {
   if (isFallow(crop)) {
+    if (coverMonths > 0) {
+      return {
+        value: 0,
+        term: term(`Ground cover: fallow, with a winter cover crop for ${coverMonths} months (cover not scored without a sourced C)`, 0, 'design'),
+        gap: null,
+        bareMonths: Math.max(0, 12 - coverMonths),
+      };
+    }
     return { value: 0, term: term('Ground cover: fallow leaves bare soil', 0, 'sourced', ['nrcsRusleCFactor']), gap: null, bareMonths: 12 };
   }
   if (crop.id === 'alfalfa') {
     const v = 1 - ALFALFA_C_FACTOR.value;
     return { value: v, term: term('Ground cover: alfalfa stand (NRCS C factor 0.020)', v, 'sourced', ['nrcsRusleCFactor']), gap: null, bareMonths: 0 };
   }
-  const season = seasonFor(crop, state);
-  const bareMonths = 12 - monthsOccupied(season.span);
+  const bareMonths = bareMonthsFor(crop, state, coverMonths);
   const f = RESIDUE_FACTORS[crop.id];
   const residue = residueLb(crop, yieldPerAcre);
   if (!f || residue === null) {
@@ -72,7 +80,8 @@ export function groundCover(
   return {
     value: v,
     term: term(
-      `Ground cover: ${Math.round(residue)} lb/ac residue x ${tillage} tillage retention (placeholder ${retention}), ${bareMonths} bare month(s)`,
+      `Ground cover: ${Math.round(residue)} lb/ac residue x ${tillage} tillage retention (placeholder ${retention}), ${bareMonths} bare month(s)` +
+        (coverMonths > 0 ? `, winter cover crop for ${coverMonths} months` : ''),
       v,
       'placeholder',
       ['nrcsVaResidue1'],
@@ -80,6 +89,18 @@ export function groundCover(
     gap: null,
     bareMonths,
   };
+}
+
+/** Months with no crop or cover in the field. A winter cover crop fills up to `coverMonths` of them. */
+export function bareMonthsFor(crop: CropTraits, state: string | undefined, coverMonths = 0): number {
+  if (crop.id === 'alfalfa') return 0;
+  const bare = isFallow(crop) ? 12 : 12 - monthsOccupied(seasonFor(crop, state).span);
+  return Math.max(0, bare - coverMonths);
+}
+
+/** Share of ground-cover credit kept after bare months (design: BARE_MONTH_COVER_DISCOUNT). */
+export function bareMonthFactor(bareMonths: number): number {
+  return 1 - (BARE_MONTH_COVER_DISCOUNT * bareMonths) / 12;
 }
 
 /** Largest residue among crops at their typical yield: the organic-matter proxy's reference. */
@@ -117,6 +138,8 @@ export interface SoilYearInput {
   refs: { residueLb: number; nCreditLb: number };
   /** Mean annual RUSLE R for the farm (from NASA POWER). Enables the erosion score. */
   erosivityR?: number;
+  /** A winter cover crop follows this year's crop. */
+  coverCrop?: boolean;
 }
 
 export interface SoilHealthResult {
@@ -137,6 +160,7 @@ export function soilHealthIndex(input: SoilYearInput): SoilHealthResult {
   const components: Term[] = [];
 
   // (a) ground cover / erosion. Preferred: RUSLE erosion vs tolerable loss (needs K, T, R).
+  const coverMonths = input.coverCrop ? COVER_CROP_MONTHS : 0;
   let cover: number;
   let erosionTonsPerAcre: number | null = null;
   const tillage = paddock.tillage ?? DEFAULT_TILLAGE;
@@ -146,12 +170,21 @@ export function soilHealthIndex(input: SoilYearInput): SoilHealthResult {
     cover = override.groundCover.value;
     components.push(override.groundCover);
   } else if (loss && loss.score !== null) {
-    cover = loss.score;
+    // RUSLE gives annual soil loss; bare months still discount the score (timing of cover, a design rule).
+    const bare = bareMonthsFor(crop, state, coverMonths);
+    cover = loss.score * bareMonthFactor(bare);
     components.push({ label: loss.label, value: loss.score, unit: 'index 0-1', basis: 'sourced', sources: loss.sources });
+    components.push({
+      label: `Bare months: ${bare}${coverMonths ? ` (winter cover crop covers ${coverMonths})` : ''}`,
+      value: cover - loss.score,
+      unit: 'index 0-1',
+      basis: 'design',
+    });
     gaps.push(...loss.gaps);
+    if (coverMonths) gaps.push('RUSLE C for a cereal rye cover crop is not sourced: its erosion benefit counts only through bare months.');
   } else {
     if (loss) gaps.push(...loss.gaps);
-    const gc = groundCover(crop, yieldPerAcre, paddock.tillage ?? DEFAULT_TILLAGE, state);
+    const gc = groundCover(crop, yieldPerAcre, paddock.tillage ?? DEFAULT_TILLAGE, state, coverMonths);
     cover = gc.value ?? 0;
     if (gc.term) components.push(gc.term);
     if (gc.gap) gaps.push(gc.gap);

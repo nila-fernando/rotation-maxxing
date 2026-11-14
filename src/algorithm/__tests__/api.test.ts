@@ -55,7 +55,9 @@ describe('generatePlans', () => {
   it('explains every year with labelled terms that add up to the gross margin', () => {
     const yr = res.plans.priority.paddocks[0]!.years[0]!;
     expect(yr.terms.find((t) => t.label === 'Gross margin')!.value).toBeCloseTo(yr.grossMarginPerAcre);
-    const money = yr.terms.filter((t) => t.label === 'Revenue' || t.label.startsWith('Operating cost') || t.label.startsWith('N credit'));
+    const money = yr.terms.filter(
+      (t) => t.label === 'Revenue' || t.label.startsWith('Operating cost') || t.label.startsWith('N credit') || t.label.startsWith('Winter cover crop'),
+    );
     expect(money.reduce((a, t) => a + t.value, 0)).toBeCloseTo(yr.grossMarginPerAcre);
   });
 

@@ -24,7 +24,7 @@ import {
   type CriteriaWeights,
 } from './objective';
 import { checkPlacement } from './placement';
-import { continueHistory, planFromSequences, sequencesFromPlan } from './plans';
+import { continueHistory, coversFromPlan, planFromSequences, sequencesFromPlan } from './plans';
 import { createRng, type Rng } from './rng';
 import { buildSpaces, createSearcher } from './search';
 import type {
@@ -94,7 +94,7 @@ function makeCandidate(ctx: ModelContext, seqs: CropId[][], statics: SequenceSta
     s.families.forEach((f, y) => fam[y]!.set(f, (fam[y]!.get(f) ?? 0) + acres));
   });
   return {
-    key: seqs.map((s) => s.join('>')).join('|'),
+    key: statics.map((s) => s.key).join('|'),
     seqs,
     statics,
     feasible,
@@ -215,7 +215,7 @@ function buildResult(
 
   return {
     kind,
-    plan: planFromSequences(ctx.paddocks.map((p) => p.id), c.seqs),
+    plan: planFromSequences(ctx.paddocks.map((p) => p.id), c.seqs, c.statics.map((s) => s.covers)),
     paddocks: explained.paddocks,
     expectedGM: mc.expected,
     p10GM: mc.p10,
@@ -323,7 +323,7 @@ export function generatePlans(
     const res = searcher.descend(searcher.standaloneStart(r.w), r.w, r.lambda, options.maxIterations, r.sw);
     iterations += res.iterations;
     const seqs = searcher.sequences(res.choice);
-    const statics = res.choice.map((o, p) => spaces[p]!.options[o]!);
+    const statics = res.statics;
     const c = makeCandidate(ctx, seqs, statics, true);
     if (!found.has(c.key)) found.set(c.key, c);
   }
@@ -333,7 +333,7 @@ export function generatePlans(
   // Keep the top K by deterministic farmer objective, plus the max-profit candidate.
   const detScore = (c: Candidate) => {
     const choice = c.seqs.map((s, p) => spaces[p]!.options.findIndex((o) => o.key === s.join('>')));
-    const crit = searcher.criteria(choice);
+    const crit = searcher.criteria(choice, c.statics);
     return scoreObjective(crit, bounds, w, lambda, false, sw).value;
   };
   const ranked = all
@@ -371,13 +371,13 @@ export function generatePlans(
   const extraBase = { bounds, w, lambda, baseline, gaps: commonGaps, switchWeight: sw };
   const wPct = `profit ${Math.round(w.profit * 100)}%, soil health ${Math.round(w.soilHealth * 100)}%, water ${Math.round(w.water * 100)}%`;
 
-  const currentResult = buildResult(ctx, 'current', baseline, explainPlan(ctx, baseline.seqs), {
+  const currentResult = buildResult(ctx, 'current', baseline, explainPlan(ctx, baseline.seqs, baseline.statics.map((x) => x.covers)), {
     ...extraBase,
     gaps: [...commonGaps, ...currentGaps],
     rankStability: stabilityOf(baseline),
     reasons: ['Your current rotation, continued: the repeating pattern of the last 3 years on each paddock.'],
   });
-  const maxProfitResult = buildResult(ctx, 'maxProfit', maxProfit, explainPlan(ctx, maxProfit.seqs), {
+  const maxProfitResult = buildResult(ctx, 'maxProfit', maxProfit, explainPlan(ctx, maxProfit.seqs, maxProfit.statics.map((x) => x.covers)), {
     ...extraBase,
     rankStability: stabilityOf(maxProfit),
     reasons: [
@@ -385,7 +385,7 @@ export function generatePlans(
         `(bad-year P10: ${money(maxProfit.mc!.p10)}), plus ${money(maxProfit.endValue)} of nitrogen carried forward, which is not cash.`,
     ],
   });
-  const priorityResult = buildResult(ctx, 'priority', priority, explainPlan(ctx, priority.seqs), {
+  const priorityResult = buildResult(ctx, 'priority', priority, explainPlan(ctx, priority.seqs, priority.statics.map((x) => x.covers)), {
     ...extraBase,
     rankStability: stabilityOf(priority),
     reasons: [
@@ -451,7 +451,7 @@ function replanningInfo(
   const info: Replanning = { changedShare: priority.switchShare, changes: planChanges(ctx, priority.seqs) };
   if (unconstrained !== priority) {
     info.withoutSwitchingCost = {
-      plan: planFromSequences(ctx.paddocks.map((p) => p.id), unconstrained.seqs),
+      plan: planFromSequences(ctx.paddocks.map((p) => p.id), unconstrained.seqs, unconstrained.statics.map((s) => s.covers)),
       changes: planChanges(ctx, unconstrained.seqs),
       expectedGMGain: unconstrained.mc!.expected - priority.mc!.expected,
       objectiveGain: objectiveOf(unconstrained, bounds, w, lambda).value - objectiveOf(priority, bounds, w, lambda).value,
@@ -512,11 +512,12 @@ export function evaluatePlan(
   const lambda = riskLambda(priorities);
 
   const seqs = sequencesFromPlan(plan, ctx.paddocks, ctx.horizon, new Set(Object.keys(ctx.crops)));
+  const covers = coversFromPlan(plan, ctx.paddocks, ctx.horizon, ctx.crops);
   const screens = ctx.paddocks.map((p) => screenCrops(ctx.crops, p, true, ctx.prepared.farm.confirmedBuyers, ctx.prepared.farm.constraints?.missingEquipment));
   const bounds = createSearcher(ctx, buildSpaces(ctx, screens.map((s) => s.allowed))).bounds;
   const allowedSets = screens.map((s) => new Set(s.allowed));
 
-  const statics = ctx.paddocks.map((p, i) => sequenceStatics(ctx, p, seqs[i]!));
+  const statics = ctx.paddocks.map((p, i) => sequenceStatics(ctx, p, seqs[i]!, undefined, covers[i]));
   const mine = makeCandidate(ctx, seqs, statics, true);
   const { cand: current, gaps: currentGaps } = currentCandidate(ctx, allowedSets);
   const draws = drawSamples(ctx, options.mcSamples ?? MC_SAMPLES, rng);
@@ -534,7 +535,7 @@ export function evaluatePlan(
     });
   });
 
-  const explained = explainPlan(ctx, seqs);
+  const explained = explainPlan(ctx, seqs, covers);
   const res = buildResult(ctx, 'custom', mine, explained, {
     bounds,
     w,

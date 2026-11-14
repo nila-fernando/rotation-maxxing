@@ -103,6 +103,15 @@ export const SOIL_INDEX_WEIGHTS = {
 /** Share of residue cover lost per fully bare month in the year (0-1). Design choice. */
 export const BARE_MONTH_COVER_DISCOUNT = 0.5;
 
+/** The crop offered in the winter cover-crop slot. */
+export const COVER_CROP_ID = 'cereal-rye';
+/**
+ * Months a winter cover crop holds the ground between a summer crop's harvest
+ * and the next planting (Oct-Apr). A design choice; it removes that many bare
+ * months from the ground-cover component.
+ */
+export const COVER_CROP_MONTHS = 7;
+
 /** Diversity component: deductions when this year repeats last year's family / a pest group. */
 export const DIVERSITY_DEDUCTIONS = {
   sameFamily: 0.5,

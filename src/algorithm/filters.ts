@@ -78,6 +78,14 @@ export function screenCrops(
       });
       continue;
     }
+    if (forRecommendation && c.family === 'cover') {
+      exclusions.push({
+        cropId: id,
+        kind: 'rotation',
+        reason: `${c.name} is offered as a winter cover crop between main crops, not as a main crop.`,
+      });
+      continue;
+    }
     if (forRecommendation) {
       const econ = economicsStatus(c);
       if (econ.status === 'incomplete') {

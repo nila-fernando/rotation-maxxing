@@ -11,7 +11,7 @@
  */
 import { MAX_DESCENT_ITERATIONS } from './constants';
 import { enumerateSequences } from './filters';
-import { farmRevenue, sequenceStatics, type ModelContext, type SequenceStatics } from './farmModel';
+import { applyCovers, farmRevenue, sequenceStatics, type ModelContext, type SequenceStatics } from './farmModel';
 import { scoreObjective, varietyExcess, type CriteriaValues, type CriteriaWeights } from './objective';
 import type { CropId, Paddock, ReferenceBounds } from './types';
 
@@ -58,11 +58,12 @@ export function referenceBounds(ctx: ModelContext, spaces: PaddockSpace[]): Refe
     const share = s.paddock.acres / ctx.totalAcres;
     let pMin = Infinity, pMax = -Infinity, sMin = Infinity, sMax = -Infinity, wMin = Infinity, wMax = -Infinity;
     for (const o of s.options) {
+      const allCovers = applyCovers(o, o.seq.map(() => true));
       const p = standaloneProfit(ctx, s, o);
-      pMin = Math.min(pMin, p);
+      pMin = Math.min(pMin, p, standaloneProfit(ctx, s, allCovers));
       pMax = Math.max(pMax, p);
       sMin = Math.min(sMin, o.soil);
-      sMax = Math.max(sMax, o.soil);
+      sMax = Math.max(sMax, allCovers.soil);
       wMin = Math.min(wMin, o.water);
       wMax = Math.max(wMax, o.water);
     }
@@ -85,10 +86,20 @@ export interface SearchState {
 export interface Searcher {
   spaces: PaddockSpace[];
   bounds: ReferenceBounds;
-  /** Expected-value criteria for a full choice vector (shade and market included). */
-  criteria(choice: number[]): CriteriaValues & { grossMargin: number; endValue: number };
-  /** Coordinate descent from a start point under the given weights. */
-  descend(start: number[], w: CriteriaWeights, lambda: number, maxIterations?: number, switchWeight?: number): { choice: number[]; iterations: number };
+  /** Expected-value criteria for a full choice vector (shade and market included); statics default to no cover crops. */
+  criteria(choice: number[], statics?: SequenceStatics[]): CriteriaValues & { grossMargin: number; endValue: number };
+  /**
+   * Coordinate descent from a start point under the given weights. Cover crops
+   * are chosen per sequence and year for these weights (their effects stay
+   * within the paddock-year, so the choice is independent per year).
+   */
+  descend(
+    start: number[],
+    w: CriteriaWeights,
+    lambda: number,
+    maxIterations?: number,
+    switchWeight?: number,
+  ): { choice: number[]; statics: SequenceStatics[]; iterations: number };
   /** Per-paddock best option ignoring farm-wide effects (a good starting point). */
   standaloneStart(w: CriteriaWeights): number[];
   sequences(choice: number[]): CropId[][];
@@ -137,14 +148,36 @@ export function createSearcher(ctx: ModelContext, spaces: PaddockSpace[], bounds
 
   const sequences = (choice: number[]): CropId[][] => choice.map((o, p) => spaces[p]!.options[o]!.seq);
 
-  function criteriaFrom(choice: number[], yields: number[][]): CriteriaValues & { grossMargin: number; endValue: number } {
+  /** Each sequence with the cover crops worth their cost under weights w. */
+  function withBestCovers(w: CriteriaWeights): SequenceStatics[][] {
+    const rP = refBounds.profit.best - refBounds.profit.worst || 1;
+    const rS = refBounds.soilHealth.best - refBounds.soilHealth.worst || 1;
+    return spaces.map((s) => {
+      const share = s.paddock.acres / ctx.totalAcres;
+      return s.options.map((o) => {
+        if (o.coverOptions.length === 0) return o;
+        const mask = o.seq.map(() => false);
+        for (const c of o.coverOptions) {
+          mask[c.year] = (w.soilHealth * share * c.soilGain) / rS > (w.profit * c.cost) / rP;
+        }
+        return mask.some(Boolean) ? applyCovers(o, mask) : o;
+      });
+    });
+  }
+
+  /** Criteria for a choice; `pick` gives the statics used for paddock p (default: the option, no covers). */
+  function criteriaFrom(
+    choice: number[],
+    yields: number[][],
+    pick: (p: number) => SequenceStatics = (p) => spaces[p]!.options[choice[p]!]!,
+  ): CriteriaValues & { grossMargin: number; endValue: number } {
     counter.evaluations++;
     const seqs = sequences(choice);
     const revenue = farmRevenue(ctx, seqs, yields);
     let cost = 0, credit = 0, endValue = 0, soil = 0, water = 0, switched = 0;
     const fam: Map<string, number>[] = Array.from({ length: Y }, () => new Map());
     for (let p = 0; p < P; p++) {
-      const o = spaces[p]!.options[choice[p]!]!;
+      const o = pick(p);
       const acres = spaces[p]!.paddock.acres;
       const share = acres / ctx.totalAcres;
       cost += o.cost;
@@ -170,7 +203,9 @@ export function createSearcher(ctx: ModelContext, spaces: PaddockSpace[], bounds
   function descend(start: number[], w: CriteriaWeights, lambda: number, maxIterations = MAX_DESCENT_ITERATIONS, switchWeight = 0) {
     const choice = start.slice();
     const yields = choice.map((_, p) => row(p, choice));
-    const score = () => scoreObjective(criteriaFrom(choice, yields), refBounds, w, lambda, false, switchWeight).value;
+    const opts = withBestCovers(w);
+    const pickEff = (p: number) => opts[p]![choice[p]!]!;
+    const score = () => scoreObjective(criteriaFrom(choice, yields, pickEff), refBounds, w, lambda, false, switchWeight).value;
     let iterations = 0;
     for (; iterations < maxIterations; iterations++) {
       let changed = false;
@@ -201,7 +236,7 @@ export function createSearcher(ctx: ModelContext, spaces: PaddockSpace[], bounds
         break;
       }
     }
-    return { choice, iterations };
+    return { choice, statics: choice.map((o, p) => opts[p]![o]!), iterations };
   }
 
   function standaloneStart(w: CriteriaWeights): number[] {
@@ -227,7 +262,8 @@ export function createSearcher(ctx: ModelContext, spaces: PaddockSpace[], bounds
   return {
     spaces,
     bounds: refBounds,
-    criteria: (choice) => criteriaFrom(choice, choice.map((_, p) => row(p, choice))),
+    criteria: (choice, statics) =>
+      criteriaFrom(choice, choice.map((_, p) => row(p, choice)), statics ? (p) => statics[p]! : undefined),
     descend,
     standaloneStart,
     sequences,
