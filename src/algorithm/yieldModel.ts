@@ -84,19 +84,47 @@ export function withCalibration(inner: YieldModel): YieldModel {
   };
 }
 
-/** The mean weather year of a pool: each crop's average multiplier. Used for expected values. */
-export function meanScenario(pool: WeatherScenario[]): WeatherScenario {
-  const sums: Record<CropId, { s: number; n: number }> = {};
-  for (const w of pool) {
-    for (const [id, m] of Object.entries(w.multipliers)) {
+function meanOf(records: Record<string, number>[]): Record<string, number> {
+  const sums: Record<string, { s: number; n: number }> = {};
+  for (const r of records) {
+    for (const [id, m] of Object.entries(r)) {
       const e = (sums[id] ??= { s: 0, n: 0 });
       e.s += m;
       e.n++;
     }
   }
-  const multipliers: Record<CropId, number> = {};
-  for (const [id, { s, n }] of Object.entries(sums)) multipliers[id] = s / n;
-  return { label: 'Mean of supplied weather years', multipliers };
+  const out: Record<string, number> = {};
+  for (const [id, { s, n }] of Object.entries(sums)) out[id] = s / n;
+  return out;
+}
+
+/**
+ * The mean weather year of a pool: each crop's (and each field's) average
+ * multiplier and water numbers. Used for every expected value.
+ */
+export function meanScenario(pool: WeatherScenario[]): WeatherScenario {
+  const out: WeatherScenario = { label: 'Mean of supplied weather years', multipliers: meanOf(pool.map((w) => w.multipliers)) };
+  const sources = [...new Set(pool.flatMap((w) => w.sources ?? []))];
+  if (sources.length) out.sources = sources;
+  const paddockIds = [...new Set(pool.flatMap((w) => Object.keys(w.byPaddock ?? {})))];
+  if (paddockIds.length) {
+    out.byPaddock = {};
+    for (const p of paddockIds) out.byPaddock[p] = meanOf(pool.flatMap((w) => (w.byPaddock?.[p] ? [w.byPaddock[p]] : [])));
+  }
+  const waterIds = [...new Set(pool.flatMap((w) => Object.keys(w.water ?? {})))];
+  if (waterIds.length) {
+    out.water = {};
+    for (const p of waterIds) {
+      const crops = [...new Set(pool.flatMap((w) => Object.keys(w.water?.[p] ?? {})))];
+      out.water[p] = {};
+      for (const c of crops) {
+        const vals = pool.flatMap((w) => (w.water?.[p]?.[c] ? [w.water[p][c]] : []));
+        const avg = (k: 'demandMm' | 'deficitMm' | 'irrigationMm') => vals.reduce((a, v) => a + v[k], 0) / vals.length;
+        out.water[p][c] = { demandMm: avg('demandMm'), deficitMm: avg('deficitMm'), irrigationMm: avg('irrigationMm') };
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -160,7 +188,7 @@ export class TraitYieldModel implements YieldModel {
       });
     }
 
-    const w = weather.multipliers[cropId];
+    const w = weather.byPaddock?.[paddock.id]?.[cropId] ?? weather.multipliers[cropId];
     if (w === undefined) gaps.push(`No weather multiplier for ${crop.name} in the supplied scenarios; using 1.`);
     const weatherFactor = w ?? 1;
     if (weatherFactor !== 1) {

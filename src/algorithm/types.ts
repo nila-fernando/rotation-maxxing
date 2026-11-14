@@ -235,9 +235,23 @@ export type Market = Record<CropId, MarketEntry>;
  */
 export interface WeatherScenario {
   label?: string;
+  /** Farm-wide yield multiplier per crop (1 = average year). */
   multipliers: Record<CropId, number>;
+  /** Field-specific multipliers (soils differ); take precedence over `multipliers`. */
+  byPaddock?: Record<PaddockId, Record<CropId, number>>;
+  /** Field water results from the water balance, per paddock and crop. */
+  water?: Record<PaddockId, Record<CropId, FieldWater>>;
   /** Evidence for this year, e.g. ['nasaPower', 'fao56', 'fao33']. */
   sources?: string[];
+}
+
+export interface FieldWater {
+  /** Crop water demand over the season, mm. */
+  demandMm: number;
+  /** Demand not met (dryland stress), mm. */
+  deficitMm: number;
+  /** Irrigation applied, mm (irrigated farms). */
+  irrigationMm: number;
 }
 
 // ---------------------------------------------------------------------------
