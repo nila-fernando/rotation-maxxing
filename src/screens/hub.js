@@ -32,6 +32,7 @@ const OUTLINE_LIFT = 0.05; // the outline floats just above the soil
 const HOVER_COLOR = 0xfffaf0;
 const SELECT_COLOR = 0xffd35c;
 const EDGE_COLOR = 0x4a3020;
+const MARK_CHANGED = 0x8fd8a4; // a plan view's "this field changes" outline (src/screens/planFutures.js)
 // the field list is a bottom sheet on narrow, tall-enough screens (same query as src/styles.css);
 // everywhere else (including landscape phones) it's the left sidebar
 export const SHEET_QUERY = '(max-width: 900px) and (min-height: 521px)';
@@ -226,6 +227,10 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
       hoverEdge: new LineMaterial({ ...lineOpts, color: EDGE_COLOR, linewidth: 7, opacity: 0.55 }),
       select: new LineMaterial({ ...lineOpts, color: SELECT_COLOR, linewidth: 4.5 }),
       selectEdge: new LineMaterial({ ...lineOpts, color: EDGE_COLOR, linewidth: 8, opacity: 0.6 }),
+      // marks a plan view puts on fields (same shader as the others, so nothing new to compile):
+      // green where the crop changes, a fainter green where only the money does
+      markCrop: new LineMaterial({ ...lineOpts, color: MARK_CHANGED, linewidth: 4 }),
+      markMargin: new LineMaterial({ ...lineOpts, color: MARK_CHANGED, linewidth: 4, opacity: 0.55 }),
     };
     const setResolution = () => Object.values(lineMats).forEach((m) => m.resolution.set(canvas.clientWidth || innerWidth, canvas.clientHeight || innerHeight));
     setResolution();
@@ -261,16 +266,34 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
       Object.values(lineMats).forEach((m) => m.dispose());
     });
 
+    // marks a plan view has put on fields: id -> 'focus' | 'crop' | 'margin' (see setMarks)
+    let marks = new Map();
+    // which look a lit outline takes: selected (gold), then hover (cream), then the marks
+    const OUTLINE_LOOK = {
+      select: [lineMats.selectEdge, lineMats.select],
+      hover: [lineMats.hoverEdge, lineMats.hover],
+      focus: [lineMats.selectEdge, lineMats.select],
+      crop: [lineMats.hoverEdge, lineMats.markCrop],
+      margin: [lineMats.hoverEdge, lineMats.markMargin],
+    };
     function paintOutlines() {
       for (const f of fields) {
-        const on = f.id === selected || f.id === hover?.id;
-        f.outline.visible = on;
-        if (!on) continue;
-        const sel = f.id === selected;
-        f.outline.children.forEach((l) => {
-          l.material = l.userData.edge ? (sel ? lineMats.selectEdge : lineMats.hoverEdge) : (sel ? lineMats.select : lineMats.hover);
-        });
+        const look = f.id === selected ? 'select' : f.id === hover?.id ? 'hover' : OUTLINE_LOOK[marks.get(f.id)] ? marks.get(f.id) : null;
+        f.outline.visible = !!look;
+        if (!look) continue;
+        const [edge, line] = OUTLINE_LOOK[look];
+        f.outline.children.forEach((l) => { l.material = l.userData.edge ? edge : line; });
       }
+    }
+
+    /**
+     * Lights fields up for a plan view: a Map (or [id, mark] pairs) of id -> 'focus' (gold),
+     * 'crop' (green: the crop changes) or 'margin' (faint green: same crop, different money).
+     * null clears them. Selection and hover still show over a mark.
+     */
+    function setMarks(map) {
+      marks = new Map(map || []);
+      paintOutlines();
     }
 
     // ---------------------------------------------------------------- hover and the tooltip
@@ -444,6 +467,12 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
     const dockEl = document.getElementById('isleDock');
     const planning = () => document.body.classList.contains('isle-planning') && dockEl && !dockEl.hidden;
     const dockInset = (H) => Math.max(0, H - dockEl.getBoundingClientRect().top + 12);
+    // the plan views (src/screens/planFutures.js): their dock along the bottom, and the field card
+    // on the right (or over the dock on phones), which getPanelInsets reports while they're on
+    // (looked up each time: that mode is loaded later, and its markup may come with it)
+    const futDock = () => document.getElementById('futDock');
+    const futures = () => document.body.classList.contains('plan-futures') && !!futDock() && !futDock().hidden;
+    const futInset = (H) => Math.max(0, H - futDock().getBoundingClientRect().top + 12);
     const getInsets = () => {
       const W = innerWidth, H = innerHeight;
       const side = getPanelInsets() || {};
@@ -452,6 +481,10 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
         // (a short landscape phone tucks the sidebar away while the check-up is open)
         const shown = getComputedStyle(panel).visibility !== 'hidden';
         const left = shown ? Math.min(W * 0.4, panel.offsetLeft + panel.offsetWidth + 8) : 0;
+        if (futures()) {
+          const manamiRoom = W > 1000 && H > 520 ? Math.min(W * 0.22, 300) : 0;
+          return { left, right: Math.min(Math.max(0, W - left - 120), Math.max(manamiRoom, side.right || 0)), top: 24, bottom: Math.min(H * 0.6, futInset(H)) };
+        }
         if (planning()) {
           const manamiRoom = W > 1000 && H > 520 ? Math.min(W * 0.22, 300) : 0;
           return { left, right: Math.min(Math.max(0, W - left - 120), manamiRoom), top: 24, bottom: Math.min(H * 0.6, dockInset(H)) };
@@ -460,6 +493,7 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
       }
       // phones and tablets: the field list (or the check-up over it) is a sheet along the bottom; while
       // planning the list steps aside for the dock
+      if (futures()) return { left: 0, right: 0, top: 24, bottom: Math.min(H * 0.7, Math.max(futInset(H), side.bottom || 0)) };
       if (planning()) return { left: 0, right: 0, top: 24, bottom: Math.min(H * 0.6, dockInset(H)) };
       return { left: 0, right: 0, top: 104, bottom: Math.min(H * 0.6, Math.max(H - panel.offsetTop, side.bottom || 0, 0)) };
     };
@@ -585,8 +619,11 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
       rig,
       pickAt,
       setPlanMode,
+      setMarks,
       hoverAt,
       refreshTip,
+      /** The reveal's island view this session draws on (camera, scene, props, frame hooks...). */
+      view,
       /** No field lit, and the pointer forgotten (so a turn of the island doesn't re-light one under an old spot). */
       clearHover: () => { pointer = null; pointerDirty = false; setHover(null); },
       dispose() {

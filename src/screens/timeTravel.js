@@ -185,7 +185,7 @@ export function createTimeTravel({ hub, onYear } = {}) {
       if (playBtn.disabled !== !years.length) playBtn.disabled = !years.length; // no crop years: nothing to play
     }
 
-    function apply(state, { instant = false, keys = null, empty = null } = {}) {
+    function apply(state, { instant = false, keys = null, empty = null, grow = null, stagger } = {}) {
       // winter days are short, summer ones long (not during a play-through: the seasons fly by
       // there, and the day would flicker between dusk and dark with each one)
       if (mode !== 'playing' && mode !== 'paused') dayNight.setSeason(state.season);
@@ -201,6 +201,8 @@ export function createTimeTravel({ hub, onYear } = {}) {
         }
         onYear?.({ year: null, now: false, state });
         crops.setSize(state.look.growth);
+        // the fields that changed sprout back up (one after another), unless motion is reduced
+        if (grow?.length && !reduced()) crops.growIn(grow, stagger == null ? {} : { stagger });
         seasons.setState(state, { instant });
         decor.setState(state);
         render(state);
@@ -247,9 +249,11 @@ export function createTimeTravel({ hub, onYear } = {}) {
     /**
      * Shows a planned season on the island: { label, keysByYear: [Map id -> crop key], startYear,
      * emptyByYear?: [Set of field ids not planned yet] }, year index i.
+     * opts.grow: field ids whose crops sprout back up as they show (in that order, opts.stagger
+     * seconds apart; see cropYears.growIn). Showing it again (a season or festival picked) doesn't.
      */
     let lastPreview = null;
-    function preview(info, i = 0) {
+    function preview(info, i = 0, { grow = null, stagger } = {}) {
       const { label, keysByYear, startYear, emptyByYear } = info;
       lastPreview = { info, i };
       mode = 'preview';
@@ -259,7 +263,7 @@ export function createTimeTravel({ hub, onYear } = {}) {
       // (a winter or a cut-down Thanksgiving would hide what's being planned)
       const st = stateFor(startYear + i), grown = staticState(startYear + i).look;
       const look = { ...st.look, growth: grown.growth, harvested: false, ripe: Math.min(st.look.ripe, grown.ripe) };
-      apply({ ...st, look }, { instant: reduced(), keys: keysByYear[i], empty: emptyByYear?.[i] || null });
+      apply({ ...st, look }, { instant: reduced(), keys: keysByYear[i], empty: emptyByYear?.[i] || null, grow: grow ? [...grow] : null, stagger });
     }
 
     /** Shows the farm in another season (null: back to the real one), staying on the same year. */
@@ -538,6 +542,7 @@ export function createTimeTravel({ hub, onYear } = {}) {
         if (playT >= playback.duration) { endedAt = performance.now(); select('now'); }
         else apply(playback.at(playT));
       }
+      crops.tick(dt); // crops sprouting back up in a plan view (nothing to do otherwise)
       // the seasons' own clock (falling snow, bats, twinkling) stops while paused, and so does the day
       const live = mode !== 'paused';
       if (live) time += dt;
@@ -581,7 +586,7 @@ export function createTimeTravel({ hub, onYear } = {}) {
     show,
     hide,
     select: (y) => session?.select(y),
-    preview: (info, i) => session?.preview(info, i),
+    preview: (info, i, opts) => session?.preview(info, i, opts),
     prebuild: (keyMaps) => session?.prebuild(keyMaps),
     play: () => session?.play(),
     pause: () => session?.pause(),

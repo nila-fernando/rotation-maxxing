@@ -450,6 +450,7 @@ export function createReveal({ map, manami, onDone }) {
       view: null, // set once the island is still (see finish)
     };
     const frameHooks = new Set();
+    const afterHooks = new Set(); // run after each frame is drawn (see onAfterFrame)
     const finish = () => {
       if (finished || !alive()) return;
       finished = true;
@@ -475,6 +476,7 @@ export function createReveal({ map, manami, onDone }) {
         frameHooks.forEach((fn) => fn(dt));
         controls.update();
         renderOnce();
+        afterHooks.forEach((fn) => fn(dt));
         raf = requestAnimationFrame(idle);
       };
       raf = requestAnimationFrame(idle);
@@ -518,6 +520,11 @@ export function createReveal({ map, manami, onDone }) {
         seed,
         /** Runs fn(dt) every frame before the island is drawn; returns a remover. */
         onFrame(fn) { frameHooks.add(fn); return () => frameHooks.delete(fn); },
+        /**
+         * Runs fn(dt) every frame after the island is drawn; returns a remover. Project HTML here,
+         * not in onFrame (one-frame lag): by now the camera's matrices are this frame's.
+         */
+        onAfterFrame(fn) { afterHooks.add(fn); return () => afterHooks.delete(fn); },
         /** Runs fn() after the canvas is resized; returns a remover. */
         onResize(fn) { resizeHooks.add(fn); return () => resizeHooks.delete(fn); },
       };
