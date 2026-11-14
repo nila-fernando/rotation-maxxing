@@ -114,6 +114,17 @@ describe('stage 1 filters', () => {
     expect(screenCrops(crops, p, false).allowed).toContain('dry-beans'); // farmer's own plan
   });
 
+  it('excludes crops that need equipment the farmer lacks, in recommendations and own plans', () => {
+    const p = pad(['corn', 'soybeans', 'corn']);
+    for (const rec of [true, false]) {
+      const s = screenCrops(crops, p, rec, [], ['cottonPicker']);
+      expect(s.allowed).not.toContain('cotton');
+      expect(s.exclusions.find((e) => e.cropId === 'cotton')).toMatchObject({ kind: 'equipment' });
+      expect(s.exclusions.find((e) => e.cropId === 'cotton')!.reason).toMatch(/cotton picker/);
+    }
+    expect(screenCrops(crops, p, true, [], []).allowed).toContain('cotton');
+  });
+
   it('excludes crops with incomplete economics from recommendations only', () => {
     const p = pad(['corn', 'soybeans', 'corn']);
     expect(screenCrops(crops, p).exclusions.find((e) => e.cropId === 'alfalfa')?.kind).toBe('economics');

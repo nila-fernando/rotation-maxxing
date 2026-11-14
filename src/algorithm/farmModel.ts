@@ -10,17 +10,22 @@
  *    total production (market caps)
  */
 import { CROP_BY_ID } from './croptraits';
-import { END_SOIL_WEIGHT, HORIZON_YEARS } from './constants';
+import { COVER_CROP_ID, END_SOIL_WEIGHT, HORIZON_YEARS } from './constants';
+import { seasonFor } from './seasons';
+import { RYE_COVER } from './waterParams';
 import { economicsStatus, FALLOW_COST_GAP, getCrop, isFallow, operatingCost } from './cropData';
+import { sourceIds } from './evidence';
 import { prepareFarm } from './geometry';
+import { waterScarcity, type WaterScarcity } from './aridity';
 import { priceInfo, sell, type PriceInfo } from './market';
 import { DEFAULT_N_PRICE, nitrogenCreditReceived, nitrogenLeftBehind, sequenceViolation, timelineOf } from './rotation';
-import { nCreditReference, residueReference, soilHealthIndex, waterUseIndex } from './soilHealth';
-import { meanScenario, TraitYieldModel, type YieldModel } from './yieldModel';
+import { nCreditReference, residueReference, soilHealthIndex, waterUseIndex, type FieldWaterInput } from './soilHealth';
+import { meanScenario, TraitYieldModel, withCalibration, type YieldModel } from './yieldModel';
 import type {
   CropId,
   CropTable,
   Farm,
+  FieldWater,
   Market,
   Paddock,
   PaddockId,
@@ -40,6 +45,11 @@ export interface ModelOptions {
   nitrogenPricePerLb?: number;
   /** Count the soil health and N left behind at the end of the horizon. Default true. */
   endOfHorizon?: boolean;
+  /**
+   * Re-planning: last season's plan aligned to this horizon (null = no
+   * earlier plan for that year). Changing it costs SWITCHING_PENALTY_WEIGHT.
+   */
+  previousPlan?: Record<PaddockId, (CropId | null)[]>;
 }
 
 export interface ModelContext {
@@ -60,6 +70,9 @@ export interface ModelContext {
   totalAcres: number;
   /** Paddock id -> position in `paddocks`. */
   paddockIndex: Map<PaddockId, number>;
+  previousPlan: Record<PaddockId, (CropId | null)[]> | null;
+  /** Aridity and the water-scarcity factor applied to the water slider. */
+  water: WaterScarcity;
   /** Gaps that apply to the whole run (market, weather). */
   globalGaps: string[];
 }
@@ -88,23 +101,56 @@ export function createContext(
     globalGaps.push('No weather scenarios supplied: yields use average weather and Monte Carlo varies prices only.');
   }
   const paddocks = prepared.farm.paddocks;
+  const expected = meanScenario(pool);
   return {
     prepared,
     paddocks,
     crops,
-    model: options.yieldModel ?? new TraitYieldModel(),
+    model: withCalibration(options.yieldModel ?? new TraitYieldModel()),
     market,
     prices,
     nPricePerLb: options.nitrogenPricePerLb ?? DEFAULT_N_PRICE,
     horizon: HORIZON_YEARS,
     endOfHorizon: options.endOfHorizon ?? true,
     weatherPool: pool,
-    expectedWeather: meanScenario(pool),
+    expectedWeather: expected,
     refs: { residueLb: residueReference(crops), nCreditLb: nCreditReference(crops) },
     totalAcres: paddocks.reduce((a, p) => a + p.acres, 0),
     paddockIndex: new Map(paddocks.map((p, i) => [p.id, i])),
+    previousPlan: options.previousPlan ?? null,
+    water: waterScarcity(
+      expected.climate?.precipMm ?? null,
+      expected.climate?.et0Mm ?? null,
+      prepared.farm.constraints?.irrigation === 'irrigated',
+    ),
     globalGaps,
   };
+}
+
+/** RUSLE R for the soil index, when the weather pool came from daily rain. */
+function erosionInput(ctx: ModelContext): { erosivityR?: number } {
+  const r = ctx.expectedWeather.erosivityR;
+  return r !== undefined ? { erosivityR: r } : {};
+}
+
+/**
+ * Expected field water for a paddock from the water balance, or the farm
+ * average where this field had no soil data. Undefined if the pool has no water results.
+ */
+export function fieldWater(ctx: ModelContext, paddockId: PaddockId): FieldWaterInput | undefined {
+  const all = ctx.expectedWeather.water;
+  if (!all || Object.keys(all).length === 0) return undefined;
+  const irrigated = ctx.prepared.farm.constraints?.irrigation === 'irrigated';
+  const own = all[paddockId];
+  if (own) return { byCrop: own, irrigated };
+  const byCrop: Record<CropId, FieldWater> = {};
+  const crops = new Set(Object.values(all).flatMap((r) => Object.keys(r)));
+  for (const c of crops) {
+    const vals = Object.values(all).flatMap((r) => (r[c] ? [r[c]] : []));
+    const avg = (k: keyof FieldWater) => vals.reduce((a, v) => a + v[k], 0) / vals.length;
+    byCrop[c] = { demandMm: avg('demandMm'), deficitMm: avg('deficitMm'), irrigationMm: avg('irrigationMm'), etMm: avg('etMm') };
+  }
+  return { byCrop, irrigated };
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +175,61 @@ export interface SequenceStatics {
   /** Mean water-use index over the horizon. */
   water: number;
   families: string[];
+  /** Years that differ from last season's plan (re-planning only). */
+  switches: number;
+  /** Winter cover crop after each year's main crop (null = none). */
+  covers: (CropId | null)[];
+  /** What adding a cover crop in each year would cost and add (only years where it fits). */
+  coverOptions: CoverOption[];
+}
+
+export interface CoverOption {
+  year: number;
+  /** $ for the whole paddock. */
+  cost: number;
+  /** Change in the horizon soil score (same units as SequenceStatics.soil). */
+  soilGain: number;
+  /** Change in the final-year soil index (non-zero for the last year only). */
+  endSoilGain: number;
+}
+
+/**
+ * Can a winter cover crop follow the main crop in year y? It needs a
+ * summer-harvested crop (not winter wheat or a continuing alfalfa stand) and a
+ * spring-planted crop after it (not winter wheat, planted in October).
+ */
+export function coverFits(ctx: ModelContext, paddock: Paddock, seq: CropId[], y: number): boolean {
+  if (!paddock.availableCrops.includes(COVER_CROP_ID) || !ctx.crops[COVER_CROP_ID]) return false;
+  const isWinter = (id: CropId | undefined) => {
+    if (!id) return false;
+    const span = seasonFor(getCrop(ctx.crops, id), ctx.prepared.farm.state).span;
+    return !!span && span.plantMonth > span.harvestMonth;
+  };
+  const here = seq[y]!;
+  const next = seq[y + 1];
+  if (isWinter(here) || isWinter(next)) return false;
+  if (here === 'alfalfa' && next === 'alfalfa') return false;
+  return true;
+}
+
+/** Statics with the given cover choices applied (cost and soil adjusted). */
+export function applyCovers(o: SequenceStatics, mask: boolean[]): SequenceStatics {
+  let cost = o.cost;
+  let soil = o.soil;
+  let endSoil = o.endSoil;
+  const covers = o.seq.map(() => null as CropId | null);
+  for (const c of o.coverOptions) {
+    if (!mask[c.year]) continue;
+    cost += c.cost;
+    soil += c.soilGain;
+    endSoil += c.endSoilGain;
+    covers[c.year] = COVER_CROP_ID;
+  }
+  return { ...o, cost, soil, endSoil, covers, key: coverKey(o.seq, covers) };
+}
+
+export function coverKey(seq: CropId[], covers: (CropId | null)[]): string {
+  return seq.map((c, y) => (covers[y] ? `${c}+${covers[y]}` : c)).join('>');
 }
 
 /**
@@ -141,8 +242,11 @@ export function sequenceStatics(
   paddock: Paddock,
   seq: CropId[],
   yieldCache?: Map<string, number>,
+  covers?: (CropId | null)[],
 ): SequenceStatics {
   const { crops } = ctx;
+  const coverOptions: CoverOption[] = [];
+  const soilByYear: number[] = [];
   const t = timelineOf(paddock, seq);
   const off = t.length - seq.length;
   const yields: number[] = [];
@@ -169,7 +273,7 @@ export function sequenceStatics(
     const crop = getCrop(crops, seq[y]!);
     cost += (operatingCost(crop) ?? 0) * paddock.acres;
     nCredit += nitrogenCreditReceived(crops, t, off + y, ctx.nPricePerLb).dollarsPerAcre * paddock.acres;
-    const soil = soilHealthIndex({
+    const soilInput = {
       crops,
       paddock,
       timeline: t,
@@ -177,17 +281,35 @@ export function sequenceStatics(
       yieldPerAcre: yv || null,
       state,
       refs: ctx.refs,
-    }).value;
+      ...erosionInput(ctx),
+    };
+    const hasCover = !!covers?.[y];
+    if (hasCover) cost += RYE_COVER.costPerAcre.value * paddock.acres;
+    const soil = soilHealthIndex({ ...soilInput, coverCrop: hasCover }).value;
+    soilByYear.push(soil);
+    if (!covers && coverFits(ctx, paddock, seq, y)) {
+      const withCover = soilHealthIndex({ ...soilInput, coverCrop: true }).value;
+      coverOptions.push({ year: y, cost: RYE_COVER.costPerAcre.value * paddock.acres, soilGain: withCover - soil, endSoilGain: 0 });
+    }
     soilSum += soil;
     if (y === seq.length - 1) endSoil = soil;
-    water += waterUseIndex(crops, crop, state).value;
+    water += waterUseIndex(crops, crop, state, fieldWater(ctx, paddock.id)).value;
   }
   const n = seq.length;
   const endW = ctx.endOfHorizon ? END_SOIL_WEIGHT : 0;
   const last = seq[n - 1]!;
+  // Convert per-year soil gains into horizon-score units.
+  for (const c of coverOptions) {
+    const isLast = c.year === n - 1;
+    c.endSoilGain = isLast ? c.soilGain : 0;
+    c.soilGain = (c.soilGain * (1 + (isLast ? endW : 0))) / (n + endW);
+  }
+  const coverList = seq.map((_, y) => covers?.[y] ?? null);
   return {
     seq,
-    key: seq.join('>'),
+    key: coverKey(seq, coverList),
+    covers: coverList,
+    coverOptions,
     yields,
     cost,
     nCredit,
@@ -196,7 +318,13 @@ export function sequenceStatics(
     endSoil,
     water: water / n,
     families: seq.map((id) => getCrop(crops, id).family),
+    switches: countSwitches(seq, ctx.previousPlan?.[paddock.id]),
   };
+}
+
+export function countSwitches(seq: CropId[], previous: (CropId | null)[] | undefined): number {
+  if (!previous) return 0;
+  return seq.reduce((n, c, y) => n + (previous[y] != null && previous[y] !== c ? 1 : 0), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -277,7 +405,7 @@ export interface ExplainedPlan {
 }
 
 /** Score a whole plan with expected weather and full explanations. */
-export function explainPlan(ctx: ModelContext, seqs: CropId[][]): ExplainedPlan {
+export function explainPlan(ctx: ModelContext, seqs: CropId[][], covers?: (CropId | null)[][]): ExplainedPlan {
   const { crops } = ctx;
   const gaps = new Set<string>(ctx.globalGaps);
   const risks = new Set<string>();
@@ -336,7 +464,14 @@ export function explainPlan(ctx: ModelContext, seqs: CropId[][]): ExplainedPlan 
       const revenue = ep ? yv * ep.price : 0;
       if (ep) {
         const split = ep.distant > 0 ? ` (${Math.round((ep.local / ep.production) * 100)}% sold locally, rest at distant price less freight)` : '';
-        terms.push({ label: `Effective ${crop.name} price${split}`, value: ep.price, unit: `$/${crop.yieldUnit}`, basis: 'input' });
+        const fromMarket = ctx.prices[crop.id]?.fromMarket ?? false;
+        terms.push({
+          label: `Effective ${crop.name} price${split}`,
+          value: ep.price,
+          unit: `$/${crop.yieldUnit}`,
+          basis: fromMarket ? 'input' : 'sourced',
+          sources: fromMarket ? ['marketInput'] : sourceIds(crop.pricePerUnit?.source),
+        });
       }
       terms.push({ label: 'Revenue', value: revenue, unit: '$/ac', basis: 'input' });
       const oc = operatingCost(crop);
@@ -351,12 +486,40 @@ export function explainPlan(ctx: ModelContext, seqs: CropId[][]): ExplainedPlan 
             : `Operating cost for ${crop.name.toLowerCase()} is not sourced (shown as $0).`,
         );
       } else {
-        terms.push({ label: `Operating cost (${crop.operatingCostPerAcre?.source ?? 'source'})`, value: -oc, unit: '$/ac', basis: 'sourced' });
+        terms.push({
+          label: `Operating cost (${crop.operatingCostPerAcre?.source ?? 'source'})`,
+          value: -oc,
+          unit: '$/ac',
+          basis: 'sourced',
+          sources: sourceIds(crop.operatingCostPerAcre?.source),
+        });
       }
       const nc = nitrogenCreditReceived(crops, t, off + y, ctx.nPricePerLb);
       if (nc.term) terms.push(nc.term);
       if (nc.gap) gaps.add(nc.gap);
-      const gm = revenue - (oc ?? 0) + nc.dollarsPerAcre;
+      const cover = covers?.[p]?.[y] ?? null;
+      let coverCost = 0;
+      if (cover) {
+        coverCost = RYE_COVER.costPerAcre.value;
+        terms.push({
+          label: `Winter cover crop: ${getCrop(crops, cover).name} after ${crop.name.toLowerCase()} (seed + seeding, SARE median for all cover crops)`,
+          value: -coverCost,
+          unit: '$/ac',
+          basis: 'sourced',
+          sources: [...RYE_COVER.costPerAcre.sources],
+        });
+        if (seq[y + 1] === 'corn') {
+          terms.push({
+            label: 'Next corn yield after a grass cover crop: no change (meta-analysis)',
+            value: RYE_COVER.nextCornYieldChange.value,
+            unit: '%',
+            basis: 'sourced',
+            sources: [...RYE_COVER.nextCornYieldChange.sources],
+          });
+        }
+        gaps.add('Cereal rye cover crop: spring soil-water use (about 1 in per 1,000 lb/ac biomass) and N tie-up are not modelled; biomass is not sourced.');
+      }
+      const gm = revenue - (oc ?? 0) - coverCost + nc.dollarsPerAcre;
       terms.push({ label: 'Gross margin', value: gm, unit: '$/ac', basis: 'input' });
       grossMargin += gm * pad.acres;
 
@@ -367,13 +530,15 @@ export function explainPlan(ctx: ModelContext, seqs: CropId[][]): ExplainedPlan 
         timeline: t,
         index: off + y,
         yieldPerAcre: sequenceYieldShadeFree(ctx, pad, seq, y),
+        coverCrop: !!cover,
         state: ctx.prepared.farm.state,
         refs: ctx.refs,
+        ...erosionInput(ctx),
         ...(est.soil ? { override: est.soil } : {}),
       });
       sh.gaps.forEach((g) => gaps.add(g));
       terms.push(...sh.components, { label: 'Soil health index', value: sh.value, unit: 'index 0-1', basis: 'design' });
-      const w = waterUseIndex(crops, crop, ctx.prepared.farm.state);
+      const w = waterUseIndex(crops, crop, ctx.prepared.farm.state, fieldWater(ctx, pad.id));
       if (w.gap) gaps.add(w.gap);
       terms.push(w.term);
       soilSum += sh.value;
@@ -387,6 +552,7 @@ export function explainPlan(ctx: ModelContext, seqs: CropId[][]): ExplainedPlan 
         yieldUnit: crop.yieldUnit,
         grossMarginPerAcre: gm,
         soilHealthIndex: sh.value,
+        erosionTonsPerAcre: sh.erosionTonsPerAcre,
         waterUseIndex: w.value,
         terms,
       });
@@ -413,6 +579,42 @@ export function explainPlan(ctx: ModelContext, seqs: CropId[][]): ExplainedPlan 
     marketExcess,
     shade,
   };
+}
+
+/**
+ * Acre-weighted horizon soil score with tillage retention at position `at`
+ * (0 = low end, 1 = high end of the NRCS ranges). Cover only rises with
+ * retention, and one draw is shared farm-wide, so the soil score's P10/P90
+ * under a uniform draw are exactly its values at at = 0.1 / 0.9.
+ */
+export function planSoilAt(ctx: ModelContext, seqs: CropId[][], covers: (CropId | null)[][] | undefined, at: number): number {
+  const endW = ctx.endOfHorizon ? END_SOIL_WEIGHT : 0;
+  let total = 0;
+  ctx.paddocks.forEach((pad, p) => {
+    const seq = seqs[p]!;
+    const t = timelineOf(pad, seq);
+    const off = t.length - seq.length;
+    let sum = 0;
+    let last = 0;
+    seq.forEach((_, y) => {
+      const v = soilHealthIndex({
+        crops: ctx.crops,
+        paddock: pad,
+        timeline: t,
+        index: off + y,
+        yieldPerAcre: sequenceYieldShadeFree(ctx, pad, seq, y),
+        state: ctx.prepared.farm.state,
+        refs: ctx.refs,
+        ...erosionInput(ctx),
+        coverCrop: !!covers?.[p]?.[y],
+        retentionAt: at,
+      }).value;
+      sum += v;
+      last = v;
+    });
+    total += (pad.acres / ctx.totalAcres) * ((sum + endW * last) / (seq.length + endW));
+  });
+  return total;
 }
 
 /** Shade-free expected yield used for residue-based soil components (same as in statics). */

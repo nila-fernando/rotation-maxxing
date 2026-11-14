@@ -27,10 +27,22 @@ const onlyMiddleCorn = (id: string): CropTraits | null => (id === 'middle' ? cor
 
 describe('seasons', () => {
   it('falls back to default spans when the state has no Handbook 628 entry', () => {
-    const s = seasonFor(corn, 'IA');
+    const s = seasonFor(corn, 'NE');
     expect(s.fallback).toBe(true);
     expect(s.span).toEqual({ plantMonth: 5, harvestMonth: 9 });
     expect(s.gap).toMatch(/not entered yet/);
+    expect(seasonFor(CROP_BY_ID['spring-wheat']!, 'IA').fallback).toBe(true); // no IA row in Handbook 628
+  });
+
+  it('uses Handbook 628 for IA and KS instead of the fallback (plant.activeStart -> harvest.activeEnd)', () => {
+    const ia = seasonFor(corn, 'IA');
+    expect(ia.fallback).toBe(false);
+    expect(ia.gap).toBeNull();
+    expect(ia.span).toMatchObject({ plantMonth: 4, harvestMonth: 11, plantDate: '04-25', harvestDate: '11-09', source: 'nassHandbook628' });
+    expect(seasonFor(wheat, 'KS').span).toMatchObject({ plantMonth: 9, harvestMonth: 7, plantDate: '09-15' });
+    // Alfalfa: cutting window only.
+    expect(seasonFor(CROP_BY_ID['alfalfa']!, 'IA').span).toMatchObject({ plantMonth: 5, harvestMonth: 9, harvestDate: '09-15' });
+    expect(seasonFor(CROP_BY_ID['alfalfa']!, 'IA').span!.plantDate).toBeUndefined();
   });
 
   it('uses about +20 degrees for summer crops', () => {

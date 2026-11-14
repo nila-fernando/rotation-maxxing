@@ -34,6 +34,12 @@ export interface Term {
   value: number;
   unit: string;
   basis: Basis;
+  /**
+   * Evidence: ids of the sources behind this number (keys of SOURCES in
+   * croptraits.ts, SOIL_SOURCES in soilData.ts, or DATA_SOURCES in
+   * evidence.ts, e.g. 'nasaPower', 'ssurgo'). Absent for design terms.
+   */
+  sources?: string[];
 }
 
 /** A labelled multiplicative factor, e.g. 0.945 for a 5.5% yield drag. */
@@ -41,6 +47,7 @@ export interface Factor {
   label: string;
   factor: number;
   basis: Basis;
+  sources?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -48,7 +55,7 @@ export interface Factor {
 // ---------------------------------------------------------------------------
 
 export type Tillage = 'conventional' | 'reduced' | 'noTill';
-export type Drainage = 'poor' | 'moderate' | 'good';
+export type Drainage = 'poor' | 'moderate' | 'good' | 'excessive';
 export type Texture = 'sand' | 'loam' | 'silt' | 'clay';
 
 export interface Land {
@@ -57,7 +64,39 @@ export interface Land {
   drainage: Drainage;
   /** Soil salinity as saturated-paste electrical conductivity, dS/m. */
   salinityECe: number;
-  ph: number;
+  /** Soil pH (1:1 water). Null/absent when unknown: pH suitability is then skipped, with a gap. */
+  ph?: number | null;
+  /** Optional, from SSURGO: root-zone available water capacity, in/in (= cm/cm). Enables the water balance. */
+  awcInPerIn?: number;
+  /** Optional, from SSURGO: RUSLE soil erodibility K (surface horizon kffact). */
+  kFactor?: number;
+  /** Optional, from SSURGO: tolerable soil loss T, tons/ac/yr. */
+  tFactorTonsPerAcre?: number;
+  /** Optional, from SSURGO: surface organic matter, %. */
+  organicMatterPct?: number;
+  /** Optional, from SSURGO corestrictions: depth of the shallowest root-restricting layer, m (absent = none reported). */
+  restrictiveDepthM?: number;
+  /** Optional: RUSLE slope length, ft. */
+  slopeLengthFt?: number;
+}
+
+/** Daily weather for one location (e.g. from NASA POWER). Arrays are aligned with `dates`. */
+export interface DailyWeather {
+  /** YYYY-MM-DD */
+  dates: string[];
+  tmaxC: number[];
+  tminC: number[];
+  rainMm: number[];
+  /** Incoming shortwave radiation, MJ/m2/day. */
+  solarMJ: number[];
+  /** Mean relative humidity at 2 m, %. */
+  rhPct: number[];
+  /** Wind speed at 2 m, m/s. */
+  wind2m: number[];
+  latitude: number;
+  elevationM: number;
+  /** Evidence id, e.g. 'nasaPower'. */
+  source: string;
 }
 
 /** [longitude, latitude] in degrees. */
@@ -80,7 +119,41 @@ export interface Paddock {
   availableCrops: CropId[];
   /** Default 'reduced'. Scales residue retention and therefore ground cover. */
   tillage?: Tillage;
+  /** Tile drainage installed: counts as one drainage class better. */
+  tileDrained?: boolean;
   diseaseHistory?: { whiteMold?: boolean };
+  /**
+   * What this field has taught us, per crop: a yield factor learned from the
+   * farmer's end-of-season reports (see update.ts). Applied to every yield
+   * model's output.
+   */
+  yieldCalibration?: Record<CropId, CropCalibration>;
+}
+
+/** One season's evidence for a field's yield factor. */
+export interface CalibrationRecord {
+  season: number;
+  reported: number;
+  /** Model yield for that season's actual crop, weather and neighbours, before calibration. */
+  predicted: number;
+  /** false when the farmer flagged a one-off event (hail, flood, replant). */
+  used: boolean;
+  note?: string;
+}
+
+/**
+ * Field yield factor with shrinkage: a log-normal prior centred on 1 (the
+ * model is right), updated by each season's reported/predicted ratio.
+ */
+export interface CropCalibration {
+  /** Multiply model yield by this. */
+  factor: number;
+  /** Posterior mean and sd of log(factor). */
+  logMean: number;
+  logSd: number;
+  /** Seasons used. */
+  seasons: number;
+  records: CalibrationRecord[];
 }
 
 export interface Farm {
@@ -94,7 +167,21 @@ export interface Farm {
    * recommended when listed here.
    */
   confirmedBuyers?: CropId[];
+  /** Water and equipment limits. */
+  constraints?: FarmConstraints;
   paddocks: Paddock[];
+}
+
+/** Harvest/field equipment that some crops need (see EQUIPMENT_NEEDED in constants.ts). */
+export type EquipmentId = 'hayEquipment' | 'cottonPicker';
+
+export interface FarmConstraints {
+  /** Default 'dryland'. Irrigated farms are scored on irrigation water applied. */
+  irrigation?: 'dryland' | 'irrigated';
+  /** Seasonal irrigation water available per acre, inches (irrigated farms). Unlimited if absent. */
+  irrigationAllocationIn?: number;
+  /** Equipment the farmer doesn't have and won't hire; crops that need it are excluded. */
+  missingEquipment?: EquipmentId[];
 }
 
 /** A neighbour as seen from one paddock. */
@@ -153,7 +240,34 @@ export type Market = Record<CropId, MarketEntry>;
  */
 export interface WeatherScenario {
   label?: string;
+  /** Farm-wide yield multiplier per crop (1 = average year). */
   multipliers: Record<CropId, number>;
+  /** Field-specific multipliers (soils differ); take precedence over `multipliers`. */
+  byPaddock?: Record<PaddockId, Record<CropId, number>>;
+  /**
+   * Field multipliers given the PREVIOUS crop (soil-water carryover):
+   * byPaddockAfter[paddock][previousCrop][crop]. Take precedence over byPaddock.
+   */
+  byPaddockAfter?: Record<PaddockId, Record<CropId, Record<CropId, number>>>;
+  /** Field water results from the water balance, per paddock and crop. */
+  water?: Record<PaddockId, Record<CropId, FieldWater>>;
+  /** That year's RUSLE rainfall erosivity R (US customary units). */
+  erosivityR?: number;
+  /** That calendar year's precipitation and FAO-56 reference ET0, mm (for the aridity index). */
+  climate?: { precipMm: number; et0Mm: number };
+  /** Evidence for this year, e.g. ['nasaPower', 'fao56', 'fao33']. */
+  sources?: string[];
+}
+
+export interface FieldWater {
+  /** Crop water demand over the season, mm. */
+  demandMm: number;
+  /** Demand not met (dryland stress), mm. */
+  deficitMm: number;
+  /** Irrigation applied, mm (irrigated farms). */
+  irrigationMm: number;
+  /** Water actually used from the field, mm: crop ET, or bare-soil evaporation for fallow. */
+  etMm: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +299,7 @@ export interface Warning {
 
 export interface Exclusion {
   cropId: CropId;
-  kind: 'availability' | 'buyer' | 'land' | 'economics' | 'rotation';
+  kind: 'availability' | 'buyer' | 'equipment' | 'land' | 'economics' | 'rotation';
   reason: string;
 }
 
@@ -200,6 +314,9 @@ export interface YearResult {
   yieldUnit: string | null;
   grossMarginPerAcre: number;
   soilHealthIndex: number;
+  /** RUSLE soil loss, tons/acre/year (null when K, R or C is unknown). */
+  erosionTonsPerAcre: number | null;
+  /** Inches of shortfall (dryland) or irrigation (irrigated) when NASA POWER data is used; otherwise a kc index. */
   waterUseIndex: number;
   /** Yield, price, revenue, cost, N credit, soil and water terms. */
   terms: Term[];
@@ -241,11 +358,15 @@ export interface PlanResult {
   soilHealth: number;
   /** Acre-weighted soilHealthIndex in the final year (0-1). */
   endSoilHealth: number;
+  /** Soil health under tillage-retention uncertainty (NRCS low..high ranges): P10 and P90. */
+  soilHealthRange: { p10: number; p90: number };
   /** Acre-weighted mean water-use index (lower is better). */
   waterUse: number;
   /** Weighted objective (normalised criteria) and its terms. */
   objective: number;
   objectiveTerms: Term[];
+  /** Things a farmer or extension agent should check locally before acting on this plan. */
+  localReview: string[];
   /** Share of priority jitters (+/-15) where this plan ranks first. Null for custom plans. */
   rankStability: number | null;
   reasons: string[];
@@ -277,6 +398,31 @@ export interface GenerateResult {
   exclusions: Record<PaddockId, Exclusion[]>;
   referenceBounds: ReferenceBounds;
   stats: { candidatesScored: number; descentIterations: number; monteCarloSamples: number };
+  /** Re-planning only (options.previousPlan): how the priority plan relates to last season's plan. */
+  replanning?: Replanning;
+}
+
+export interface PlanChange {
+  paddockId: PaddockId;
+  /** 0-based horizon year. */
+  year: number;
+  from: CropId;
+  to: CropId;
+}
+
+export interface Replanning {
+  /** Acre-weighted share of last season's planned paddock-years that the priority plan changes. */
+  changedShare: number;
+  changes: PlanChange[];
+  /** The plan that would win if changes were free, when that differs ("what it would take to switch"). */
+  withoutSwitchingCost?: {
+    plan: Plan;
+    changes: PlanChange[];
+    /** Expected cash margin gained by switching anyway, $. */
+    expectedGMGain: number;
+    /** Objective points gained before the switching cost. */
+    objectiveGain: number;
+  };
 }
 
 /** Crop lookup used throughout. Defaults to CROP_BY_ID from croptraits.ts. */

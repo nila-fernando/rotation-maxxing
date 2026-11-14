@@ -29,12 +29,26 @@ export function continueHistory(paddock: Paddock, years: number): { seq: CropId[
   return { seq: t.slice(h.length), gap: null };
 }
 
-export function planFromSequences(paddockIds: string[], seqs: CropId[][]): Plan {
+export function planFromSequences(paddockIds: string[], seqs: CropId[][], covers?: (CropId | null)[][]): Plan {
   const sequences: Plan['sequences'] = {};
   paddockIds.forEach((id, i) => {
-    sequences[id] = seqs[i]!.map((main) => ({ main }));
+    sequences[id] = seqs[i]!.map((main, y) => {
+      const cover = covers?.[i]?.[y] ?? null;
+      return cover ? { main, cover } : { main };
+    });
   });
   return { sequences };
+}
+
+/** Winter cover crops in a plan, per paddock and year (null = none). Only cover-family crops are allowed. */
+export function coversFromPlan(plan: Plan, paddocks: Paddock[], years: number, crops: Record<string, { family: string; name: string }>): (CropId | null)[][] {
+  return paddocks.map((p) =>
+    Array.from({ length: years }, (_, y) => {
+      const c = plan.sequences[p.id]?.[y]?.cover ?? null;
+      if (c && crops[c]?.family !== 'cover') throw new Error(`"${c}" in ${p.name} year ${y + 1} isn't a cover crop.`);
+      return c;
+    }),
+  );
 }
 
 /** Convenience for callers and tests: { paddockId: ['corn', 'soybeans', 'corn'] } -> Plan. */

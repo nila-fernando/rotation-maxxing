@@ -3,10 +3,11 @@
  * which 3-year sequences are allowed. Every exclusion gets a plain-English
  * reason: these are the mascot's "why not X?" answers.
  */
-import { SALINITY_MIN_RELATIVE_YIELD } from './constants';
+import { EQUIPMENT_NAMES, EQUIPMENT_NEEDED, SALINITY_MIN_RELATIVE_YIELD } from './constants';
 import { economicsStatus, salinityRelativeYield } from './cropData';
+import { drainageCheck, phCheck } from './landSuitability';
 import { hardRuleViolation, sequenceViolation, timelineOf } from './rotation';
-import type { CropId, CropTable, Exclusion, Paddock } from './types';
+import type { CropId, CropTable, EquipmentId, Exclusion, Paddock } from './types';
 
 export interface CropScreen {
   allowed: CropId[];
@@ -16,7 +17,7 @@ export interface CropScreen {
 
 /** Land checks we would like to run but can't until the traits are sourced. */
 export const UNSOURCED_LAND_CHECKS =
-  'pH, drainage/waterlogging, frost and slope suitability are not sourced for any crop yet, so only salinity is checked.';
+  'Land checks: salinity (FAO-61), pH and drainage (FAO EcoCrop, expert opinion). Frost and winter hardiness are not checked; slope is handled by erosion, not suitability.';
 
 /** The "why not X?" text for the contract-market gate (requiresBuyer is a design decision). */
 export function needsBuyerReason(cropName: string): string {
@@ -29,11 +30,21 @@ export function needsBuyerReason(cropName: string): string {
  *   requiresBuyer crops without a confirmed buyer, are excluded too.
  * @param confirmedBuyers crops the farmer has a buyer/contract for (Farm.confirmedBuyers).
  */
+/** Equipment the crop needs that the farmer lacks (empty if none). */
+export function missingEquipmentFor(cropId: CropId, missing: readonly EquipmentId[] = []): EquipmentId[] {
+  return (EQUIPMENT_NEEDED[cropId] ?? []).filter((e) => missing.includes(e));
+}
+
+export function equipmentReason(cropName: string, missing: EquipmentId[]): string {
+  return `${cropName} needs ${missing.map((e) => EQUIPMENT_NAMES[e]).join(' and ')}, which you've said you don't have.`;
+}
+
 export function screenCrops(
   crops: CropTable,
   paddock: Paddock,
   forRecommendation = true,
   confirmedBuyers: readonly CropId[] = [],
+  missingEquipment: readonly EquipmentId[] = [],
 ): CropScreen {
   const allowed: CropId[] = [];
   const exclusions: Exclusion[] = [];
@@ -47,12 +58,25 @@ export function screenCrops(
       exclusions.push({ cropId: id, kind: 'availability', reason: `${c.name} seed isn't available locally for ${paddock.name}.` });
       continue;
     }
+    const noKit = missingEquipmentFor(id, missingEquipment);
+    if (noKit.length > 0) {
+      exclusions.push({ cropId: id, kind: 'equipment', reason: equipmentReason(c.name, noKit) });
+      continue;
+    }
     if (forRecommendation && c.requiresBuyer && !buyers.has(id)) {
       exclusions.push({ cropId: id, kind: 'buyer', reason: needsBuyerReason(c.name) });
       continue;
     }
     const sal = salinityRelativeYield(c, paddock.land.salinityECe);
     if (sal.gap) gaps.add(sal.gap);
+    const phC = phCheck(c, paddock.land.ph);
+    const drC = drainageCheck(c, paddock);
+    for (const chk of [phC, drC]) if (chk.gap) gaps.add(chk.gap);
+    const landBlock = phC.excluded ? phC : drC.excluded ? drC : null;
+    if (landBlock) {
+      exclusions.push({ cropId: id, kind: 'land', reason: landBlock.reason! });
+      continue;
+    }
     if (sal.value < SALINITY_MIN_RELATIVE_YIELD) {
       exclusions.push({
         cropId: id,
@@ -60,6 +84,14 @@ export function screenCrops(
         reason:
           `${paddock.name} is too salty for ${c.name}: at ECe ${paddock.land.salinityECe} dS/m it would yield about ` +
           `${Math.round(sal.value * 100)}% of normal (cut-off ${Math.round(SALINITY_MIN_RELATIVE_YIELD * 100)}%).`,
+      });
+      continue;
+    }
+    if (forRecommendation && c.family === 'cover') {
+      exclusions.push({
+        cropId: id,
+        kind: 'rotation',
+        reason: `${c.name} is offered as a winter cover crop between main crops, not as a main crop.`,
       });
       continue;
     }

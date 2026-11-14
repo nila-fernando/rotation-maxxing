@@ -9,11 +9,14 @@
  *
  * Also here: the water-use index (kc mid x share of the year occupied).
  */
-import { BARE_MONTH_COVER_DISCOUNT, DIVERSITY_DEDUCTIONS, SOIL_INDEX_WEIGHTS } from './constants';
+import { BARE_MONTH_COVER_DISCOUNT, COVER_CROP_MONTHS, DIVERSITY_DEDUCTIONS, SOIL_INDEX_WEIGHTS } from './constants';
 import { isFallow, kcMid, nCreditMid, typicalYield } from './cropData';
-import { monthsOccupied, seasonFor } from './seasons';
-import { ALFALFA_C_FACTOR, COVER_REFERENCE, DEFAULT_TILLAGE, RESIDUE_FACTORS, TILLAGE_RESIDUE_RETENTION } from './soilData';
-import type { CropId, CropTable, CropTraits, Paddock, Term, Tillage } from './types';
+import { sourceIds } from './evidence';
+import { FALLBACK_SEASONS, monthsOccupied, seasonFor } from './seasons';
+import { KC_MIN_DRY_BARE_SOIL } from './waterParams';
+import { ALFALFA_C_FACTOR, COVER_REFERENCE, DEFAULT_TILLAGE, RESIDUE_FACTORS, residueRetention } from './soilData';
+import { cFactor, soilLoss } from './erosion';
+import type { CropId, CropTable, CropTraits, FieldWater, Paddock, Term, Tillage } from './types';
 
 export interface ComponentScore {
   value: number | null;
@@ -44,16 +47,25 @@ export function groundCover(
   yieldPerAcre: number | null,
   tillage: Tillage,
   state: string | undefined,
+  coverMonths = 0,
+  retentionAt?: number,
 ): ComponentScore & { bareMonths: number } {
   if (isFallow(crop)) {
-    return { value: 0, term: term('Ground cover: fallow leaves bare soil', 0, 'sourced'), gap: null, bareMonths: 12 };
+    if (coverMonths > 0) {
+      return {
+        value: 0,
+        term: term(`Ground cover: fallow, with a winter cover crop for ${coverMonths} months (cover not scored without a sourced C)`, 0, 'design'),
+        gap: null,
+        bareMonths: Math.max(0, 12 - coverMonths),
+      };
+    }
+    return { value: 0, term: term('Ground cover: fallow leaves bare soil', 0, 'sourced', ['nrcsRusleCFactor']), gap: null, bareMonths: 12 };
   }
   if (crop.id === 'alfalfa') {
     const v = 1 - ALFALFA_C_FACTOR.value;
-    return { value: v, term: term('Ground cover: alfalfa stand (NRCS C factor 0.020)', v, 'sourced'), gap: null, bareMonths: 0 };
+    return { value: v, term: term('Ground cover: alfalfa stand (NRCS C factor 0.020)', v, 'sourced', ['nrcsRusleCFactor']), gap: null, bareMonths: 0 };
   }
-  const season = seasonFor(crop, state);
-  const bareMonths = 12 - monthsOccupied(season.span);
+  const bareMonths = bareMonthsFor(crop, state, coverMonths);
   const f = RESIDUE_FACTORS[crop.id];
   const residue = residueLb(crop, yieldPerAcre);
   if (!f || residue === null) {
@@ -64,19 +76,33 @@ export function groundCover(
       bareMonths,
     };
   }
-  const retention = TILLAGE_RESIDUE_RETENTION[tillage].value;
-  const cover = residueToCover(residue * retention, f.type);
+  const ret = residueRetention(crop.id, tillage, retentionAt);
+  const cover = residueToCover(residue * ret.value, f.type);
   const v = cover * (1 - (BARE_MONTH_COVER_DISCOUNT * bareMonths) / 12);
   return {
     value: v,
     term: term(
-      `Ground cover: ${Math.round(residue)} lb/ac residue x ${tillage} tillage retention (placeholder ${retention}), ${bareMonths} bare month(s)`,
+      `Ground cover: ${Math.round(residue)} lb/ac residue; ${ret.label}; ${bareMonths} bare month(s)` +
+        (coverMonths > 0 ? `, winter cover crop for ${coverMonths} months` : ''),
       v,
-      'placeholder',
+      'design',
+      [f.source, 'nrcsVaResidueNote'],
     ),
     gap: null,
     bareMonths,
   };
+}
+
+/** Months with no crop or cover in the field. A winter cover crop fills up to `coverMonths` of them. */
+export function bareMonthsFor(crop: CropTraits, state: string | undefined, coverMonths = 0): number {
+  if (crop.id === 'alfalfa') return 0;
+  const bare = isFallow(crop) ? 12 : 12 - monthsOccupied(seasonFor(crop, state).span);
+  return Math.max(0, bare - coverMonths);
+}
+
+/** Share of ground-cover credit kept after bare months (design: BARE_MONTH_COVER_DISCOUNT). */
+export function bareMonthFactor(bareMonths: number): number {
+  return 1 - (BARE_MONTH_COVER_DISCOUNT * bareMonths) / 12;
 }
 
 /** Largest residue among crops at their typical yield: the organic-matter proxy's reference. */
@@ -96,8 +122,8 @@ export function nCreditReference(crops: CropTable): number {
   return max || 1;
 }
 
-function term(label: string, value: number, basis: Term['basis']): Term {
-  return { label, value, unit: 'index 0-1', basis };
+function term(label: string, value: number, basis: Term['basis'], sources?: string[]): Term {
+  return { label, value, unit: 'index 0-1', basis, ...(sources ? { sources } : {}) };
 }
 
 export interface SoilYearInput {
@@ -112,10 +138,18 @@ export interface SoilYearInput {
   /** Optional component overrides from a process-based yield model. */
   override?: { groundCover?: Term; organicMatter?: Term };
   refs: { residueLb: number; nCreditLb: number };
+  /** Mean annual RUSLE R for the farm (from NASA POWER). Enables the erosion score. */
+  erosivityR?: number;
+  /** A winter cover crop follows this year's crop. */
+  coverCrop?: boolean;
+  /** Position in the tillage-retention low..high range (0-1); default the midpoint values. */
+  retentionAt?: number;
 }
 
 export interface SoilHealthResult {
   value: number;
+  /** RUSLE soil loss, tons/acre/year, when it could be estimated. */
+  erosionTonsPerAcre: number | null;
   components: Term[];
   gaps: string[];
 }
@@ -129,13 +163,33 @@ export function soilHealthIndex(input: SoilYearInput): SoilHealthResult {
   const gaps: string[] = [];
   const components: Term[] = [];
 
-  // (a) ground cover / erosion
+  // (a) ground cover / erosion. Preferred: RUSLE erosion vs tolerable loss (needs K, T, R).
+  const coverMonths = input.coverCrop ? COVER_CROP_MONTHS : 0;
   let cover: number;
+  let erosionTonsPerAcre: number | null = null;
+  const tillage = paddock.tillage ?? DEFAULT_TILLAGE;
+  const loss =
+    input.erosivityR !== undefined ? soilLoss(paddock.land, input.erosivityR, cFactor(crop, yieldPerAcre, tillage, input.retentionAt)) : null;
+  if (loss) erosionTonsPerAcre = loss.tonsPerAcre;
   if (override?.groundCover) {
     cover = override.groundCover.value;
     components.push(override.groundCover);
+  } else if (loss && loss.score !== null) {
+    // RUSLE gives annual soil loss; bare months still discount the score (timing of cover, a design rule).
+    const bare = bareMonthsFor(crop, state, coverMonths);
+    cover = loss.score * bareMonthFactor(bare);
+    components.push({ label: loss.label, value: loss.score, unit: 'index 0-1', basis: 'sourced', sources: loss.sources });
+    components.push({
+      label: `Bare months: ${bare}${coverMonths ? ` (winter cover crop covers ${coverMonths})` : ''}`,
+      value: cover - loss.score,
+      unit: 'index 0-1',
+      basis: 'design',
+    });
+    gaps.push(...loss.gaps);
+    if (coverMonths) gaps.push('RUSLE C for a cereal rye cover crop is not sourced: its erosion benefit counts only through bare months.');
   } else {
-    const gc = groundCover(crop, yieldPerAcre, paddock.tillage ?? DEFAULT_TILLAGE, state);
+    if (loss) gaps.push(...loss.gaps);
+    const gc = groundCover(crop, yieldPerAcre, paddock.tillage ?? DEFAULT_TILLAGE, state, coverMonths, input.retentionAt);
     cover = gc.value ?? 0;
     if (gc.term) components.push(gc.term);
     if (gc.gap) gaps.push(gc.gap);
@@ -147,7 +201,11 @@ export function soilHealthIndex(input: SoilYearInput): SoilHealthResult {
   if (n === null) gaps.push(`N credit from ${crop.name} is not sourced; nitrogen component counts as 0.`);
   else {
     nScore = Math.min(1, n / refs.nCreditLb);
-    components.push(term(`Nitrogen left for the next crop (${n} lb N/ac)`, nScore, 'sourced'));
+    components.push(
+      n > 0
+        ? term(`Nitrogen left for the next crop (${n} lb N/ac)`, nScore, 'sourced', sourceIds(crop.nCreditToNextCornLbPerAcre?.source))
+        : term('Nitrogen left for the next crop: none (not a legume)', 0, 'design'),
+    );
   }
 
   // (c) rotation diversity / pest break
@@ -178,17 +236,52 @@ export function soilHealthIndex(input: SoilYearInput): SoilHealthResult {
     if (r === null) gaps.push(`Organic-matter proxy for ${crop.name} needs a residue factor; counts as 0.`);
     else {
       om = Math.min(1, r / refs.residueLb);
-      components.push(term(`Organic matter (proxy: ${Math.round(r)} lb/ac residue)`, om, 'proxy'));
+      components.push(term(`Organic matter (proxy: ${Math.round(r)} lb/ac residue)`, om, 'proxy', ['nrcsVaResidue1']));
     }
   }
 
   const value = W.groundCover * cover + W.nitrogen * nScore + W.diversity * diversity + W.organicMatter * om;
-  return { value, components, gaps };
+  return { value, erosionTonsPerAcre, components, gaps };
 }
 
 // ---------------------------------------------------------------------------
 // Water
 // ---------------------------------------------------------------------------
+
+/** Field water from the NASA POWER water balance (expected over the weather pool). */
+export interface FieldWaterInput {
+  byCrop: Record<string, FieldWater>;
+  irrigated: boolean;
+}
+
+/**
+ * Field-specific water score, inches per season (lower is better):
+ *   irrigated: irrigation water needed
+ *   dryland:   shortfall between crop demand and what rain + soil supplied
+ * Crops not in the water balance get the worst value on this field (flagged).
+ */
+export function fieldWaterIndex(crop: CropTraits, field: FieldWaterInput): { value: number; term: Term; gap: string | null } {
+  // Irrigated: irrigation water applied. Dryland: water used from the field (crop ET or
+  // bare-soil evaporation). The shortfall itself is already in yield, so it isn't counted again.
+  const pick = (w: FieldWater) => (field.irrigated ? w.irrigationMm : w.etMm) / 25.4;
+  const sources = isFallow(crop) ? ['nasaPower', 'fao56Ch7', 'fao56Ch11', 'ssurgo'] : ['nasaPower', 'fao56Tables', 'fao66', 'ssurgo'];
+  const w = field.byCrop[crop.id];
+  if (!w) {
+    const worst = Math.max(0, ...Object.values(field.byCrop).map(pick));
+    return {
+      value: worst,
+      term: { label: `Water: ${crop.name} isn't in the water balance (worst case on this field assumed)`, value: worst, unit: 'in', basis: 'assumption' },
+      gap: `${crop.name} has no sourced water-balance parameters; its water score is the worst on the field.`,
+    };
+  }
+  const v = pick(w);
+  const label = field.irrigated
+    ? `Irrigation needed: ${v.toFixed(1)} in${isFallow(crop) ? ' (fallow)' : ` of ${(w.demandMm / 25.4).toFixed(1)} in crop demand`}`
+    : isFallow(crop)
+      ? `Water lost: ${v.toFixed(1)} in evaporated from bare fallow soil, May-Sep (FAO-56 bare-soil method)`
+      : `Water used: ${v.toFixed(1)} in crop ET (${(w.deficitMm / 25.4).toFixed(1)} in short of ${(w.demandMm / 25.4).toFixed(1)} in demand)`;
+  return { value: v, term: { label, value: v, unit: 'in', basis: 'sourced', sources }, gap: null };
+}
 
 /**
  * Water-use index = kc mid (FAO-56) x share of the year the crop occupies.
@@ -199,9 +292,17 @@ export function waterUseIndex(
   crops: CropTable,
   crop: CropTraits,
   state: string | undefined,
+  field?: FieldWaterInput,
 ): { value: number; term: Term; gap: string | null } {
+  if (field) return fieldWaterIndex(crop, field);
   if (isFallow(crop)) {
-    return { value: 0, term: { label: 'Water use: fallow (no crop)', value: 0, unit: 'index', basis: 'sourced' }, gap: null };
+    // No daily weather: FAO-56's dry bare-soil minimum over the summer window (a lower bound).
+    const v = KC_MIN_DRY_BARE_SOIL * (monthsOccupied(FALLBACK_SEASONS.summer) / 12);
+    return {
+      value: v,
+      term: { label: `Water use: fallow, dry bare-soil minimum (Kc ${KC_MIN_DRY_BARE_SOIL}; lower bound)`, value: v, unit: 'index', basis: 'sourced', sources: ['fao56Ch7'] },
+      gap: 'Fallow evaporation needs daily weather (NASA POWER); without it the dry bare-soil minimum is used, which understates fallow water loss.',
+    };
   }
   const months = monthsOccupied(seasonFor(crop, state).span);
   const kc = kcMid(crop);
@@ -216,7 +317,7 @@ export function waterUseIndex(
   const v = kc * (months / 12);
   return {
     value: v,
-    term: { label: `Water use: kc ${kc} x ${months} month season`, value: v, unit: 'index', basis: 'sourced' },
+    term: { label: `Water use: kc ${kc} x ${months} month season`, value: v, unit: 'index', basis: 'sourced', sources: ['fao56'] },
     gap: null,
   };
 }

@@ -27,8 +27,10 @@ describe('objective', () => {
   it('measures crop-family concentration above the cap', () => {
     const allOne = [new Map([['grain', 100]])];
     const split = [new Map([['grain', 50], ['legume', 50]])];
-    expect(varietyExcess(allOne, 100)).toBeCloseTo(0.4);
-    expect(varietyExcess(split, 100)).toBe(0);
+    expect(varietyExcess(allOne)).toBeCloseTo(0.4);
+    expect(varietyExcess(split)).toBe(0);
+    // Fallow doesn't count as diversification: 60 ac grain + 40 ac fallow is 100% of the cropped area.
+    expect(varietyExcess([new Map([['grain', 60], ['fallow', 40]])])).toBeCloseTo(0.4);
   });
 });
 

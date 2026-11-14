@@ -6,6 +6,7 @@
  * Crops with no residue factor are left out on purpose: they become an
  * information gap rather than borrowing another crop's number.
  */
+import { RESIDUE_FACTOR_ADDITIONS, RESIDUE_FRAGILITY, TILLAGE_OPERATIONS, TILLAGE_SYSTEMS, tillageRetention } from './croptraits';
 import type { CropId, Tillage } from './types';
 
 export const SOIL_SOURCES = {
@@ -28,7 +29,8 @@ export interface ResidueFactor {
   /** lb of residue per unit of the crop's yield unit (per bu here). */
   lbPerYieldUnit: number;
   type: ResidueType;
-  source: keyof typeof SOIL_SOURCES;
+  /** Evidence id (SOIL_SOURCES here or SOURCES in croptraits.ts). */
+  source: string;
   note?: string;
 }
 
@@ -47,7 +49,15 @@ export const RESIDUE_FACTORS: Partial<Record<CropId, ResidueFactor>> = {
   soybeans: { lbPerYieldUnit: 60, type: 'fine', source: 'nrcsVaResidue1' },
   'winter-wheat': { lbPerYieldUnit: 100, type: 'fine', source: 'nrcsVaResidue1' },
   'spring-wheat': { lbPerYieldUnit: 100, type: 'fine', source: 'nrcsVaResidue1' },
-  // canola, sunflower, dry-beans, cotton, oats, barley, cereal-rye: not sourced yet -> information gap.
+  barley: { lbPerYieldUnit: RESIDUE_FACTOR_ADDITIONS.barley.lbPerUnit, type: 'fine', source: RESIDUE_FACTOR_ADDITIONS.barley.source },
+  oats: { lbPerYieldUnit: RESIDUE_FACTOR_ADDITIONS.oats.lbPerUnit, type: 'fine', source: RESIDUE_FACTOR_ADDITIONS.oats.source },
+  'cereal-rye': {
+    lbPerYieldUnit: RESIDUE_FACTOR_ADDITIONS['cereal-rye'].lbPerUnit,
+    type: 'fine',
+    source: RESIDUE_FACTOR_ADDITIONS['cereal-rye'].source,
+    note: RESIDUE_FACTOR_ADDITIONS['cereal-rye'].note,
+  },
+  // canola, sunflower, dry-beans, cotton, alfalfa: not sourced yet -> information gap.
 };
 
 /**
@@ -63,14 +73,39 @@ export const COVER_REFERENCE: Record<ResidueType, { residueLb: number; coverFrac
 /** Established alfalfa (legume meadow) RUSLE C factor. Cover score = 1 - C. */
 export const ALFALFA_C_FACTOR = { value: 0.02, source: 'nrcsRusleCFactor' as const };
 
+export interface Retention {
+  /** Share of residue left on the surface at planting (0-1). */
+  value: number;
+  low: number;
+  high: number;
+  fragile: boolean;
+  fragilityBasis: 'sourced' | 'assumption';
+  label: string;
+}
+
 /**
- * PLACEHOLDER: share of residue left on the surface by tillage system.
- * A teammate will replace these with sourced values. Do not cite them.
+ * Residue left on the surface at planting:
+ *   tillage system retention (NRCS VA Tech Note Table 2, per operation, multiplied)
+ *   x over-winter decomposition (same table, applied to every system)
+ * Which operations each system means (TILLAGE_SYSTEMS) is a DESIGN choice.
+ * Unknown fragility counts as fragile (less cover), so missing data never helps.
+ * @param at position between the low and high ends (0-1); default the midpoint values
  */
-export const TILLAGE_RESIDUE_RETENTION: Record<Tillage, { value: number; placeholder: true }> = {
-  conventional: { value: 0.3, placeholder: true },
-  reduced: { value: 0.6, placeholder: true },
-  noTill: { value: 0.9, placeholder: true },
-};
+export function residueRetention(cropId: CropId, tillage: Tillage, at?: number): Retention {
+  const frag = RESIDUE_FRAGILITY[cropId] ?? { fragile: true, basis: 'assumption' as const };
+  const winter = TILLAGE_OPERATIONS.overWinterDecomposition[frag.fragile ? 'fragile' : 'nonFragile'];
+  const low = tillageRetention(tillage, frag.fragile, 'low') * winter[0];
+  const high = tillageRetention(tillage, frag.fragile, 'high') * winter[1];
+  const mid = tillageRetention(tillage, frag.fragile, 'mid') * ((winter[0] + winter[1]) / 2);
+  const value = at === undefined ? mid : low + at * (high - low);
+  return {
+    value,
+    low,
+    high,
+    fragile: frag.fragile,
+    fragilityBasis: frag.basis,
+    label: `${tillage} tillage (${TILLAGE_SYSTEMS[tillage].join(' + ')}; system definition is a design choice) keeps ${Math.round(value * 100)}% of ${frag.fragile ? 'fragile' : 'non-fragile'} residue after over-winter decomposition`,
+  };
+}
 
 export const DEFAULT_TILLAGE: Tillage = 'reduced';

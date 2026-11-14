@@ -20,11 +20,16 @@ export interface CriteriaWeights {
   water: number;
 }
 
-export function criteriaWeights(p: Priorities): CriteriaWeights {
+/**
+ * @param waterScarcity 0-1: how much water use matters on this farm (see aridity.ts).
+ *   The water slider is multiplied by it before the weights are normalised, so on a
+ *   humid farm water counts for little whatever the slider says. Default 1.
+ */
+export function criteriaWeights(p: Priorities, waterScarcity = 1): CriteriaWeights {
   const clamp = (x: number) => Math.min(100, Math.max(0, x));
   const a = clamp(p.profit);
   const b = clamp(p.soilHealth);
-  const c = clamp(p.water);
+  const c = clamp(p.water) * Math.min(1, Math.max(0, waterScarcity));
   const sum = a + b + c;
   if (sum === 0) return { profit: 1 / 3, soilHealth: 1 / 3, water: 1 / 3 };
   return { profit: a / sum, soilHealth: b / sum, water: c / sum };
@@ -47,15 +52,20 @@ export function normalise(bounds: { worst: number; best: number }, value: number
 }
 
 /**
- * Excess family share, averaged over years: sum over families of
- * max(0, share - VARIETY_MAX_FAMILY_SHARE).
- * @param familyAcres per year, acres per family
+ * Excess family share of the CROPPED area, averaged over years: sum over crop
+ * families of max(0, share - VARIETY_MAX_FAMILY_SHARE). Fallow is not a crop
+ * family and not in the denominator: leaving land empty removes revenue, it
+ * doesn't diversify it.
+ * @param familyAcres per year, acres per family (a 'fallow' entry is ignored)
  */
-export function varietyExcess(familyAcres: Map<string, number>[], totalAcres: number): number {
-  if (familyAcres.length === 0 || totalAcres <= 0) return 0;
+export function varietyExcess(familyAcres: Map<string, number>[]): number {
+  if (familyAcres.length === 0) return 0;
   let sum = 0;
   for (const year of familyAcres) {
-    for (const acres of year.values()) sum += Math.max(0, acres / totalAcres - VARIETY_MAX_FAMILY_SHARE);
+    let cropped = 0;
+    for (const [fam, acres] of year) if (fam !== 'fallow') cropped += acres;
+    if (cropped <= 0) continue;
+    for (const [fam, acres] of year) if (fam !== 'fallow') sum += Math.max(0, acres / cropped - VARIETY_MAX_FAMILY_SHARE);
   }
   return sum / familyAcres.length;
 }
@@ -69,6 +79,8 @@ export interface CriteriaValues {
   water: number;
   /** From varietyExcess(). */
   varietyExcess: number;
+  /** Share of last season's planned paddock-years (acre-weighted) this plan changes (re-planning only). */
+  switchShare?: number;
 }
 
 export interface ObjectiveScore {
@@ -82,12 +94,14 @@ export function scoreObjective(
   w: CriteriaWeights,
   lambda: number,
   explain = false,
+  switchWeight = 0,
 ): ObjectiveScore {
   const nP = normalise(bounds.profit, v.profit);
   const nS = normalise(bounds.soilHealth, v.soilHealth);
   const nW = normalise(bounds.water, v.water);
   const variety = VARIETY_PENALTY_WEIGHT * lambda * v.varietyExcess;
-  const value = w.profit * nP + w.soilHealth * nS + w.water * nW - variety;
+  const switching = switchWeight * (v.switchShare ?? 0);
+  const value = w.profit * nP + w.soilHealth * nS + w.water * nW - variety - switching;
   if (!explain) return { value, terms: [] };
   const t = (label: string, x: number, basis: Term['basis'] = 'design'): Term => ({ label, value: x, unit: 'score', basis });
   return {
@@ -97,6 +111,7 @@ export function scoreObjective(
       t(`Soil health: ${(nS * 100).toFixed(0)}% of the way from worst to best, weight ${pct(w.soilHealth)}`, w.soilHealth * nS),
       t(`Water: ${(nW * 100).toFixed(0)}% of the way from worst to best, weight ${pct(w.water)}`, w.water * nW),
       ...(variety > 0 ? [t(`Crop-variety penalty (over ${pct(VARIETY_MAX_FAMILY_SHARE)} of the farm in one family)`, -variety)] : []),
+      ...(switching > 0 ? [t(`Switching cost: changes ${pct(v.switchShare ?? 0)} of last season's plan`, -switching)] : []),
     ],
   };
 }

@@ -4,6 +4,7 @@
  * Rule: a null is a real data gap. Accessors return null (never a guess) and
  * the caller decides what to do: skip the term and record an information gap.
  */
+import { ALFALFA_ESTABLISHMENT_YIELD_FACTOR } from './constants';
 import { CROP_BY_ID } from './croptraits';
 import type { CropId, CropTable, CropTraits } from './types';
 
@@ -121,5 +122,7 @@ export function economicsStatus(c: CropTraits): { status: 'complete' | 'noRevenu
   if (typicalYield(c) === null) missing.push('yield');
   if (typicalPrice(c) === null) missing.push('price');
   if (operatingCost(c) === null) missing.push('operating cost');
+  // A perennial's first year is an establishment year: without its yield the margin is overstated.
+  if (c.id === 'alfalfa' && ALFALFA_ESTABLISHMENT_YIELD_FACTOR === null) missing.push('establishment-year yield');
   return { status: missing.length ? 'incomplete' : 'complete', missing };
 }

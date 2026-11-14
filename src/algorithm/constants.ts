@@ -28,6 +28,20 @@ export const ALFALFA_MAX_STAND_YEARS = 4;
  */
 export const SALINITY_MIN_RELATIVE_YIELD = 0.5;
 
+/** Yield factor when drainage is tolerated but not optimal for a crop (EcoCrop). UNSOURCED MAGNITUDE. */
+export const DRAINAGE_SUBOPTIMAL_FACTOR = 0.9;
+
+/** Equipment each crop needs to be harvested. A design choice; extend as needed. */
+export const EQUIPMENT_NEEDED: Readonly<Record<string, readonly ('hayEquipment' | 'cottonPicker')[]>> = {
+  alfalfa: ['hayEquipment'],
+  cotton: ['cottonPicker'],
+};
+
+export const EQUIPMENT_NAMES: Readonly<Record<'hayEquipment' | 'cottonPicker', string>> = {
+  hayEquipment: 'hay equipment (mower-conditioner, rake, baler)',
+  cottonPicker: 'a cotton picker or stripper',
+};
+
 // ---------------------------------------------------------------------------
 // Soft rotation rules (stage 2): yield multipliers
 // Sourced effects (continuous corn / soybean) come from ROTATION_EFFECTS in croptraits.ts.
@@ -92,6 +106,15 @@ export const SOIL_INDEX_WEIGHTS = {
 /** Share of residue cover lost per fully bare month in the year (0-1). Design choice. */
 export const BARE_MONTH_COVER_DISCOUNT = 0.5;
 
+/** The crop offered in the winter cover-crop slot. */
+export const COVER_CROP_ID = 'cereal-rye';
+/**
+ * Months a winter cover crop holds the ground between a summer crop's harvest
+ * and the next planting (Oct-Apr). A design choice; it removes that many bare
+ * months from the ground-cover component.
+ */
+export const COVER_CROP_MONTHS = 7;
+
 /** Diversity component: deductions when this year repeats last year's family / a pest group. */
 export const DIVERSITY_DEDUCTIONS = {
   sameFamily: 0.5,
@@ -122,6 +145,24 @@ export const MAX_DESCENT_ITERATIONS = 20;
 
 /** Candidate weight vectors: farmer weights shifted this many slider points toward each criterion. */
 export const CANDIDATE_WEIGHT_SHIFT = 25;
+
+// ---------------------------------------------------------------------------
+// Learning from the farmer's season reports (update.ts)
+// ---------------------------------------------------------------------------
+
+/** Prior sd of log(field yield factor): how far a field can plausibly sit from the model before any reports. Design choice. */
+export const CALIBRATION_PRIOR_SD = 0.15;
+/** Season-to-season sd of log(reported / predicted) the model can't explain. Design choice. */
+export const CALIBRATION_OBS_SD = 0.2;
+/** Events that make a season a one-off: recorded, but not used to calibrate. */
+export const CALIBRATION_EXCLUDED_EVENTS: readonly string[] = ['hail', 'flood', 'replant'];
+
+/**
+ * Re-planning: objective units lost if EVERY paddock-year of last season's
+ * plan is changed (scaled by the share changed). Stops the plan flip-flopping
+ * on small differences. Not applied to the max-profit plan. Design choice.
+ */
+export const SWITCHING_PENALTY_WEIGHT = 0.05;
 
 // ---------------------------------------------------------------------------
 // Monte Carlo (stage 6)
