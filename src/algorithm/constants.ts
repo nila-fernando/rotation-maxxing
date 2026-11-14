@@ -28,6 +28,9 @@ export const ALFALFA_MAX_STAND_YEARS = 4;
  */
 export const SALINITY_MIN_RELATIVE_YIELD = 0.5;
 
+/** Yield factor when drainage is tolerated but not optimal for a crop (EcoCrop). UNSOURCED MAGNITUDE. */
+export const DRAINAGE_SUBOPTIMAL_FACTOR = 0.9;
+
 /** Equipment each crop needs to be harvested. A design choice; extend as needed. */
 export const EQUIPMENT_NEEDED: Readonly<Record<string, readonly ('hayEquipment' | 'cottonPicker')[]>> = {
   alfalfa: ['hayEquipment'],

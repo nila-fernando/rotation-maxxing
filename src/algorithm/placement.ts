@@ -15,6 +15,10 @@ import {
 import { depletionP, getCrop, isFallow, kcMid, nCreditMid, salinityRelativeYield, typicalYield } from './cropData';
 import { prepareFarm } from './geometry';
 import { equipmentReason, missingEquipmentFor, needsBuyerReason } from './filters';
+import { STATE_PRESENCE } from './cropTraitsUpdate';
+import { drainageCheck, phCheck } from './landSuitability';
+
+const STATE_NAMES: Record<string, string> = { IA: 'Iowa', KS: 'Kansas' };
 import { hardRuleViolation, rotationEffect } from './rotation';
 import { computeShade } from './shade';
 import { DEFAULT_TILLAGE } from './soilData';
@@ -89,6 +93,16 @@ export function checkPlacement(
       sal.value < SALINITY_MIN_RELATIVE_YIELD ? 3 : sal.value < 0.9 ? 2 : 1,
       `Salinity (ECe ${paddock.land.salinityECe} dS/m) cuts ${crop.name} yield to about ${pct(sal.value)} of normal.`,
     );
+  }
+
+  for (const chk of [phCheck(crop, paddock.land.ph), drainageCheck(crop, paddock)]) {
+    if (chk.excluded) add('land', 3, chk.reason!);
+    else if (chk.term) add('land', chk.factor < 0.7 ? 2 : 1, `${chk.term.label}: about ${pct(1 - chk.factor)} yield loss.`);
+  }
+
+  const state = prepared.farm.state as keyof (typeof STATE_PRESENCE)[string] | undefined;
+  if (state && STATE_PRESENCE[cropId] && STATE_PRESENCE[cropId]![state] === false) {
+    add('land', 1, `${crop.name} isn't a usual crop in ${STATE_NAMES[state] ?? state} (no Handbook 628 row): check local agronomy and markets.`);
   }
 
   // repeat (hard rules here and for next year's crop, then soft repeats)

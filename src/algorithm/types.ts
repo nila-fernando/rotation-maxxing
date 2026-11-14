@@ -55,7 +55,7 @@ export interface Factor {
 // ---------------------------------------------------------------------------
 
 export type Tillage = 'conventional' | 'reduced' | 'noTill';
-export type Drainage = 'poor' | 'moderate' | 'good';
+export type Drainage = 'poor' | 'moderate' | 'good' | 'excessive';
 export type Texture = 'sand' | 'loam' | 'silt' | 'clay';
 
 export interface Land {
@@ -64,7 +64,8 @@ export interface Land {
   drainage: Drainage;
   /** Soil salinity as saturated-paste electrical conductivity, dS/m. */
   salinityECe: number;
-  ph: number;
+  /** Soil pH (1:1 water). Null/absent when unknown: pH suitability is then skipped, with a gap. */
+  ph?: number | null;
   /** Optional, from SSURGO: root-zone available water capacity, in/in (= cm/cm). Enables the water balance. */
   awcInPerIn?: number;
   /** Optional, from SSURGO: RUSLE soil erodibility K (surface horizon kffact). */
@@ -116,6 +117,8 @@ export interface Paddock {
   availableCrops: CropId[];
   /** Default 'reduced'. Scales residue retention and therefore ground cover. */
   tillage?: Tillage;
+  /** Tile drainage installed: counts as one drainage class better. */
+  tileDrained?: boolean;
   diseaseHistory?: { whiteMold?: boolean };
   /**
    * What this field has taught us, per crop: a yield factor learned from the

@@ -18,7 +18,7 @@
  *    region and include crop insurance. They are close but not identical.
  */
 
-import { SEASONS as HANDBOOK_SEASONS } from './cropTraitsUpdate';
+import { DATA_GAPS_ADDITIONS, SEASONS as HANDBOOK_SEASONS } from './cropTraitsUpdate';
 
 // ---------------------------------------------------------------------------
 // Sources
@@ -109,6 +109,11 @@ export const SOURCES = {
     title: 'Iowa State Ag Decision Maker newsletter (Dec 2011), corn/soybean rotation economics',
     url: 'https://pubdev.silo.lib.ia.us/16704/1/nldec11.pdf',
     covers: 'Corn after soybean generally needs no rootworm control and less N',
+  },
+  isuA120_2026: {
+    title: 'Hart 2026, Iowa State University Ag Decision Maker A1-20, Estimated Costs of Crop Production in Iowa-2026 (pp. 9-10)',
+    url: 'https://www.extension.iastate.edu/agdm/crops/pdf/a1-20.pdf',
+    covers: 'Alfalfa hay variable cost: established stand, 4 t/ac, large round bales $242.56/ac; establishment with oat companion $169.89/ac',
   },
   usdaAgHandbook628: {
     title: 'USDA NASS, Agricultural Handbook 628: Usual Planting and Harvesting Dates for U.S. Field Crops (2010 ed.)',
@@ -425,7 +430,11 @@ export const CROPS: CropTraits[] = [
       source: 'nassCropValues2025',
       note: 'Baled alfalfa hay, $/ton',
     },
-    operatingCostPerAcre: null,
+    operatingCostPerAcre: {
+      value: 242.56,
+      source: 'isuA120_2026',
+      note: 'Iowa 2026 variable cost, established stand at 4 t/ac. Establishment year ($169.89 with oats) is not modelled separately',
+    },
     maxHeightM: { value: 0.7, source: 'fao56' },
     kcMid: { value: 0.95, source: 'fao56', note: 'Averaged over cutting cycles' },
     rootDepthM: { value: { min: 1.0, max: 2.0 }, source: 'fao56' },
@@ -684,8 +693,9 @@ export const PEST_GROUPS = {
 
 export const DATA_GAPS = [
   'Shade tolerance for every crop: no standard field-crop dataset found. Needs literature per crop.',
-  'Frost tolerance, waterlogging tolerance and pH ranges: not yet sourced.',
-  'Operating costs for alfalfa (incl. establishment), cereal rye cover and fallow.',
+  'Frost tolerance / winter hardiness: not sourced (EcoCrop killing temperatures are unusable).',
+  'Alfalfa cost is an Iowa budget (established stand, 4 t/ac) set against a national yield; establishment-year cost and yield are not modelled separately.',
+  'Cereal rye cover crop cost is the SARE median for all cover crops; fallow field operations are not costed.',
   'Cereal rye cover crop: height, root depth, water use (FAO-56 has no cereal rye row).',
   'Cottonseed revenue is missing from cotton gross margin.',
   'Rotation yield effects beyond corn and soybean (e.g. wheat after soybean, sorghum, sunflower).',
@@ -693,8 +703,9 @@ export const DATA_GAPS = [
   'Canola, sunflower and dry bean costs are North Dakota only, and include crop insurance (ERS costs do not).',
   'Price volatility: only 3 marketing years. Pull 10+ years from NASS Quick Stats for the Monte Carlo.',
   'All yields are national. Replace with state or county yields for the farm location.',
-  'Season spans by state (Ag Handbook 628) not entered yet: the model uses fallback spans.',
+  'Season spans by state: only Iowa and Kansas are entered (Handbook 628); other states use fallback spans.',
   'Dry bean margin compares a national yield and US price against a North Dakota cost, so it is likely overstated.',
   'Legume N credits to wheat and sorghum are not modelled (credits currently go to following corn only).',
   'Fallow field operations (weed control, tillage passes) are not costed: fallow cost is shown as $0.',
+  ...DATA_GAPS_ADDITIONS,
 ];

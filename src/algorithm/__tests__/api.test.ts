@@ -85,7 +85,7 @@ describe('generatePlans', () => {
     expect(r.exclusions['p00']!.find((e) => e.cropId === 'soybeans')?.reason).toMatch(/isn't available/);
   });
 
-  it('never recommends crops with incomplete economics (alfalfa has no sourced cost)', () => {
+  it('never recommends crops with incomplete economics (alfalfa: establishment-year yield not sourced)', () => {
     for (const p of [res.plans.maxProfit, res.plans.priority]) expect(cropsIn(p).has('alfalfa')).toBe(false);
     expect(res.exclusions['p00']!.find((e) => e.cropId === 'alfalfa')?.kind).toBe('economics');
   });
@@ -142,12 +142,20 @@ describe('generatePlans', () => {
   });
 
   it('the end-of-horizon value changes the final-year choice', () => {
-    // (a) Soil weight: the final year counts extra, so a high-residue crop is left behind.
-    const f = { ...gridFarm(1, 1, 80, { availableCrops: ['corn', 'soybeans', 'winter-wheat', 'oats', 'sorghum'] }), state: 'KS' };
-    const pr: Priorities = { profit: 50, soilHealth: 50, water: 0, risk: 0 };
-    const on = generatePlans(f, pr, {}, [], fast).plans.priority.paddocks[0]!.sequence;
-    const off = generatePlans(f, pr, {}, [], { ...fast, endOfHorizon: false }).plans.priority.paddocks[0]!.sequence;
-    expect(on[2]).not.toBe(off[2]);
+    // (a) Soil weight: the final year counts extra, so what is left behind matters.
+    // It never lowers final-year soil health, and changes the final crop in at least one setting.
+    let flips = 0;
+    for (const state of ['IA', 'KS']) {
+      for (const soil of [30, 50, 70]) {
+        const f = { ...gridFarm(1, 1, 80, { availableCrops: ['corn', 'soybeans', 'winter-wheat', 'oats', 'sorghum'] }), state };
+        const pr: Priorities = { profit: 100 - soil, soilHealth: soil, water: 0, risk: 0 };
+        const on = generatePlans(f, pr, {}, [], fast).plans.priority;
+        const off = generatePlans(f, pr, {}, [], { ...fast, endOfHorizon: false }).plans.priority;
+        expect(on.endSoilHealth).toBeGreaterThanOrEqual(off.endSoilHealth - 1e-9);
+        if (on.paddocks[0]!.sequence[2] !== off.paddocks[0]!.sequence[2]) flips++;
+      }
+    }
+    expect(flips).toBeGreaterThan(0);
 
     // (b) Profit only: N left behind. Synthetic barley price makes barley edge out soybean
     // by less than the soybean N credit (35 lb x $0.58 = $20.30/ac).
@@ -249,7 +257,10 @@ describe('evaluatePlan', () => {
       weather,
     );
     expect(r.risks.join()).toMatch(/Sunflower \(oil\) can't follow Sunflower/);
-    expect(r.informationGaps.join()).toMatch(/Operating cost for Alfalfa \(hay\) is not sourced/);
+    expect(r.informationGaps.join()).toMatch(/Alfalfa establishment-year yield loss is not sourced/);
+    const alf = r.paddocks.find((p) => p.paddockId === 'p01')!.years[0]!.terms.find((t) => t.label.startsWith('Operating cost'))!;
+    expect(alf.value).toBeCloseTo(-242.56);
+    expect(alf.sources).toContain('isuA120_2026');
     expect(r.rankStability).toBeNull();
     expect(r.kind).toBe('custom');
   });

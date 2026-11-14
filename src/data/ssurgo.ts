@@ -35,6 +35,7 @@ export function mapDrainage(cls: string | null): Drainage {
   const c = (cls ?? '').toLowerCase();
   if (c.includes('poorly')) return 'poor';
   if (c.startsWith('moderately well')) return 'moderate';
+  if (c.includes('excessively')) return 'excessive';
   return 'good';
 }
 
@@ -85,7 +86,7 @@ export function parseSsurgo(json: unknown): SoilAtPoint {
   const om = num(surface['om_r']);
   const slope = num(first['slope_r']);
   if (ec === null) gaps.push('SSURGO reports no EC for this soil; treated as non-saline (0 dS/m).');
-  if (ph === null) gaps.push('SSURGO reports no pH for this soil.');
+  if (ph === null) gaps.push('SSURGO reports no pH for this soil; pH suitability is skipped.');
   if (slope === null) gaps.push('SSURGO reports no slope for this map unit; enter it manually.');
   if (k === null) gaps.push('SSURGO reports no K factor for this soil; erosion is not estimated.');
   if (depth === 0) gaps.push('SSURGO reports no available water capacity; the water balance is skipped.');
@@ -95,7 +96,7 @@ export function parseSsurgo(json: unknown): SoilAtPoint {
     texture: mapTexture(num(surface['sandtotal_r']), num(surface['claytotal_r'])),
     drainage: mapDrainage(first['drainagecl'] as string | null),
     salinityECe: ec ?? 0,
-    ph: ph ?? 7,
+    ...(ph !== null ? { ph } : {}),
     ...(depth > 0 ? { awcInPerIn: awSum / depth } : {}),
     ...(k !== null ? { kFactor: k } : {}),
     ...(t !== null ? { tFactorTonsPerAcre: t } : {}),

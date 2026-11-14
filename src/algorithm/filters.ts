@@ -5,6 +5,7 @@
  */
 import { EQUIPMENT_NAMES, EQUIPMENT_NEEDED, SALINITY_MIN_RELATIVE_YIELD } from './constants';
 import { economicsStatus, salinityRelativeYield } from './cropData';
+import { drainageCheck, phCheck } from './landSuitability';
 import { hardRuleViolation, sequenceViolation, timelineOf } from './rotation';
 import type { CropId, CropTable, EquipmentId, Exclusion, Paddock } from './types';
 
@@ -16,7 +17,7 @@ export interface CropScreen {
 
 /** Land checks we would like to run but can't until the traits are sourced. */
 export const UNSOURCED_LAND_CHECKS =
-  'pH, drainage/waterlogging, frost and slope suitability are not sourced for any crop yet, so only salinity is checked.';
+  'Land checks: salinity (FAO-61), pH and drainage (FAO EcoCrop, expert opinion). Frost and winter hardiness are not checked; slope is handled by erosion, not suitability.';
 
 /** The "why not X?" text for the contract-market gate (requiresBuyer is a design decision). */
 export function needsBuyerReason(cropName: string): string {
@@ -68,6 +69,14 @@ export function screenCrops(
     }
     const sal = salinityRelativeYield(c, paddock.land.salinityECe);
     if (sal.gap) gaps.add(sal.gap);
+    const phC = phCheck(c, paddock.land.ph);
+    const drC = drainageCheck(c, paddock);
+    for (const chk of [phC, drC]) if (chk.gap) gaps.add(chk.gap);
+    const landBlock = phC.excluded ? phC : drC.excluded ? drC : null;
+    if (landBlock) {
+      exclusions.push({ cropId: id, kind: 'land', reason: landBlock.reason! });
+      continue;
+    }
     if (sal.value < SALINITY_MIN_RELATIVE_YIELD) {
       exclusions.push({
         cropId: id,

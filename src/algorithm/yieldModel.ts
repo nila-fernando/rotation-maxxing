@@ -5,6 +5,7 @@
  */
 import { getCrop, isFallow, salinityRelativeYield, typicalYield } from './cropData';
 import { sourceIds } from './evidence';
+import { drainageCheck, phCheck } from './landSuitability';
 import { productOf, rotationEffect, timelineOf } from './rotation';
 import { computeShade, type ShadeResult } from './shade';
 import type { CropId, CropTable, Factor, Paddock, PaddockId, PreparedFarm, Term, WeatherScenario } from './types';
@@ -161,6 +162,12 @@ export class TraitYieldModel implements YieldModel {
     if (sal.gap) gaps.push(sal.gap);
     if (sal.value < 1) {
       factors.push({ label: `Salinity (ECe ${paddock.land.salinityECe} dS/m)`, factor: sal.value, basis: 'sourced', sources: ['fao61Salinity'] });
+    }
+
+    for (const chk of [phCheck(crop, paddock.land.ph), drainageCheck(crop, paddock)]) {
+      if (chk.gap) gaps.push(chk.gap);
+      if (chk.term) factors.push(chk.term);
+      else if (chk.excluded) factors.push({ label: chk.reason!, factor: 0, basis: 'sourced', sources: ['faoEcocrop'] });
     }
 
     const timeline = timelineOf(paddock, sequence.slice(0, yearIndex + 1));
