@@ -101,4 +101,23 @@ describe('cropYears grow-in', () => {
     assert.deepEqual(sizes(0), [0.5]);
     assert.deepEqual(sizes(1), [0.5]);
   });
+
+  it('cancelGrow puts every sprouting field straight back at the shared size, and stays put', () => {
+    const { crops, sizes } = setup(3);
+    crops.setSize(0.8);
+    crops.growIn(['f1', 'f2'], { stagger: 0.5 });
+    run(crops, 0.1);
+    crops.cancelGrow();
+    assert.equal(crops.growing, 0);
+    assert.equal(sizes(0).at(-1), 0.8, 'mid-sprout: straight to full size');
+    assert.equal(sizes(1).at(-1), 0.8, 'still waiting its turn: straight to full size');
+    assert.deepEqual(sizes(2), [0.8], 'a field that wasn\'t sprouting is left alone');
+    const before = sizes(0).length;
+    run(crops, 1);
+    assert.equal(sizes(0).length, before, 'nothing grows in after it');
+    crops.setSize(0.4);
+    assert.equal(sizes(0).at(-1), 0.4, 'and the season sizes it again');
+    crops.cancelGrow(); // (nothing sprouting: nothing to do)
+    assert.equal(sizes(0).at(-1), 0.4);
+  });
 });

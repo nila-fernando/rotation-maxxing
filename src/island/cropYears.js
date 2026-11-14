@@ -11,6 +11,7 @@
 //   crops.prebuild(keysById)     build those paddocks in idle time
 //   crops.growIn(ids, { dur, stagger })   these fields' crops sprout back up from small (a plan view)
 //   crops.tick(dt)               every frame: moves the sprouting on
+//   crops.cancelGrow()           any sprouting stops, those crops straight to full size (the view left)
 //   crops.dispose()              puts the original paddocks back and drops the others
 import { makeFieldPaddock } from './paddocks.js';
 
@@ -108,6 +109,16 @@ export function createCropYears({ fields, onBuilt }) {
     }
   }
 
+  /** Stops any sprouting at once: those fields' crops go back to the shared size (a plan view closed). */
+  function cancelGrow() {
+    if (!growing.size) return;
+    for (const id of growing.keys()) {
+      const e = entries.get(id);
+      e.cache.get(e.shown).userData.setSize?.(size);
+    }
+    growing.clear();
+  }
+
   /** Builds the paddocks for these years' crops ahead of time, one per idle slot. */
   function prebuild(keyMaps) {
     for (const keys of keyMaps) for (const [id, key] of entries2(keys)) {
@@ -137,7 +148,7 @@ export function createCropYears({ fields, onBuilt }) {
     }
   }
 
-  return { setYear, setSize, prebuild, growIn, tick, dispose, get size() { return size; }, get growing() { return growing.size; } };
+  return { setYear, setSize, prebuild, growIn, tick, cancelGrow, dispose, get size() { return size; }, get growing() { return growing.size; } };
 }
 
 function entries2(keys) {

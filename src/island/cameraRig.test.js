@@ -220,6 +220,61 @@ describe('without extra limits', () => {
   });
 });
 
+describe('a relayout with no flight after it', () => {
+  it('eases the island to its new spot without moving the camera', () => {
+    const insets = { left: 0, right: 380, top: 0, bottom: 0 };
+    const { rig, camera, controls } = makeRig({ insets });
+    assert.ok(near(camera.view.offsetX, 190), 'framed left of the card');
+    const pos = camera.position.clone(), target = controls.target.clone();
+    insets.right = 0; // the card closes
+    rig.layout({ animate: true });
+    assert.ok(near(camera.view.offsetX, 190), 'not in one jump');
+    const seen = [];
+    for (let i = 0; i < 60; i++) { rig.update(1 / 60); seen.push(camera.view.offsetX); }
+    for (let i = 1; i < seen.length; i++) assert.ok(seen[i] <= seen[i - 1] + 1e-9, 'heads one way only');
+    assert.ok(seen[0] < 190 && seen[0] > 100, `small steps: ${seen[0]}`);
+    assert.ok(near(camera.view.offsetX, 0), 'lands on the centre');
+    assert.ok(camera.position.distanceTo(pos) < 1e-9 && controls.target.distanceTo(target) < 1e-9, 'the camera stays put');
+  });
+
+  it('brings a camera past the new zoom-out limit in smoothly, along the same line', () => {
+    const insets = { left: 0, right: 0, top: 0, bottom: 500 };
+    const { rig, camera, controls } = makeRig({ insets });
+    rig.shot({ dist: controls.maxDistance }, 0); // zoomed right out
+    const far = rig.pose.dist;
+    const dir0 = camera.position.clone().sub(controls.target).normalize();
+    insets.bottom = 0; // the dock shrinks: the island fits closer
+    rig.layout({ animate: true });
+    const max = rig.overviewDist * 1.3;
+    assert.ok(far > max + 1, 'starts past the new limit');
+    assert.ok(near(rig.pose.dist, far) && controls.maxDistance >= far - 1e-9, 'no snap (OrbitControls clamps to maxDistance)');
+    let last = far;
+    for (let i = 0; i < 90; i++) {
+      rig.update(1 / 60);
+      const d = rig.pose.dist;
+      assert.ok(d <= last + 1e-9 && last - d < (far - max) * 0.2, `small steps in: ${last} to ${d}`);
+      assert.ok(controls.maxDistance >= d - 1e-9);
+      last = d;
+    }
+    assert.ok(near(rig.pose.dist, max, 1e-2) && near(controls.maxDistance, max), `ends at the limit (${rig.pose.dist} vs ${max})`);
+    assert.ok(camera.position.clone().sub(controls.target).normalize().distanceTo(dir0) < 1e-9, 'same direction');
+  });
+
+  it('keeps the tour limits all the way', () => {
+    const insets = { left: 0, right: 0, top: 0, bottom: 500 };
+    const { rig, camera, controls } = makeRig({ insets });
+    rig.setExtraLimits(LIMITS);
+    rig.shot({ dist: controls.maxDistance }, 0);
+    insets.bottom = 0;
+    rig.layout({ animate: true });
+    for (let i = 0; i < 90; i++) {
+      rig.update(1 / 60);
+      assert.ok(camera.position.y >= LIMITS.floor - 1e-9 && rig.polar <= LIMITS.maxPolar + 1e-9);
+      assert.ok(rig.pose.dist >= controls.minDistance - 1e-9);
+    }
+  });
+});
+
 describe('solidTop', () => {
   it('measures the meshes and leaves out sprites, points, hidden and skipped things', () => {
     const root = new THREE.Group();

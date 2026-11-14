@@ -2,12 +2,12 @@
 // exact demo lines, the voice rules on every line she can say, and a phrase for every warning and gap.
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
-import { demoData, clonedData, START_YEAR } from '../../test/futuresDemo.mjs';
+import { demoData, clonedData, coverPickData, START_YEAR } from '../../test/futuresDemo.mjs';
 import { KINDS, compareFutures, mixedPlan, reelStops, viewField } from './compareFutures.js';
 import {
-  GAP_PHRASE, allLines, captionLine, coverLine, farmRiskLines, fieldLine, gapLines, lintLine, mixLine, nCarriedLine, nLine,
-  pickedLine, priceLine, reelLine, saveLabel, seasonLabel, sevPhrase, skipHintLine, statusLine, tipFor, warnCtx, warnEntry,
-  warnLine, watchItems, watchRows, weatherLine,
+  GAP_PHRASE, allLines, captionLine, coverLine, farmRiskLines, fieldLine, flipLine, gapLines, giveUpLine, goodFitLine, lintLine,
+  mixLine, nCarriedLine, nLine, pickedLine, priceLine, reelLine, saveLabel, seasonLabel, sevPhrase, skipHintLine, statusLine,
+  tipFor, vsProfitLine, warnCtx, warnEntry, warnLine, watchItems, watchRows, weatherLine, weightsLine,
 } from './futuresVoice.js';
 import { ALL_ICONS } from '../ui/futureIcons.js';
 
@@ -98,11 +98,34 @@ describe('Manami’s lines on the demo farm (profit first)', () => {
     assert.match(priceLine({ ...cmp.price, waterIn: 0.36 }), /more water/);
     assert.match(priceLine({ ...cmp.price, waterIn: -0.36 }), /less water/);
     assert.equal(priceLine({ ...cmp.price, samePlan: true }), 'My pick is the most-profit plan here, so it costs you nothing.');
-    // different crops but under $1k given up: it isn't the most-profit plan, so she doesn't say it is
-    assert.equal(priceLine({ ...cmp.price, profitCost: 200 }), 'My pick earns about as much as the most-profit plan, so it costs you next to nothing.');
+    // different crops but under $1k of cash and next to no nitrogen: it isn't the most-profit plan, so she doesn't say it is
+    assert.equal(priceLine({ ...cmp.price, cash: -400, nCarried: 300, p10: 0, soilAvgPts: 0, waterIn: 0 }), 'My pick earns about as much as the most-profit plan, so it costs you next to nothing.');
     // without real weather the water number is a crop-water index, not inches
     assert.match(priceLine({ ...cmp.price, waterInches: false }), /It needs a little more water\.$/);
     assert.doesNotMatch(priceLine({ ...cmp.price, waterInches: false }), / in a season/);
+  });
+
+  it('keeps cash and nitrogen apart in the price', () => {
+    // $4k of cash given up, $3.5k more nitrogen left: the planner's profitCost is only $500
+    const p = { ...cmp.price, cash: -4000, nCarried: 3500, profitCost: 500, p10: 0, soilAvgPts: 0, waterIn: 0 };
+    assert.equal(priceLine(p), 'Next to the most-profit plan, mine gives up about $4k of cash but leaves $4k more nitrogen in the ground.');
+    assert.equal(priceLine({ ...p, cash: -300 }), 'My pick earns about as much cash as the most-profit plan, and leaves $4k more nitrogen in the ground.');
+    assert.equal(priceLine({ ...p, cash: -300, nCarried: -3500 }), 'My pick earns about as much cash as the most-profit plan, but leaves $4k less nitrogen in the ground.');
+    // the walk measures in cash, as the tiles do
+    const c = structuredClone(cmp);
+    c.totals.priority.expectedGM = c.totals.maxProfit.expectedGM - 4000;
+    c.price = { ...c.price, profitCost: 500 };
+    assert.match(vsProfitLine(c), /^The most-profit plan earns about \$4k more than mine\./);
+    c.totals.priority.expectedGM = c.totals.maxProfit.expectedGM - 300;
+    c.price.nCarried = 200;
+    assert.equal(vsProfitLine(c), 'My pick earns about as much as the most-profit plan, so it costs you next to nothing.');
+  });
+
+  it('says the one place only when no other field earns less', () => {
+    const c = structuredClone(cmp);
+    c.fields.find((f) => f.id === 'f4').diff.priority = -400;
+    assert.match(giveUpLine(c), /^North draw gives up the most on my pick, about \$2k over 3 seasons\./);
+    assert.doesNotMatch(giveUpLine(c), /a little/);
   });
 
   it('never says a per-acre gain of $0', () => {
@@ -134,6 +157,50 @@ describe('the soil-first plans', () => {
     assert.equal(reelLine(cmp, { id: 'why' }), 'Soil health matters most to you, so I gave it about half of the say and profit the rest. Water’s plentiful here, so I left it out.');
     assert.equal(priceLine(cmp.price), 'Next to the most-profit plan, mine gives up about $27k of cash and $5k of nitrogen left in the ground. In return the soil scores 6 points higher on average, but a bad year is $11k worse. It uses a little more water, about 0.4 in a season.');
     assert.equal(tipFor(cmp, 'f3', 'priority', 2).title, 'North draw · 2029: Corn + rye cover');
+  });
+});
+
+describe('the say each priority got', () => {
+  const w = (o) => weightsLine({ top: 'profit', topPct: 0, pcts: {}, waterPlentiful: true, asked: null, ...o });
+  it('says what the farmer put first only when it got the most say', () => {
+    assert.equal(w({ pcts: { profit: 68, soilHealth: 32, water: 0 }, asked: 'profit' }), 'Profit matters most to you, so I gave it about two-thirds of the say and soil health the rest. Water’s plentiful here, so I left it out.');
+    // asked for soil health, but profit got more say: say it as what I did
+    assert.equal(w({ pcts: { profit: 68, soilHealth: 32, water: 0 }, asked: 'soilHealth' }), 'I gave profit about two-thirds of the say and soil health the rest. Water’s plentiful here, so I left it out.');
+    assert.equal(w({ pcts: { profit: 68, soilHealth: 32, water: 0 } }), 'I gave profit about two-thirds of the say and soil health the rest. Water’s plentiful here, so I left it out.');
+  });
+  it('leads with water when the farmer asked to save it and it’s plentiful', () => {
+    assert.equal(w({ pcts: { profit: 50, soilHealth: 50, water: 0 }, asked: 'water' }), 'You asked me to save water, but water’s plentiful here, so I left it out. I gave profit and soil health about half of the say each.');
+  });
+  it('says a tie as a tie', () => {
+    assert.equal(w({ pcts: { profit: 50, soilHealth: 50, water: 0 }, asked: 'soilHealth', waterPlentiful: false }), 'I gave soil health and profit about half of the say each.');
+    assert.equal(w({ pcts: { profit: 40, soilHealth: 40, water: 20 }, waterPlentiful: false }), 'I gave profit and soil health about a third of the say each and water the rest.');
+  });
+  it('says low risk as bad years counting more', () => {
+    assert.equal(w({ pcts: { profit: 68, soilHealth: 32, water: 0 }, asked: 'risk' }), 'You asked me to keep risk low, so I count a bad year more. I gave profit about two-thirds of the say and soil health the rest. Water’s plentiful here, so I left it out.');
+  });
+  it('on the water-first demo farm', () => {
+    const cmp = compareFutures(demoData(['saving-water']), { startYear: START_YEAR });
+    assert.equal(cmp.weights.asked, 'water');
+    assert.doesNotMatch(reelLine(cmp, { id: 'why' }), /matters most to you/);
+    assert.match(reelLine(cmp, { id: 'why' }), /^You asked me to save water, but water’s plentiful here, so I left it out\./);
+    assert.deepEqual(lintLine(reelLine(cmp, { id: 'why' })), []);
+  });
+});
+
+describe('a pick of covers alone', () => {
+  it('says a cheap cover-only pick as a good fit, and names the covers', () => {
+    const cmp = compareFutures(coverPickData(demoData(['profit']), { gain: -500 }), { startYear: START_YEAR });
+    assert.deepEqual(reelStops(cmp).map((s) => s.id), ['intro', 'goodFit', 'yourTurn']);
+    assert.equal(reelLine(cmp, { id: 'goodFit' }), 'Your rotation is already a good fit. My pick keeps your crops and only adds a winter cover on 5 fields, which costs under $1k over 3 seasons.');
+  });
+  it('says what a dear one costs and what it buys', () => {
+    const cmp = compareFutures(coverPickData(demoData(['profit']), { gain: -15000, soilPts: 6 }), { startYear: START_YEAR });
+    assert.equal(flipLine(cmp), 'Here’s my pick. It changes 5 fields in 2027. Over 3 seasons it earns about $15k less, and in return the soil ends 6 points higher and 5 fields get a winter cover.');
+    for (const s of reelStops(cmp)) {
+      const line = reelLine(cmp, s);
+      if (line != null) assert.deepEqual(lintLine(line), [], line);
+    }
+    assert.equal(goodFitLine(compareFutures(demoData(['profit']), { startYear: START_YEAR })), 'Your rotation is already a good fit. My pick changes little over the 3 seasons.');
   });
 });
 

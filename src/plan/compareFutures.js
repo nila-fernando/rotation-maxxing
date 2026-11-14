@@ -131,7 +131,7 @@ export function compareFutures(data, { startYear } = {}) {
     totals,
     seasonCash,
     price: priceOf(data.result.priceOfPriorities),
-    weights: weightsOf(plans.priority.objectiveTerms),
+    weights: weightsOf(plans.priority.objectiveTerms, data.priorities),
     notes: notesOf(data, plans, fields),
     raw: Object.fromEntries(KINDS.map((k) => [k, rawOf(plans[k])])),
     gaps: [...(data.gaps || [])],
@@ -161,8 +161,17 @@ function priceOf(pop = {}) {
 
 const WEIGHT_KEY = { Profit: 'profit', 'Soil health': 'soilHealth', Water: 'water' };
 
-/** The say each priority got, from the planner's objective terms ("…, weight 68%"). */
-function weightsOf(terms = []) {
+// the planner's priorities ({ profit, soilHealth, water, risk }, 0-100, 50 neutral) -> the farmer's first pick
+function firstAsk(prio) {
+  const top = ['profit', 'soilHealth', 'water', 'risk'].map((k) => [k, prio?.[k] ?? 0]).sort((a, b) => b[1] - a[1])[0];
+  return top[1] > 50 ? top[0] : null;
+}
+
+/**
+ * The say each priority got, from the planner's objective terms ("…, weight 68%"), and `asked`:
+ * what the farmer put first (from the planner's priorities; null when unknown).
+ */
+function weightsOf(terms = [], priorities = null) {
   const pcts = {};
   let waterPlentiful = false;
   for (const t of terms) {
@@ -172,7 +181,7 @@ function weightsOf(terms = []) {
   }
   const order = Object.entries(pcts).sort((a, b) => b[1] - a[1]);
   const second = order[1]?.[1] > 0 ? order[1] : null;
-  return { top: order[0]?.[0] ?? null, topPct: order[0]?.[1] ?? 0, second: second?.[0] ?? null, secondPct: second?.[1] ?? 0, pcts, waterPlentiful };
+  return { top: order[0]?.[0] ?? null, topPct: order[0]?.[1] ?? 0, second: second?.[0] ?? null, secondPct: second?.[1] ?? 0, pcts, waterPlentiful, asked: firstAsk(priorities) };
 }
 
 function rawOf(p) {
@@ -425,6 +434,17 @@ export function sameCropPick(cmp, skip = []) {
   return best;
 }
 
+/** The fields where the pick sows a different winter cover (or none) from keeping going, with the same main crops. */
+export function coverOnlyFields(cmp) {
+  return cmp.fields.filter((f) => {
+    const p = f.byKind.priority.seasons, c = f.byKind.current.seasons;
+    return SEASONS.some((y) => !sameCrops(p[y], c[y])) && SEASONS.every((y) => p[y].crop === c[y].crop);
+  });
+}
+
+/** The fields where the pick sows a winter cover in a season keeping going has none. */
+export const coverAddFields = (cmp) => cmp.fields.filter((f) => f.byKind.priority.seasons.some((s, y) => s.cover && !f.byKind.current.seasons[y].cover));
+
 /** The fields the pick earns less on (by more than $500), worst first. */
 export function giveUpFields(cmp) {
   return cmp.fields.filter((f) => f.diff.priority < -500).sort((a, b) => a.diff.priority - b.diff.priority);
@@ -436,9 +456,15 @@ export function watchSeason(cmp, view = 'priority', choice) {
   return n.reduce((a, k, i) => (k > n[a] ? i : a), 0);
 }
 
-/** Whether the pick hardly differs from keeping going (the walk is then one line). */
+/**
+ * Whether the pick hardly differs from keeping going (the walk is then one line): the same crops
+ * everywhere, or the same main crops with only the winter covers changed for under $1k either way.
+ * A pick that changes crops is never a good fit, even when it earns less: the full walk says why.
+ */
 export function isGoodFit(cmp) {
-  return pickGain(cmp) <= 1000 || seasonChanges(cmp, 'priority').every((m) => m.size === 0);
+  if (samePlans(cmp, 'priority', 'current')) return true;
+  const sameMains = cmp.fields.every((f) => f.byKind.priority.seasons.every((s, y) => s.crop === f.byKind.current.seasons[y].crop));
+  return sameMains && Math.abs(pickGain(cmp)) < 1000;
 }
 
 /**

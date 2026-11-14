@@ -90,6 +90,7 @@ export function createCameraRig({ camera, controls, center, radius, getInsets, r
   let offsetGoal = { x: 0, y: 0 };
   let overviewDist = 1;
   let baseMin = 0; // the zoom limit layout() works out (the extra limits may ask for more)
+  let maxDist = Infinity; // the zoom-out limit layout() works out (controls.maxDistance eases down to it)
   let limits = null; // { maxPolar, floor } while the tour keeps the camera above the farm
   let homeAzimuth = null; // which way round the camera looked at the first layout()
   let anim = null;
@@ -155,8 +156,8 @@ export function createCameraRig({ camera, controls, center, radius, getInsets, r
 
   /** A flight's distance, kept to the zoom limits; with the extra limits on, the floor always wins. */
   function clampDist(dist, ty) {
-    if (!limits) return Math.min(controls.maxDistance, Math.max(controls.minDistance, dist));
-    return Math.max(minDistanceAt(ty), Math.min(controls.maxDistance, dist));
+    if (!limits) return Math.min(maxDist, Math.max(controls.minDistance, dist));
+    return Math.max(minDistanceAt(ty), Math.min(maxDist, dist));
   }
 
   /**
@@ -191,8 +192,9 @@ export function createCameraRig({ camera, controls, center, radius, getInsets, r
   }
 
   /**
-   * Measures the free area again. animate: ease the island to its new spot (when the UI slides in);
-   * otherwise it moves at once (a window resize).
+   * Measures the free area again. animate: ease the island to its new spot (when the UI slides in),
+   * with the next flight or, if none comes, on its own in update(); otherwise it moves at once (a
+   * window resize).
    */
   function layout({ animate = false } = {}) {
     const canvas = controls.domElement;
@@ -206,13 +208,17 @@ export function createCameraRig({ camera, controls, center, radius, getInsets, r
     overviewDist = fitDistance({ radius, fovDeg: camera.fov, height: size.h, freeWidth: freeW, freeHeight: freeH, margin: freeW < 700 ? 0.95 : 0.82 });
     baseMin = Math.max(radius * 0.3, overviewDist * 0.22);
     controls.minDistance = baseMin;
-    controls.maxDistance = overviewDist * 1.3;
+    maxDist = overviewDist * 1.3;
     if (homeAzimuth === null) homeAzimuth = spherical().azimuth;
     if (!animate || reducedMotion()) {
+      controls.maxDistance = maxDist;
       finishOffset();
       // keep the same framing relative to the whole farm
       const d = currentDistance();
-      if (before > 1 && d > 0) place(controls.target.clone(), Math.min(controls.maxDistance, Math.max(controls.minDistance, d * (overviewDist / before))));
+      if (before > 1 && d > 0) place(controls.target.clone(), Math.min(maxDist, Math.max(controls.minDistance, d * (overviewDist / before))));
+    } else {
+      // a camera further out than the new limit comes in to it in update(), not in one jump
+      controls.maxDistance = Math.max(maxDist, currentDistance());
     }
     enforce(); // the zoom limit just changed: the extra limits go back on top
     camera.updateProjectionMatrix();
@@ -308,6 +314,33 @@ export function createCameraRig({ camera, controls, center, radius, getInsets, r
     if (anim.t >= 1) endAnim(false);
   }
 
+  /**
+   * The UI changed with no flight to follow (a card closed, the dock grew): the island eases over
+   * to its new spot, and a camera past the new zoom-out limit comes in to it. Only the view offset
+   * (which moves the picture, not the camera) and the distance along the same line change, and
+   * enforce() runs after, so the extra limits hold all the way.
+   */
+  function easeToLayout(dt) {
+    const k = Math.min(1, Math.max(0, dt) * 8); // about a third of a second
+    if (offset.x !== offsetGoal.x || offset.y !== offsetGoal.y) {
+      offset.x += (offsetGoal.x - offset.x) * k;
+      offset.y += (offsetGoal.y - offset.y) * k;
+      if (Math.abs(offsetGoal.x - offset.x) < 0.5 && Math.abs(offsetGoal.y - offset.y) < 0.5) { offset.x = offsetGoal.x; offset.y = offsetGoal.y; }
+      applyOffset();
+    }
+    if (controls.maxDistance > maxDist) {
+      // (with the extra limits on, never closer than the floor allows: that limit wins)
+      const goal = limits ? Math.max(maxDist, minDistanceAt(controls.target.y)) : maxDist;
+      const d = currentDistance();
+      if (d > goal) {
+        let next = d + (goal - d) * k;
+        if (next - goal < 1e-3) next = goal; // (close enough: land on it)
+        place(controls.target.clone(), next);
+        controls.maxDistance = Math.max(maxDist, next);
+      } else controls.maxDistance = maxDist;
+    }
+  }
+
   function update(dt) {
     if (anim) step(dt);
     else {
@@ -329,6 +362,7 @@ export function createCameraRig({ camera, controls, center, radius, getInsets, r
         camera.position.y += dy;
         camera.position.z += dz;
       }
+      easeToLayout(dt);
     }
     // then the extra limits, if any (this runs before controls.update(), which clamps the same way)
     enforce();

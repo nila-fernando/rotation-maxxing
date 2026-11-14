@@ -574,22 +574,29 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
     const perf = { sum: 0, n: 0 };
     // The reveal's fog is sized for a laptop's view of the island. A tall, narrow screen (or a dock
     // along the bottom) puts the camera further back, which would leave the whole island in the
-    // haze: the fog moves back with the camera (a laptop's view is left as it was).
+    // haze: the fog moves back with the camera. A laptop's plain hub is left as it was (the check-up
+    // opening on the right moves the camera back a little, and the fog shouldn't jump with it), and
+    // when the fog does move it eases there with the camera instead of in one frame.
     let fogBase = null;
-    let fogFor = 0;
-    const fitFog = () => {
+    let fogK = null; // how far back the fog sits now (1: where the reveal left it)
+    const fitFog = (dt) => {
       const fog = view.scene?.fog;
-      const d = rig.overviewDist;
-      if (!fog || d === fogFor) return;
-      fogFor = d;
+      if (!fog) return;
       fogBase ??= { near: fog.near, far: fog.far };
-      const k = Math.max(1, d / (fogBase.near * 1.05));
-      fog.near = fogBase.near * k;
-      fog.far = fogBase.far * k;
+      const follow = sheet.matches || futures() || planning();
+      const want = follow ? Math.max(1, rig.overviewDist / (fogBase.near * 1.05)) : 1;
+      if (want === fogK) return;
+      if (fogK === null || reducedMotion()) fogK = want; // (the first frame: straight there)
+      else {
+        fogK += (want - fogK) * Math.min(1, Math.max(0, dt) * 4);
+        if (Math.abs(want - fogK) < 1e-3) fogK = want;
+      }
+      fog.near = fogBase.near * fogK;
+      fog.far = fogBase.far * fogK;
     };
     offs.push(() => { const fog = view.scene?.fog; if (fog && fogBase) { fog.near = fogBase.near; fog.far = fogBase.far; } });
     const frame = (dt) => {
-      fitFog();
+      fitFog(dt);
       rig.update(dt);
       if (pointerDirty && pointer && !pressed) {
         pointerDirty = false;

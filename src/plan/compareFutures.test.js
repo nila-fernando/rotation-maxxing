@@ -2,9 +2,10 @@
 // app does: test/futuresDemo.mjs), plus a soil-first run and synthetic 1- and 15-field farms.
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
-import { demoData, clonedData, START_YEAR } from '../../test/futuresDemo.mjs';
+import { demoData, clonedData, coverPickData, START_YEAR } from '../../test/futuresDemo.mjs';
 import {
-  KINDS, coinPlan, compareFutures, fineprint, flagsFor, mixedPlan, reelStops, seasonChanges, termsOf, tiles, viewField,
+  KINDS, coinPlan, compareFutures, coverAddFields, coverOnlyFields, fineprint, flagsFor, isGoodFit, mixedPlan, reelStops, seasonChanges,
+  termsOf, tiles, viewField,
 } from './compareFutures.js';
 
 const near = (actual, expected, tol, what) => assert.ok(Math.abs(actual - expected) <= tol, `${what}: ${actual} not within ${tol} of ${expected}`);
@@ -46,7 +47,7 @@ describe('the three plans compared field by field (demo farm, profit first)', ()
     assert.ok(cmp.price.waterIn > 0.35, 'the pick uses more water');
     assert.equal(cmp.price.samePlan, false);
     assert.equal(cmp.price.waterInches, true, 'real daily weather: the water numbers are inches');
-    assert.deepEqual(cmp.weights, { top: 'profit', topPct: 68, second: 'soilHealth', secondPct: 32, pcts: { profit: 68, soilHealth: 32, water: 0 }, waterPlentiful: true });
+    assert.deepEqual(cmp.weights, { top: 'profit', topPct: 68, second: 'soilHealth', secondPct: 32, pcts: { profit: 68, soilHealth: 32, water: 0 }, waterPlentiful: true, asked: 'profit' });
     assert.equal(cmp.weather.place, 'Ames, Iowa');
     assert.equal(cmp.weather.years, 24);
   });
@@ -126,6 +127,21 @@ describe('the three plans compared field by field (demo farm, profit first)', ()
     assert.deepEqual(reelStops(compareFutures(same, { startYear: START_YEAR })).map((s) => s.id), ['intro', 'goodFit', 'yourTurn']);
   });
 
+  it('is a good fit only when the pick keeps the crops', () => {
+    // rye on every field for $500 less: same main crops, a cheap change
+    const cheap = compareFutures(coverPickData(data, { gain: -500 }), { startYear: START_YEAR });
+    assert.equal(isGoodFit(cheap), true);
+    assert.equal(coverOnlyFields(cheap).length, 5);
+    assert.equal(coverAddFields(cheap).length, 5);
+    // the same rye for $15k less is a real change: the full walk says what it costs
+    const dear = compareFutures(coverPickData(data, { gain: -15000, soilPts: 6 }), { startYear: START_YEAR });
+    assert.equal(isGoodFit(dear), false);
+    assert.equal(reelStops(dear)[1].id, 'flip');
+    // a pick that changes crops is never a good fit, whatever it earns
+    const poor = { ...data, result: { ...data.result, plans: { ...data.result.plans, priority: { ...data.result.plans.priority, expectedGM: data.result.plans.current.expectedGM - 20000 } } } };
+    assert.equal(isGoodFit(compareFutures(poor, { startYear: START_YEAR })), false);
+  });
+
   it('keeps every word the planner said', () => {
     for (const kind of [...KINDS, 'mix']) {
       const fp = Object.values(fineprint(cmp, kind)).flat();
@@ -182,6 +198,7 @@ describe('the soil-first plans', () => {
     assert.equal(s.soil100, 76);
     assert.equal(s.coverMonths, 7);
     assert.equal(cmp.weights.top, 'soilHealth');
+    assert.equal(cmp.weights.asked, 'soilHealth', 'the farmer put soil health first');
     assert.equal(seasonChanges(cmp, 'priority')[2].get('f4'), 'crop', 'a cover alone is a change');
   });
 });

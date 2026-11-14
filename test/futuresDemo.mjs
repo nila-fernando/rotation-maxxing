@@ -82,3 +82,16 @@ export function clonedData(data, n) {
   }
   return { ...data, farm, gaps, result: { ...data.result, plans } };
 }
+
+/**
+ * The demo with Manami's pick made of keeping going plus a cereal rye cover on every field every
+ * season, earning `gain` more than keeping going (negative: less) and ending `soilPts` higher.
+ * The per-field numbers stay keeping going's; only the farm totals move.
+ */
+export function coverPickData(data, { gain = 0, soilPts = 0 } = {}) {
+  const cur = data.result.plans.current;
+  const sequences = Object.fromEntries(Object.entries(cur.plan.sequences).map(([id, slots]) => [id, slots.map((c) => ({ ...c, cover: 'cereal-rye' }))]));
+  const soil = (cur.endSoilHealth ?? cur.soilHealth) + soilPts / 100;
+  const priority = { ...cur, kind: 'priority', plan: { sequences }, expectedGM: cur.expectedGM + gain, endSoilHealth: soil, probBeatsCurrent: 0 };
+  return { ...data, result: { ...data.result, plans: { ...data.result.plans, priority } } };
+}

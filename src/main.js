@@ -144,6 +144,7 @@ const plansPanel = createPlansPanel({
   getSaved: () => app.plan?.plan || null, // "Build your own" starts from the plan saved last
   evaluateMix,
   onOpen: () => {
+    openSeq++; // a "See them on the farm" still loading stays shut
     planFutures?.stop(); // back from the plans on the island
     islandPlanner.stop(); // back from planning on the island, or opened over it
     hub.overview(); // the whole farm behind it, any field check-up closed
@@ -172,8 +173,23 @@ const plansPanel = createPlansPanel({
 // loaded the first time it opens)
 let futuresMod = null;
 let planFutures = null;
+let openSeq = 0; // a newer open (or the plans panel, or leaving the farm) makes an older one moot
 async function openFutures(kind, opts = {}) {
-  futuresMod ??= await import('./screens/planFutures.js');
+  const seq = ++openSeq;
+  try {
+    futuresMod ??= await import('./screens/planFutures.js');
+  } catch (e) {
+    // the chunk didn't load (the connection dropped, or the app was updated): say so, rather than nothing
+    console.error('planFutures: could not load', e);
+    if (seq !== openSeq || plansPanel.isOpen) return;
+    manami.say('I couldn’t open the plans on the farm just now. They’re all in “Plan my next seasons”.', {
+      actions: [{ label: 'Back to the plans', primary: true, onClick: () => plansPanel.open() }],
+      focus: true,
+    });
+    return;
+  }
+  // the farmer moved on while it loaded (the plans panel opened again, say): don't start under it
+  if (seq !== openSeq || plansPanel.isOpen) return;
   planFutures ??= futuresMod.createPlanFutures({
     hub,
     timeTravel,
@@ -187,6 +203,7 @@ async function openFutures(kind, opts = {}) {
       islandPlanner.stop();
       if (app.openFieldId) hub.overview(); // any field check-up closes (the plan view's camera takes over)
       document.getElementById('hubPanel').inert = true; // the field list waits while the plans are on the island
+      syncManami(); // she's back in reach for the walk
     },
     onStop: () => {
       document.getElementById('hubPanel').inert = false;
@@ -272,6 +289,7 @@ const reveal = createReveal({
 function startReveal({ instant = false } = {}) {
   document.body.classList.remove('reveal-done');
   fieldPanel.close();
+  openSeq++;
   planFutures?.stop();
   islandPlanner.stop();
   timeTravel.hide();
@@ -342,6 +360,7 @@ function handle(event) {
       app.fields = [];
       app.farmProfile = null;
       fieldPanel.close();
+      openSeq++;
       planFutures?.stop();
       islandPlanner.stop();
       timeTravel.hide();

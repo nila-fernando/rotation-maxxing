@@ -208,6 +208,9 @@ export function createTimeTravel({ hub, onYear } = {}) {
         render(state);
         return;
       }
+      // off a plan view: anything still sprouting from it goes straight to full size, so today's
+      // crops (or a past year's, or a play-through's) don't show up small and grow in again
+      crops.cancelGrow();
       const cropYear = state.now ? null : Math.min(state.cropYear, latest);
       if (cropYear !== shownCropYear) {
         shownCropYear = cropYear;

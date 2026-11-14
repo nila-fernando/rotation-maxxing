@@ -8,7 +8,7 @@ import { compareFutures, seasonChanges } from '../plan/compareFutures.js';
 // planFutures.js touches the DOM only inside createPlanFutures; these are plain functions
 globalThis.document ??= { getElementById: () => null };
 globalThis.matchMedia ??= () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
-const { keysFor, cellsFor, changedIds, overlaps, declutter, VIEWS } = await import('./planFutures.js');
+const { keysFor, cellsFor, changedIds, overlaps, declutter, focusHome, VIEWS } = await import('./planFutures.js');
 
 describe('the plans on the island (demo farm)', () => {
   let cmp;
@@ -77,5 +77,22 @@ describe('chips that would overlap', () => {
     const items = [0, 1, 2, 3, 4].map((i) => ({ id: `f${i}`, box: box(i * 100, 0), changed: false, weight: i }));
     assert.equal(declutter(items).size, 5);
     assert.equal(declutter([]).size, 0);
+  });
+});
+
+describe('where focus goes back to in the dock', () => {
+  const el = (shown, disabled = false) => ({ disabled, getClientRects: () => (shown ? [{}] : []) });
+
+  it('takes the first one on screen (the title is hidden on smaller screens)', () => {
+    const title = el(false), plan = el(true), more = el(true);
+    assert.equal(focusHome([title, plan, more]), plan);
+    const shownTitle = el(true);
+    assert.equal(focusHome([shownTitle, plan]), shownTitle);
+  });
+
+  it('skips missing and greyed ones, and gives null when none is on screen', () => {
+    const plan = el(true, true), more = el(true);
+    assert.equal(focusHome([null, plan, more]), more);
+    assert.equal(focusHome([el(false), null]), null);
   });
 });

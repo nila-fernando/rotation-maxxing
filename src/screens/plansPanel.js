@@ -31,6 +31,16 @@ export function firstSeason(today = new Date()) {
 }
 
 /**
+ * Manami's line over the cards (HTML): what her pick earns over keeping going, or that the rotation
+ * already fits, with what her pick costs when it earns less. gain: pick minus keeping going, 3 seasons.
+ */
+export function pickNote(gain, beats) {
+  if (gain > 1) return `My pick earns about <b>${money(gain)}</b> more than keeping going over 3 seasons, and comes out ahead in <b>${beats}%</b> of the weather years I tried.`;
+  if (gain < -1) return `My pick earns about <b>${money(-gain)}</b> less than keeping going over 3 seasons, in return for what you told me matters most.`;
+  return 'Your rotation is already a good fit. My pick changes little.';
+}
+
+/**
  * @param {object} o
  * @param {() => Promise<{result, gaps, weather, farm}>} o.planSeasons
  * @param {(plan: object) => Promise<object>} [o.evaluateMix]   scores a mixed plan
@@ -51,6 +61,7 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
   let run = 0;
   let mixRun = 0;
   let view = 'compare'; // 'compare' the three plans | 'build' your own (drag and drop)
+  let handoff = null; // the plans on show, handed straight to the island by "See them on the farm" / "Show on the island"
 
   // "Build your own": the drag-and-drop planner, scored by the same planner
   const builder = createPlanBuilder({
@@ -76,6 +87,7 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
 
   async function open() {
     const id = ++run;
+    handoff = null;
     if (root.hidden) {
       // focus goes back here on close: not the island planner's dock (it hides as this opens), nor
       // anything else that can't take focus; close() falls back to "Plan my next seasons"
@@ -118,8 +130,15 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
     data = fresh;
   }
 
-  /** The plans for the farm as it stands (worked out if they aren't yet, or if the farm changed). */
+  /**
+   * The plans for the farm as it stands (worked out if they aren't yet, or if the farm changed). Straight
+   * from the panel, the ones the farmer was just looking at: the farm can't change while it's open, and
+   * asking again would redo plans made on stand-in weather (and could show other numbers than the card).
+   */
   async function ensureData() {
+    const handed = handoff;
+    handoff = null;
+    if (handed && handed === data) return data;
     const fresh = await planSeasons();
     adopt(fresh);
     return data;
@@ -215,9 +234,7 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
     const cur = planOf('current'), pick = planOf('priority');
     const gain = pick.expectedGM - cur.expectedGM;
     const beats = Math.round((pick.probBeatsCurrent ?? 0) * 100);
-    const manami = gain > 1
-      ? `My pick earns about <b>${money(gain)}</b> more than keeping going over 3 seasons, and comes out ahead in <b>${beats}%</b> of the weather years I tried.`
-      : 'Your rotation is already a good fit. My pick changes little.';
+    const manami = pickNote(gain, beats);
     const farmBtn = onFutures ? `<button class="btn btn--primary btn--small plans__farm" type="button" data-act="futures">${FARM_ICON}See them on the farm</button>` : '';
 
     const cards = PLANS.map(({ kind, name, blurb }) => {
@@ -317,7 +334,10 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
       scoreMix();
       return;
     }
+    // (the plans on show go to the island as they are, unless new ones are still being worked out)
+    const handOff = () => { handoff = body.classList.contains('is-busy') ? null : data; };
     if (e.target.closest('[data-act="futures"]')) {
+      handOff();
       close({ restoreFocus: false });
       onFutures?.('priority', { reel: true });
       return;
@@ -325,6 +345,7 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
     const show = e.target.closest('[data-show]');
     if (show && onFutures) {
       // the island opens on that plan, without the walk
+      handOff();
       close({ restoreFocus: false });
       onFutures(show.dataset.show, { reel: false });
       return;

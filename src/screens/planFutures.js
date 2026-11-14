@@ -84,6 +84,11 @@ export function declutter(items, gap = 4) {
   return new Set(kept.map((k) => k.id));
 }
 
+/** The first of these that's on screen to take focus (a hidden one can't), or null. */
+export function focusHome(els) {
+  return els.find((el) => el && !el.disabled && el.getClientRects().length > 0) || null;
+}
+
 /** "+$25k" / "−$2k" (a money difference with its sign). */
 const signed = (d) => `${d >= 0 ? '+' : '−'}${money(Math.abs(d))}`;
 /** "$25k more than keeping going", for screen readers. */
@@ -173,6 +178,8 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
   const years = () => cmp.years;
   const kindOf = (id) => (view === 'mix' ? kindFor(choice, id) : view);
   const sayExplore = (line, o) => { manami.say(line, o); if (compact.matches && !o?.focus) manami.collapse(); };
+  /** Where focus goes back to in the dock: its title, or (where the title is hidden) the plan on show. */
+  const homeEl = () => focusHome([titleEl, plansEl.querySelector('[aria-checked="true"]'), seasonsEl.querySelector('[aria-checked="true"]'), fieldsBtn, moreBtn]) || titleEl;
 
   // ---------------------------------------------------------------- start and stop
 
@@ -191,6 +198,8 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     startYear = y0;
     reset();
     onStart?.();
+    // taps on the island wait while the plans are worked out (no field check-up opens under the dock)
+    hub.setPlanMode({ onTap: () => {} });
     document.body.classList.add('plan-futures');
     dock.hidden = false;
     setDockH();
@@ -316,13 +325,15 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
       () => { session()?.setMarks(null); hub.setPlanMode(null); session()?.clearHover(); },
       () => { session()?.rig.setExtraLimits(null); if (isle?.controls) isle.controls.enabled = true; },
       () => timeTravel.select('now'),
+      // her reel line and its buttons go with the mode (each way out says its own line after this)
+      () => manami.hide(),
       () => {
         document.body.classList.remove('plan-futures', 'fut-card-open', 'fut-notes-open');
         dock.hidden = true;
         card.hidden = true;
         notes.hidden = true;
-        dock.classList.remove('is-more', 'is-loading');
-        moreBtn.setAttribute('aria-expanded', 'false');
+        dock.classList.remove('is-loading');
+        setMore(false);
         statusEl.textContent = '';
         card.replaceChildren();
         notes.replaceChildren();
@@ -640,6 +651,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
   function paintChips() {
     if (!cmp) return;
     const changes = marksBase && marksBase !== view ? seasonChanges(cmp, view, choice, marksBase)[season] : new Map();
+    const written = [];
     for (const c of chips) {
       const f = fieldOf(cmp, c.id);
       if (!f) continue;
@@ -658,9 +670,13 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
         c.html = html;
         c.el.innerHTML = html;
         c.el.className = cls;
-        c.w = c.el.offsetWidth;
-        c.h = c.el.offsetHeight;
+        written.push(c);
       }
+    }
+    // measured after all the writes, so the page lays out once rather than once per chip
+    for (const c of written) {
+      c.w = c.el.offsetWidth;
+      c.h = c.el.offsetHeight;
     }
     chipsDirty = true;
   }
@@ -770,7 +786,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
       paintMarks();
       paintChips();
       queueStatus();
-      if (!dock.contains(document.activeElement)) titleEl.focus({ preventScroll: true });
+      if (!dock.contains(document.activeElement)) homeEl().focus({ preventScroll: true });
     }
   }
 
@@ -789,7 +805,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     paintMarks();
     paintChips();
     queueStatus();
-    if (focusTitle) titleEl.focus({ preventScroll: true });
+    if (focusTitle) homeEl().focus({ preventScroll: true });
   }
 
   /** Any tap on the island clears the "start there" outline. */
@@ -829,7 +845,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     if (!active || !cmp) return;
     dropHint();
     if (!id || !fieldOf(cmp, id)) { closeCard({ restore: false }); paintMarks(); paintChips(); return; }
-    openCard(id, { opener: titleEl });
+    openCard(id, { opener: homeEl() });
   }
 
   /** A field's plan, picked in its card: the farm shows the farmer's own plan from now on. */
@@ -911,7 +927,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     paintChips();
     paintDock();
     session()?.relayout();
-    const to = cardOpener?.isConnected && cardOpener.getClientRects().length ? cardOpener : titleEl;
+    const to = cardOpener?.isConnected && cardOpener.getClientRects().length ? cardOpener : homeEl();
     cardOpener = null;
     if (restore || hadFocus) to.focus({ preventScroll: true });
   }
@@ -1139,12 +1155,13 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     if (cardId) { closeCard(); return; }
     openCard(focusId || gainField(cmp)?.id || cmp.fields[0].id, { opener: fieldsBtn });
   });
-  moreBtn.addEventListener('click', () => {
-    const on = !dock.classList.contains('is-more');
+  /** The dock's extra rows on a phone: shown or folded away, with the button saying which. */
+  function setMore(on) {
     dock.classList.toggle('is-more', on);
     moreBtn.setAttribute('aria-expanded', String(on));
     moreBtn.textContent = on ? 'Less' : 'More';
-  });
+  }
+  moreBtn.addEventListener('click', () => setMore(!dock.classList.contains('is-more')));
   plansEl.addEventListener('click', (e) => {
     const b = e.target.closest('.fut-plan');
     if (b && active && cmp) setView(b.dataset.view);

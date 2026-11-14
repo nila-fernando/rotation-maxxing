@@ -15,7 +15,7 @@ import { LENS_LABEL, SEVERITY_LABEL } from './builder.js';
 import {
   KINDS, kindFor, fieldOf, viewField, seasonChanges, seasonCashFor, tiles, totalsOf, headline, flagsFor,
   gainField, firstCropChange, sameCropPick, giveUpFields, watchSeason, samePlans, sameCrops, sameEverywhere,
-  acreGain, mixKind, idsByName, rawFor, coinPlan,
+  acreGain, mixKind, idsByName, rawFor, coinPlan, coverOnlyFields, coverAddFields,
 } from './compareFutures.js';
 
 // ---- the rules ----
@@ -336,7 +336,15 @@ export function flipLine(cmp) {
   const gain = cmp.totals.priority.expectedGM - cmp.totals.current.expectedGM;
   const beats = cmp.totals.priority.probBeatsCurrent;
   const s2 = n ? `It changes ${n} field${n === 1 ? '' : 's'} in ${y0}.` : `It keeps your ${y0} crops and changes later seasons.`;
-  const s3 = `Over 3 seasons it earns about ${about(gain)} ${moreLess(gain)}${beats != null ? `, and beats keeping going in ${Math.round(beats * 100)}% of the weather years I tried` : ''}.`;
+  // earning less, say what it buys instead of how rarely it beats keeping going
+  const dSoil = cmp.totals.priority.endSoil100 - cmp.totals.current.endSoil100;
+  const covers = coverAddFields(cmp).length;
+  const buys = [];
+  if (dSoil > 0) buys.push(`the soil ends ${points(dSoil)} higher`);
+  if (covers) buys.push(`${covers} field${covers === 1 ? '' : 's'} ${covers === 1 ? 'gets' : 'get'} a winter cover`);
+  const s3 = gain <= -500 && buys.length
+    ? `Over 3 seasons it earns about ${about(gain)} less, and in return ${buys.join(' and ')}.`
+    : `Over 3 seasons it earns about ${about(gain)} ${moreLess(gain)}${beats != null ? `, and beats keeping going in ${Math.round(beats * 100)}% of the weather years I tried` : ''}.`;
   return `Here’s my pick. ${s2} ${s3}`;
 }
 
@@ -384,9 +392,11 @@ export function giveUpLine(cmp) {
   if (!lose.length) return null;
   const f = lose[0];
   const p = f.byKind.priority.seasons, c = f.byKind.current.seasons;
-  const s1 = lose.length === 1
+  // "the one place" only when no other field earns less at all (not just by more than $500)
+  const alone = cmp.fields.every((x) => x === f || x.diff.priority >= 0);
+  const s1 = alone
     ? `${f.name} is the one place my pick earns less, about ${about(f.diff.priority)} over 3 seasons.`
-    : `${f.name} earns a little less on my pick, about ${about(f.diff.priority)} over 3 seasons.`;
+    : `${f.name} gives up the most on my pick, about ${about(f.diff.priority)} over 3 seasons.`;
   const s2 = p[2].soil100 - c[2].soil100 >= 5
     ? ` It ends on ${endWords(p)}, so its soil scores ${p[2].soil100} in ${cmp.years[2]} instead of ${c[2].soil100}.`
     : '';
@@ -397,15 +407,19 @@ export function giveUpLine(cmp) {
   return `${s1}${s2}${s3}`;
 }
 
-// when the plans differ but the pick gives up under $1k (it isn't the most-profit plan, so don't say it is)
+// when the plans differ but the pick gives up under $1k of cash and next to no nitrogen
+// (it isn't the most-profit plan, so don't say it is)
 const COSTS_NEXT_TO_NOTHING = 'My pick earns about as much as the most-profit plan, so it costs you next to nothing.';
 
-/** Stop 5: the most-profit plan next to the pick (null when they are the same plan). */
+/**
+ * Stop 5: the most-profit plan next to the pick (null when they are the same plan). Measured in
+ * cash, as the tiles are: the planner's profitCost also counts the nitrogen left, which isn't cash.
+ */
 export function vsProfitLine(cmp) {
   if (samePlans(cmp, 'maxProfit', 'priority')) return null;
-  if (cmp.price.profitCost < 1000) return COSTS_NEXT_TO_NOTHING;
   const t = cmp.totals;
   const dGm = t.maxProfit.expectedGM - t.priority.expectedGM;
+  if (Math.abs(dGm) < 1000 && Math.abs(cmp.price.nCarried) <= 500) return COSTS_NEXT_TO_NOTHING;
   const dBad = t.priority.p10GM - t.maxProfit.p10GM;
   const dSoil = t.priority.endSoil100 - t.maxProfit.endSoil100;
   const s1 = Math.abs(dGm) < 500 ? 'The most-profit plan earns about the same as mine.' : `The most-profit plan earns about ${about(dGm)} ${moreLess(dGm)} than mine.`;
@@ -415,17 +429,43 @@ export function vsProfitLine(cmp) {
 }
 
 const WEIGHT_WORD = { profit: 'profit', soilHealth: 'soil health', water: 'water' };
+// what the farmer asked for first, for "You asked me to …"
+const ASK_WORD = { profit: 'put profit first', soilHealth: 'look after the soil first', water: 'save water', risk: 'keep risk low' };
 
-/** Stop 6 (and the Notes): how much say each priority got. */
+/**
+ * Stop 6 (and the Notes): how much say each priority got. Said as what I did; "matters most to you"
+ * only when the farmer put that priority first and it got the most say on its own.
+ */
 export function weightsLine(weights) {
   if (!weights?.top) return 'I weighed your priorities just as you set them.';
-  const top = cap(WEIGHT_WORD[weights.top]);
-  const others = Object.entries(weights.pcts).filter(([k, v]) => k !== weights.top && v > 0).sort((a, b) => b[1] - a[1]);
+  const asked = weights.asked ?? null;
+  // biggest say first; on a tie, what the farmer asked for first
+  const say = Object.entries(weights.pcts).filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1] || (b[0] === asked) - (a[0] === asked));
+  if (!say.length) return 'I weighed your priorities just as you set them.';
+  const W = (k) => WEIGHT_WORD[k];
+  const [topKey, topPct] = say[0];
+  const tied = say.filter(([, v]) => v === topPct);
+  const mine = asked === topKey && tied.length === 1;
+  const it = mine ? 'it' : W(topKey);
+  let split;
+  if (say.length === 1) split = `I gave ${it} all of the say`;
+  else if (tied.length > 1) {
+    const rest = say.slice(tied.length);
+    split = `I gave ${joinAnd(tied.map(([k]) => W(k)))} ${share(topPct)} of the say each${rest.length ? ` and ${joinAnd(rest.map(([k]) => W(k)))} the rest` : ''}`;
+  } else if (say.length === 2) split = `I gave ${it} ${share(topPct)} of the say and ${W(say[1][0])} the rest`;
+  else split = `I gave ${it} ${share(topPct)} of the say, ${W(say[1][0])} ${share(say[1][1])} and ${W(say[2][0])} the rest`;
+  const plentiful = weights.waterPlentiful && !(weights.pcts.water > 0);
+  // the farmer's own first pick got no say at all: lead with that, and why
+  if (asked && asked !== 'risk' && !(weights.pcts[asked] > 0)) {
+    const why = asked === 'water' && plentiful ? 'water’s plentiful here' : 'it doesn’t change the plans here';
+    return `You asked me to ${ASK_WORD[asked]}, but ${why}, so I left it out. ${split}.`;
+  }
   let s1;
-  if (!others.length) s1 = `${top} is all that counts for you, so I gave it all of the say.`;
-  else if (others.length === 1) s1 = `${top} matters most to you, so I gave it ${share(weights.topPct)} of the say and ${WEIGHT_WORD[others[0][0]]} the rest.`;
-  else s1 = `${top} matters most to you, so I gave it ${share(weights.topPct)} of the say, ${WEIGHT_WORD[others[0][0]]} ${share(others[0][1])} and ${WEIGHT_WORD[others[1][0]]} the rest.`;
-  const water = weights.waterPlentiful && !(weights.pcts.water > 0) ? ' Water’s plentiful here, so I left it out.' : '';
+  if (mine) s1 = say.length === 1 ? `${cap(W(topKey))} is all that counts for you, so I gave it all of the say.` : `${cap(W(topKey))} matters most to you, so ${split}.`;
+  else if (asked === 'risk') s1 = `You asked me to keep risk low, so I count a bad year more. ${split}.`;
+  else s1 = `${split}.`;
+  const water = plentiful ? ' Water’s plentiful here, so I left it out.' : '';
   return `${s1}${water}`;
 }
 
@@ -461,8 +501,16 @@ export function watchLine(cmp) {
 /** Stop 8: over to the farmer. */
 export const yourTurnLine = () => 'Your turn. Tap a field to pick its plan, then press Use this plan.';
 
-/** Instead of stops 1 to 7, when the pick hardly changes anything. */
-export const goodFitLine = () => 'Your rotation is already a good fit. My pick changes little over the 3 seasons.';
+/** Instead of stops 1 to 7, when the pick hardly changes anything (see isGoodFit). */
+export function goodFitLine(cmp) {
+  const n = cmp ? coverOnlyFields(cmp).length : 0;
+  if (!n) return 'Your rotation is already a good fit. My pick changes little over the 3 seasons.';
+  const adds = coverAddFields(cmp).length === n;
+  const fields = `${n} field${n === 1 ? '' : 's'}`;
+  const gain = cmp.totals.priority.expectedGM - cmp.totals.current.expectedGM;
+  const cost = gain < 0 ? 'which costs under $1k over 3 seasons' : 'and earns about the same over 3 seasons';
+  return `Your rotation is already a good fit. My pick keeps your crops and only ${adds ? 'adds a winter cover on' : 'changes the winter covers on'} ${fields}, ${cost}.`;
+}
 
 /** Explore's first line when the walk is skipped. */
 export function skipHintLine(cmp) {
@@ -622,15 +670,22 @@ export function statusLine(cmp, view, season, choice, mixScore) {
 /**
  * The price of the farmer's priorities, from its terms (not its summary, whose water sign reads
  * backwards): what the pick gives up next to the most-profit plan, and what it gets in return.
+ * Cash and nitrogen are said apart (not as the planner's profitCost, which adds them up).
  */
 export function priceLine(price) {
   if (!price || price.samePlan) return 'My pick is the most-profit plan here, so it costs you nothing.';
-  if (price.profitCost < 1000) return COSTS_NEXT_TO_NOTHING;
-  const costs = [];
-  if (price.cash < -500) costs.push(`${about(price.cash)} of cash`);
-  if (price.nCarried < -500) costs.push(`${about(price.nCarried)} of nitrogen left in the ground`);
-  let s1 = costs.length ? `Next to the most-profit plan, mine gives up about ${costs.join(' and ')}` : '';
-  if (price.nCarried > 500) s1 = s1 ? `${s1} but leaves ${about(price.nCarried)} more nitrogen in the ground` : `Next to the most-profit plan, mine leaves ${about(price.nCarried)} more nitrogen in the ground`;
+  // under $1k of cash reads as the same; under $500 of nitrogen isn't worth a word
+  const cash = Math.abs(price.cash) < 1000 ? 0 : price.cash;
+  const n = Math.abs(price.nCarried) <= 500 ? 0 : price.nCarried;
+  if (!cash && !n) return COSTS_NEXT_TO_NOTHING;
+  let s1;
+  if (!cash) s1 = `My pick earns about as much cash as the most-profit plan, ${n > 0 ? 'and' : 'but'} leaves ${about(n)} ${moreLess(n)} nitrogen in the ground`;
+  else if (cash > 0) s1 = `Next to the most-profit plan, mine earns about ${about(cash)} more cash${n ? ` ${n > 0 ? 'and' : 'but'} leaves ${about(n)} ${moreLess(n)} nitrogen in the ground` : ''}`;
+  else {
+    const costs = [`${about(cash)} of cash`];
+    if (n < 0) costs.push(`${about(n)} of nitrogen left in the ground`);
+    s1 = `Next to the most-profit plan, mine gives up about ${costs.join(' and ')}${n > 0 ? ` but leaves ${about(n)} more nitrogen in the ground` : ''}`;
+  }
   const gains = [], losses = [];
   if (price.p10 >= 500) gains.push(`a bad year is ${about(price.p10)} better`);
   else if (price.p10 <= -500) losses.push(`a bad year is ${about(price.p10)} worse`);
@@ -689,7 +744,7 @@ export function weatherLine(weather) {
 export function allLines(cmp, { choice, mixScore } = {}) {
   const views = [...KINDS, 'mix'];
   const out = [introLine(cmp), flipLine(cmp), gainLine(cmp), sameCropLine(cmp), giveUpLine(cmp), vsProfitLine(cmp),
-    weightsLine(cmp.weights), watchLine(cmp), yourTurnLine(), goodFitLine(), skipHintLine(cmp), priceLine(cmp.price), weatherLine(cmp.weather),
+    weightsLine(cmp.weights), watchLine(cmp), yourTurnLine(), goodFitLine(cmp), skipHintLine(cmp), priceLine(cmp.price), weatherLine(cmp.weather),
     captionLine(coinPlan(cmp).value)];
   const gaps = gapLines(cmp);
   out.push(...gaps.farm, ...Object.values(gaps.byField).flat());
