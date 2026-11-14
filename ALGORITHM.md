@@ -319,11 +319,27 @@ multiplier(field, crop, year) = Ya/Ym ÷ mean dryland Ya/Ym over all years
 
 Dividing by the dryland mean keeps the national yield meaning "an average year", and lets irrigated fields come out above average. Irrigated fields are refilled to field capacity when depletion passes RAW, until the seasonal allocation runs out. Planting uses the Handbook 628 active-start date where available.
 
+**Soil-water carryover (one season of memory).** Each crop starts with the root zone left by what came before. The water at planting depends on the previous crop:
+- **Previous crop:** that crop's season (starting full; cut short if the next crop is planted before it's harvested), then the off-season. In the off-season, bare-soil evaporation (FAO-56 Ch. 7) is reduced by the previous crop's residue mulch (FAO-56 Ch. 11: TEW −5% per 10% cover) and refilled by rain.
+- **Fallow:** bare soil from 1 January of the fallow year until planting.
+- **Unknown predecessor:** a predecessor with no water parameters gets the average start.
+
+As the new crop's roots grow, they reach that carried-over subsoil water. The weather pool stores multipliers per previous crop (`byPaddockAfter`), so the yield of wheat after fallow differs from wheat after sorghum.
+
+On recorded weather:
+
+| Location | Corn after fallow vs after soybean | Note |
+|---|---|---|
+| Ames, 24 years | +3% | humid; little storage benefit |
+| Saline County KS, 2011–2014 | +16% | fallow-before-wheat is a real Plains practice |
+
+The 2012 drought makes the gap much larger in short records.
+
 **Simplifications:**
-- no surface runoff
-- no capillary rise
-- the profile starts at field capacity
+- no surface runoff, no capillary rise
+- frozen soil and snow are not modelled (winter evaporation is overstated)
 - linear root growth
+- the crop before the previous one is forgotten
 
 These make the model drought-sensitive: in the first test, 2012 corn in central Iowa came out at 57% of normal. The backtest is how we check this. **No Ky** is sourced for oats, barley or canola, and **no stage lengths** for canola, alfalfa cutting cycles or rye. Those crops don't vary with weather (gap).
 
@@ -489,6 +505,7 @@ Also:
 | Ky for oats, barley, canola; FAO-56 stage lengths for canola, alfalfa, rye | `waterParams.ts` | Not sourced: these crops don't vary with weather |
 | RUSLE C, Kc and biomass for a rye cover crop | `waterParams.ts` | Not sourced |
 | Fallow evaporation without daily weather | `waterParams.ts` | Dry bare-soil minimum (lower bound) |
+| Frozen soil / snow in the off-season; runoff; capillary rise | `waterBalance.ts` | Not modelled |
 | Fallow field operations cost | `cropData.ts` | Shown as $0 (gap) |
 | Crop height through the season | `shade.ts` | Linear ramp assumption |
 | Dry bean margin | `croptraits.ts` | National yield and US price vs a North Dakota cost: likely overstated |

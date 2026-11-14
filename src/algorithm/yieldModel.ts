@@ -114,6 +114,17 @@ export function meanScenario(pool: WeatherScenario[]): WeatherScenario {
     out.byPaddock = {};
     for (const p of paddockIds) out.byPaddock[p] = meanOf(pool.flatMap((w) => (w.byPaddock?.[p] ? [w.byPaddock[p]] : [])));
   }
+  const afterIds = [...new Set(pool.flatMap((w) => Object.keys(w.byPaddockAfter ?? {})))];
+  if (afterIds.length) {
+    out.byPaddockAfter = {};
+    for (const p of afterIds) {
+      const prevs = [...new Set(pool.flatMap((w) => Object.keys(w.byPaddockAfter?.[p] ?? {})))];
+      out.byPaddockAfter[p] = {};
+      for (const prev of prevs) {
+        out.byPaddockAfter[p][prev] = meanOf(pool.flatMap((w) => (w.byPaddockAfter?.[p]?.[prev] ? [w.byPaddockAfter[p][prev]] : [])));
+      }
+    }
+  }
   const waterIds = [...new Set(pool.flatMap((w) => Object.keys(w.water ?? {})))];
   if (waterIds.length) {
     out.water = {};
@@ -197,12 +208,14 @@ export class TraitYieldModel implements YieldModel {
       });
     }
 
-    const w = weather.byPaddock?.[paddock.id]?.[cropId] ?? weather.multipliers[cropId];
+    const prevCrop = timeline[timeline.length - 2];
+    const afterPrev = prevCrop ? weather.byPaddockAfter?.[paddock.id]?.[prevCrop]?.[cropId] : undefined;
+    const w = afterPrev ?? weather.byPaddock?.[paddock.id]?.[cropId] ?? weather.multipliers[cropId];
     if (w === undefined) gaps.push(`No weather multiplier for ${crop.name} in the supplied scenarios; using 1.`);
     const weatherFactor = w ?? 1;
     if (weatherFactor !== 1) {
       factors.push({
-        label: `Weather (${weather.label ?? 'scenario'})`,
+        label: `Weather (${weather.label ?? 'scenario'}${afterPrev !== undefined ? `, soil water after ${crops[prevCrop!]?.name.toLowerCase() ?? prevCrop}` : ''})`,
         factor: weatherFactor,
         basis: 'input',
         ...(weather.sources ? { sources: weather.sources } : {}),

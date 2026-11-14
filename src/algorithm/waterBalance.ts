@@ -53,6 +53,10 @@ export interface SeasonWaterResult {
   stressDays: number;
   /** Root-zone depletion at harvest as a share of TAW (carry-over to the next crop). */
   endDepletionFraction: number;
+  /** Days simulated (less than the season if maxDays cut it short). */
+  days: number;
+  /** Day index (into the weather arrays) after the last simulated day. */
+  endIndex: number;
 }
 
 export interface SeasonOptions {
@@ -65,6 +69,14 @@ export interface SeasonOptions {
   allocationMm?: number;
   /** Depletion at planting as a share of TAW (0 = field capacity). */
   initialDepletionFraction?: number;
+  /**
+   * Depletion of the deeper soil the roots will grow into, as a share of its
+   * capacity (carryover from the previous crop or fallow). Default: same as
+   * initialDepletionFraction.
+   */
+  subsoilDepletionFraction?: number;
+  /** Stop early (e.g. the next crop is planted before this one is harvested). */
+  maxDays?: number;
   /** Precomputed daily ET0 (mm), aligned with the weather arrays. */
   et0?: number[];
 }
@@ -105,16 +117,22 @@ export function rootDepthOnDay(c: CropWaterParams, d: number): number {
 }
 
 export function simulateSeason(w: DailyWeather, crop: CropWaterParams, o: SeasonOptions): SeasonWaterResult | null {
-  const n = seasonLength(crop);
+  // Whole days (stage lengths can be fractional, e.g. soybean L_dev 32.5).
+  const full = Math.ceil(seasonLength(crop));
+  const n = Math.min(full, Math.floor(o.maxDays ?? full));
   if (o.startIndex < 0 || o.startIndex + n > w.dates.length) return null;
   const et0 = o.et0 ?? dailyEt0(w);
   let allowance = o.irrigated ? (o.allocationMm ?? Infinity) : 0;
   let taw = 1000 * o.awc * crop.rootIniM;
   let dr = (o.initialDepletionFraction ?? 0) * taw;
+  const subsoil = o.subsoilDepletionFraction ?? o.initialDepletionFraction ?? 0;
   let etm = 0, eta = 0, rain = 0, irr = 0, stress = 0;
   for (let d = 0; d < n; d++) {
     const i = o.startIndex + d;
-    taw = 1000 * o.awc * rootDepthOnDay(crop, d);
+    const newTaw = 1000 * o.awc * rootDepthOnDay(crop, d);
+    // Roots growing into deeper soil inherit that soil's carried-over depletion.
+    dr += subsoil * Math.max(0, newTaw - taw);
+    taw = newTaw;
     const raw = crop.p * taw;
     const r = w.rainMm[i]!;
     rain += r;
@@ -143,7 +161,37 @@ export function simulateSeason(w: DailyWeather, crop: CropWaterParams, o: Season
     yieldRatio: Math.min(1, Math.max(0, 1 - crop.ky * (1 - relEt))),
     stressDays: stress,
     endDepletionFraction: taw > 0 ? dr / taw : 0,
+    days: n,
+    endIndex: o.startIndex + n,
   };
+}
+
+/**
+ * Off-season (harvest -> next planting, or a fallow year): the root zone loses
+ * water only to bare-soil evaporation (FAO-56 Ch. 7/11, from the surface
+ * layer) and is refilled by rain; water beyond field capacity drains.
+ * Returns the root-zone depletion (mm) at the end.
+ * Simplification: residue mulch and frozen soil are not modelled, so winter
+ * evaporation is somewhat overstated.
+ */
+export function simulateOffSeason(
+  w: DailyWeather,
+  o: { startIndex: number; endIndex: number; depletionMm: number; tawMm: number; rewMm: number; tewMm: number; kcMax: number; et0?: number[] },
+): number | null {
+  if (o.startIndex < 0 || o.endIndex > w.dates.length || o.endIndex < o.startIndex) return null;
+  const et0 = o.et0 ?? dailyEt0(w);
+  let dr = Math.min(o.tawMm, o.depletionMm);
+  let de = Math.min(o.tewMm, dr);
+  for (let i = o.startIndex; i < o.endIndex; i++) {
+    const r = w.rainMm[i]!;
+    dr = Math.max(0, dr - r);
+    de = Math.max(0, de - r);
+    const kr = de <= o.rewMm ? 1 : Math.max(0, (o.tewMm - de) / (o.tewMm - o.rewMm));
+    const e = Math.min(kr * o.kcMax * et0[i]!, o.tewMm - de, o.tawMm - dr);
+    de = Math.min(o.tewMm, de + e);
+    dr = Math.min(o.tawMm, dr + e);
+  }
+  return dr;
 }
 
 export interface BareSoilResult {

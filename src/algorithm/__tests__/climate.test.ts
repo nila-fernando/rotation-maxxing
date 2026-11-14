@@ -7,7 +7,7 @@ import { meanScenario } from '../yieldModel';
 import { evaluatePlan, generatePlans } from '../api';
 import { planFromCrops } from '../plans';
 import { waterParamsFor } from '../waterParams';
-import type { Farm } from '../types';
+import type { DailyWeather, Farm } from '../types';
 import { gridFarm, land, NEUTRAL } from './fixtures';
 
 const weather = parsePowerDaily(JSON.parse(readFileSync(join(__dirname, '../../data/__tests__/fixtures/power_ames_2011_2014.json'), 'utf8')), 42.03).weather;
@@ -97,9 +97,17 @@ describe('NASA POWER pool in the planner', () => {
 });
 
 describe('fallow with real weather (regression)', () => {
-  it('neutral priorities on Iowa ground after soy-soy no longer choose fallow', () => {
+  // A realistic 24-year record. (With only 2012-2014, one year in three is an extreme
+  // drought, which overstates the value of water stored by fallow.)
+  const long = JSON.parse(readFileSync(join(__dirname, '../../data/__tests__/fixtures/power_ames_2000_2024.daily.json'), 'utf8')) as DailyWeather;
+
+  it('neutral priorities on Iowa ground after soy-soy do not choose fallow, even with carryover credit', () => {
     const f = gridFarm(4, 2, 40, { history: ['corn', 'soybeans', 'soybeans'], land: land({ awcInPerIn: 0.18, kFactor: 0.28, tFactorTonsPerAcre: 5 }) });
-    const pool = scenariosFromDailyWeather(f, weather).scenarios;
+    const pool = scenariosFromDailyWeather(f, long).scenarios;
+    expect(pool.length).toBeGreaterThanOrEqual(20);
+    const m = meanScenario(pool).byPaddockAfter!['p00']!;
+    expect(m['fallow']!['corn']!).toBeGreaterThan(m['soybeans']!['corn']!); // fallow stores some water...
+    expect(m['fallow']!['corn']! - m['soybeans']!['corn']!).toBeLessThan(0.1); // ...but not much in humid Iowa
     const r = generatePlans(f, NEUTRAL, {}, pool, { seed: 1, mcSamples: 60, rankJitterSamples: 30 });
     expect(r.plans.priority.paddocks.flatMap((p) => p.sequence)).not.toContain('fallow');
   });

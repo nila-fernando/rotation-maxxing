@@ -242,6 +242,11 @@ export interface WeatherScenario {
   multipliers: Record<CropId, number>;
   /** Field-specific multipliers (soils differ); take precedence over `multipliers`. */
   byPaddock?: Record<PaddockId, Record<CropId, number>>;
+  /**
+   * Field multipliers given the PREVIOUS crop (soil-water carryover):
+   * byPaddockAfter[paddock][previousCrop][crop]. Take precedence over byPaddock.
+   */
+  byPaddockAfter?: Record<PaddockId, Record<CropId, Record<CropId, number>>>;
   /** Field water results from the water balance, per paddock and crop. */
   water?: Record<PaddockId, Record<CropId, FieldWater>>;
   /** That year's RUSLE rainfall erosivity R (US customary units). */
