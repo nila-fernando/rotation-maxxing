@@ -41,7 +41,10 @@ describe('generatePlans', () => {
       expect(p.objectiveTerms.length).toBeGreaterThan(0);
     }
     expect(res.plans.current.probBeatsCurrent).toBeNull();
-    expect(res.plans.maxProfit.probBeatsCurrent).toBeGreaterThanOrEqual(0);
+    // Null when the plan IS the current rotation; otherwise a probability.
+    const same = JSON.stringify(res.plans.maxProfit.plan) === JSON.stringify(res.plans.current.plan);
+    if (same) expect(res.plans.maxProfit.probBeatsCurrent).toBeNull();
+    else expect(res.plans.maxProfit.probBeatsCurrent).toBeGreaterThanOrEqual(0);
     expect(res.plans.priority.rankStability).toBeGreaterThan(0);
     expect(res.priceOfPriorities.summary).toMatch(/\$/);
   });

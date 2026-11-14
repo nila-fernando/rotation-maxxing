@@ -4,7 +4,9 @@
  * multipliers). Later: an APSIM lookup-table model.
  */
 import { getCrop, isFallow, salinityRelativeYield, typicalYield } from './cropData';
+import { FREEZE_DAMAGE_FACTORS } from './croptraits';
 import { sourceIds } from './evidence';
+import { FREEZE_GAP, freezeFactor } from './frost';
 import { drainageCheck, phCheck } from './landSuitability';
 import { productOf, rotationEffect, timelineOf } from './rotation';
 import { computeShade, type ShadeResult } from './shade';
@@ -19,6 +21,8 @@ export interface YieldContext {
   shadeToleranceDraw?: (cropId: CropId) => number | undefined;
   /** When false the model may return no terms (used in hot loops). */
   explain: boolean;
+  /** Monte Carlo draw (0-1) for freeze damage within its design range; midpoint if absent. */
+  freezeDraw?: () => number;
 }
 
 export interface YieldEstimate {
@@ -111,6 +115,20 @@ export function meanScenario(pool: WeatherScenario[]): WeatherScenario {
       precipMm: cl.reduce((a, c) => a + c.precipMm, 0) / cl.length,
       et0Mm: cl.reduce((a, c) => a + c.et0Mm, 0) / cl.length,
     };
+  }
+  const frozen = pool.filter((w) => w.freeze !== undefined);
+  if (frozen.length) {
+    out.freezeRisk = {};
+    const crops = [...new Set(frozen.flatMap((w) => Object.keys(w.freeze!)))];
+    for (const c of crops) {
+      const checked = frozen.filter((w) => c in w.freeze!);
+      const hits = checked.map((w) => w.freeze![c]).filter((e): e is NonNullable<typeof e> => !!e);
+      const stages = new Map<string, number>();
+      for (const h of hits) stages.set(h.stage, (stages.get(h.stage) ?? 0) + 1);
+      const typical = [...stages.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+      const meanFactor = checked.reduce((a, w) => a + (w.freeze![c] ? freezeFactor(w.freeze![c]!.effect) : 1), 0) / checked.length;
+      out.freezeRisk[c] = { years: hits.length, of: checked.length, typicalStage: typical, meanFactor };
+    }
   }
   const rs = pool.flatMap((w) => (w.erosivityR !== undefined ? [w.erosivityR] : []));
   if (rs.length) out.erosivityR = rs.reduce((a, b) => a + b, 0) / rs.length;
@@ -227,6 +245,29 @@ export class TraitYieldModel implements YieldModel {
         basis: 'input',
         ...(weather.sources ? { sources: weather.sources } : {}),
       });
+    }
+
+    // Spring freeze (winter wheat): a specific season's event, or the pool's average risk.
+    const ev = weather.freeze?.[cropId];
+    const risk = weather.freezeRisk?.[cropId];
+    if (ev) {
+      const f = freezeFactor(ev.effect, ctx.freezeDraw?.());
+      const r = FREEZE_DAMAGE_FACTORS[ev.effect];
+      factors.push({
+        label: `Spring freeze at ${ev.stage} (${Math.round(ev.tminF)} F on ${ev.date.slice(5)}, injury below ${ev.thresholdF} F, K-State C646: ${ev.effect}; design range x${r.low}-${r.high})`,
+        factor: f,
+        basis: 'design',
+        sources: ['ksuC646', 'ksuMesonetWheatGdd', 'nasaPower'],
+      });
+      gaps.push(FREEZE_GAP);
+    } else if (risk && risk.years > 0 && ev === undefined) {
+      factors.push({
+        label: `Freeze risk: in ${risk.years} of ${risk.of} years, temperatures fell below the ${risk.typicalStage ?? 'stage'} threshold (K-State C646); average effect`,
+        factor: risk.meanFactor,
+        basis: 'design',
+        sources: ['ksuC646', 'ksuMesonetWheatGdd', 'nasaPower'],
+      });
+      gaps.push(FREEZE_GAP);
     }
 
     const value = base * productOf(factors);
