@@ -65,6 +65,11 @@ export const WATER_SOURCES = {
     url: 'http://www.fao.org/4/x0490e/x0490e0h.htm',
     covers: 'Bare soil in the dual-Kc approach: set Kcb and Kc min to 0 and run the daily evaporation balance',
   },
+  unepAridity: {
+    title: 'Zomer, Xu & Trabucco 2022, Version 3 of the Global Aridity Index and Potential Evapotranspiration Database, Scientific Data 9:409 (UNEP 1997 aridity classes; AI = MA_Prec / MA_ET0, FAO-56 Penman-Monteith)',
+    url: 'https://www.nature.com/articles/s41597-022-01493-1',
+    covers: 'Aridity index definition and UNEP climate classes',
+  },
   isuA120_2026: {
     title: 'Hart 2026, Iowa State Ag Decision Maker A1-20, Estimated Costs of Crop Production in Iowa-2026',
     url: 'https://www.extension.iastate.edu/agdm/crops/pdf/a1-20.pdf',
@@ -168,6 +173,32 @@ export const BARE_SOIL_EVAPORATION = {
 export const KC_MAX_BARE_SOIL = 1.2;
 /** FAO-56 Kc min for dry bare soil (0.15-0.20; Table 18 Kcb ini 0.15). Used only when no daily weather is available. */
 export const KC_MIN_DRY_BARE_SOIL = 0.15;
+
+// ---------------------------------------------------------------------------
+// Water scarcity (aridity.ts)
+// ---------------------------------------------------------------------------
+
+/**
+ * UNEP (1997) aridity classes, AI = mean annual precipitation / mean annual
+ * FAO-56 reference ET0, as tabulated in Zomer, Xu & Trabucco 2022 (Methods,
+ * "Aridity Index (AI)"): <0.03 hyper arid; 0.03-0.2 arid; 0.2-0.5 semi-arid;
+ * 0.5-0.65 dry sub-humid; >0.65 humid. The paper doesn't say which class an
+ * exact boundary value belongs to; here it goes to the wetter class (our choice).
+ * `below` is the exclusive upper bound of each class.
+ */
+export const ARIDITY_CLASSES: readonly { name: string; below: number }[] = [
+  { name: 'hyper-arid', below: 0.03 },
+  { name: 'arid', below: 0.2 },
+  { name: 'semi-arid', below: 0.5 },
+  { name: 'dry sub-humid', below: 0.65 },
+  { name: 'humid', below: Infinity },
+];
+
+/**
+ * DESIGN CHOICE: water-scarcity factor 0 at the humid boundary (AI >= 0.65),
+ * rising linearly to 1 at the semi-arid/arid boundary (AI <= 0.20).
+ */
+export const SCARCITY_CURVE = { zeroAt: 0.65, oneAt: 0.2 } as const;
 
 // ---------------------------------------------------------------------------
 // Erosion (RUSLE, AH703) and erosivity

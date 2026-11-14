@@ -20,11 +20,16 @@ export interface CriteriaWeights {
   water: number;
 }
 
-export function criteriaWeights(p: Priorities): CriteriaWeights {
+/**
+ * @param waterScarcity 0-1: how much water use matters on this farm (see aridity.ts).
+ *   The water slider is multiplied by it before the weights are normalised, so on a
+ *   humid farm water counts for little whatever the slider says. Default 1.
+ */
+export function criteriaWeights(p: Priorities, waterScarcity = 1): CriteriaWeights {
   const clamp = (x: number) => Math.min(100, Math.max(0, x));
   const a = clamp(p.profit);
   const b = clamp(p.soilHealth);
-  const c = clamp(p.water);
+  const c = clamp(p.water) * Math.min(1, Math.max(0, waterScarcity));
   const sum = a + b + c;
   if (sum === 0) return { profit: 1 / 3, soilHealth: 1 / 3, water: 1 / 3 };
   return { profit: a / sum, soilHealth: b / sum, water: c / sum };

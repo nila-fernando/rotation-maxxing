@@ -58,6 +58,21 @@ export function annualErosivity(w: DailyWeather): Record<number, number> {
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
+/** Calendar-year precipitation and ET0 totals (complete years only). */
+export function annualTotals(w: DailyWeather, et0: number[]): Record<number, { precipMm: number; et0Mm: number }> {
+  const sums: Record<number, { precipMm: number; et0Mm: number; days: number }> = {};
+  w.dates.forEach((d, i) => {
+    const y = Number(d.slice(0, 4));
+    const e = (sums[y] ??= { precipMm: 0, et0Mm: 0, days: 0 });
+    e.precipMm += w.rainMm[i]!;
+    e.et0Mm += et0[i]!;
+    e.days++;
+  });
+  const out: Record<number, { precipMm: number; et0Mm: number }> = {};
+  for (const [y, s] of Object.entries(sums)) if (s.days >= 365) out[Number(y)] = { precipMm: s.precipMm, et0Mm: s.et0Mm };
+  return out;
+}
+
 /** Index of a crop's planting day for season `year` (winter crops are planted the year before). */
 function plantIndex(weather: DailyWeather, cropId: CropId, state: string | undefined, year: number): number {
   const span = seasonFor(CROP_BY_ID[cropId]!, state).span;
@@ -248,6 +263,7 @@ export function scenariosFromDailyWeather(farm: Farm, weather: DailyWeather, opt
   }
 
   const erosivity = annualErosivity(weather);
+  const annualClimate = annualTotals(weather, et0);
   const totalAcres = fieldsWithSoil.reduce((a, p) => a + p.acres, 0);
   const scenarios: WeatherScenario[] = usableYears.map((year) => {
     const byPaddock: Record<PaddockId, Record<CropId, number>> = {};
@@ -290,6 +306,7 @@ export function scenariosFromDailyWeather(farm: Farm, weather: DailyWeather, opt
       byPaddockAfter,
       water,
       ...(r !== undefined ? { erosivityR: r } : {}),
+      ...(annualClimate[year] ? { climate: annualClimate[year]! } : {}),
       sources: [weather.source, 'fao56Tables', 'fao66', 'fao56Ch7', 'fao56Ch11'],
     };
   });

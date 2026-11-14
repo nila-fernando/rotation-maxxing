@@ -22,7 +22,7 @@ All functions are synchronous and pure except `buildFarm`, which fetches data. I
 | Function names and argument order below | Wording of every `label`, `reason`, `reasons[]`, `risks[]`, `informationGaps[]`, `localReview[]` (treat as display text) |
 | `Farm`, `Paddock`, `Land`, `Priorities`, `Market`, `Plan` / `SeasonSlot` shapes | Order and number of `terms` and `objectiveTerms` |
 | `Warning` shape `{ lens, severity, reason }` and the 8 lens names | Thresholds behind warning severities |
-| `PlanResult` top-level numbers: `expectedGM`, `p10GM`, `probBeatsCurrent`, `nitrogenCarriedForward`, `riskAdjustedProfit`, `soilHealth`, `endSoilHealth`, `soilHealthRange`, `waterUse`, `objective`, `rankStability` | Scale of `soilHealth` and `objective` (composite indices; their weights are design choices) |
+| `PlanResult` top-level numbers: `expectedGM`, `p10GM`, `probBeatsCurrent`, `nitrogenCarriedForward`, `riskAdjustedProfit`, `soilHealth`, `endSoilHealth`, `soilHealthRange`, `waterUse`, `objective`, `rankStability` | Scale of `soilHealth` and `objective` (composite indices; their weights are design choices). The water weight is scaled by the farm's aridity (last `objectiveTerms` entry). |
 | `paddocks[].years[]`: `cropId`, `yieldPerAcre`, `yieldUnit`, `grossMarginPerAcre`, `soilHealthIndex`, `erosionTonsPerAcre`, `waterUseIndex` | Units of `waterUseIndex`: inches with NASA POWER data, a unitless kc index without it |
 | `exclusions[paddockId][]`: `{ cropId, kind, reason }` | New `Exclusion.kind` values may be added |
 | `FarmState` and `SeasonReport` shapes | `WeatherScenario` internals (`byPaddock`, `byPaddockAfter`, `water`): treat as opaque and pass through |

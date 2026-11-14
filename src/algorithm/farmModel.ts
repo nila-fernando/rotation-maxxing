@@ -16,6 +16,7 @@ import { RYE_COVER } from './waterParams';
 import { economicsStatus, FALLOW_COST_GAP, getCrop, isFallow, operatingCost } from './cropData';
 import { sourceIds } from './evidence';
 import { prepareFarm } from './geometry';
+import { waterScarcity, type WaterScarcity } from './aridity';
 import { priceInfo, sell, type PriceInfo } from './market';
 import { DEFAULT_N_PRICE, nitrogenCreditReceived, nitrogenLeftBehind, sequenceViolation, timelineOf } from './rotation';
 import { nCreditReference, residueReference, soilHealthIndex, waterUseIndex, type FieldWaterInput } from './soilHealth';
@@ -70,6 +71,8 @@ export interface ModelContext {
   /** Paddock id -> position in `paddocks`. */
   paddockIndex: Map<PaddockId, number>;
   previousPlan: Record<PaddockId, (CropId | null)[]> | null;
+  /** Aridity and the water-scarcity factor applied to the water slider. */
+  water: WaterScarcity;
   /** Gaps that apply to the whole run (market, weather). */
   globalGaps: string[];
 }
@@ -98,6 +101,7 @@ export function createContext(
     globalGaps.push('No weather scenarios supplied: yields use average weather and Monte Carlo varies prices only.');
   }
   const paddocks = prepared.farm.paddocks;
+  const expected = meanScenario(pool);
   return {
     prepared,
     paddocks,
@@ -109,11 +113,16 @@ export function createContext(
     horizon: HORIZON_YEARS,
     endOfHorizon: options.endOfHorizon ?? true,
     weatherPool: pool,
-    expectedWeather: meanScenario(pool),
+    expectedWeather: expected,
     refs: { residueLb: residueReference(crops), nCreditLb: nCreditReference(crops) },
     totalAcres: paddocks.reduce((a, p) => a + p.acres, 0),
     paddockIndex: new Map(paddocks.map((p, i) => [p.id, i])),
     previousPlan: options.previousPlan ?? null,
+    water: waterScarcity(
+      expected.climate?.precipMm ?? null,
+      expected.climate?.et0Mm ?? null,
+      prepared.farm.constraints?.irrigation === 'irrigated',
+    ),
     globalGaps,
   };
 }

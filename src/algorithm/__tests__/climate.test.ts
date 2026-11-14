@@ -104,7 +104,7 @@ describe('fallow with real weather (regression)', () => {
   // drought, which overstates the value of water stored by fallow.)
   const long = JSON.parse(readFileSync(join(__dirname, '../../data/__tests__/fixtures/power_ames_2000_2024.daily.json'), 'utf8')) as DailyWeather;
 
-  it('neutral priorities on Iowa ground after soy-soy almost never choose fallow, even with carryover credit', () => {
+  it('neutral priorities on Iowa ground after soy-soy do not choose fallow, even with carryover credit', () => {
     const f = gridFarm(4, 2, 40, { history: ['corn', 'soybeans', 'soybeans'], land: land({ awcInPerIn: 0.18, kFactor: 0.28, tFactorTonsPerAcre: 5 }) });
     const pool = scenariosFromDailyWeather(f, long).scenarios;
     expect(pool.length).toBeGreaterThanOrEqual(20);
@@ -112,9 +112,8 @@ describe('fallow with real weather (regression)', () => {
     expect(m['fallow']!['corn']!).toBeGreaterThan(m['soybeans']!['corn']!); // fallow stores some water...
     expect(m['fallow']!['corn']! - m['soybeans']!['corn']!).toBeLessThan(0.1); // ...but not much in humid Iowa
     const r = generatePlans(f, NEUTRAL, {}, pool, { seed: 1, mcSamples: 60, rankJitterSamples: 30 });
-    // Before the fallow fixes this was 3-8 of 24 paddock-years. A single fallow year can still
-    // tie (within ~0.5% of the objective) because dryland water use isn't weighted by scarcity yet.
-    expect(r.plans.priority.paddocks.flatMap((p) => p.sequence).filter((c) => c === 'fallow').length).toBeLessThanOrEqual(1);
+    // Humid Iowa: water use is weighted ~0 (aridity), so fallow's lower water use doesn't buy it a year.
+    expect(r.plans.priority.paddocks.flatMap((p) => p.sequence)).not.toContain('fallow');
   });
 });
 

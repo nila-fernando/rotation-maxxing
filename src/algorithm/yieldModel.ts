@@ -105,6 +105,13 @@ function meanOf(records: Record<string, number>[]): Record<string, number> {
  */
 export function meanScenario(pool: WeatherScenario[]): WeatherScenario {
   const out: WeatherScenario = { label: 'Mean of supplied weather years', multipliers: meanOf(pool.map((w) => w.multipliers)) };
+  const cl = pool.flatMap((w) => (w.climate ? [w.climate] : []));
+  if (cl.length) {
+    out.climate = {
+      precipMm: cl.reduce((a, c) => a + c.precipMm, 0) / cl.length,
+      et0Mm: cl.reduce((a, c) => a + c.et0Mm, 0) / cl.length,
+    };
+  }
   const rs = pool.flatMap((w) => (w.erosivityR !== undefined ? [w.erosivityR] : []));
   if (rs.length) out.erosivityR = rs.reduce((a, b) => a + b, 0) / rs.length;
   const sources = [...new Set(pool.flatMap((w) => w.sources ?? []))];

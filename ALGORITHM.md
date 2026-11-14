@@ -275,6 +275,31 @@ objective    = w_profit × norm(profit) + w_soil × norm(soil) + w_water × norm
 
 The risk slider does one job: it sets λ (and with it the variety penalty). It is not a criterion weight.
 
+**Water counts as much as water is scarce.** The water slider is multiplied by a scarcity factor before the weights are normalised:
+
+```
+aridity index AI = mean annual precipitation / mean annual FAO-56 ET0       (NASA POWER, over the weather pool)
+classes (UNEP 1997, as tabulated in Zomer, Xu & Trabucco 2022, Sci Data 9:409):
+  < 0.03 hyper-arid | 0.03–0.2 arid | 0.2–0.5 semi-arid | 0.5–0.65 dry sub-humid | > 0.65 humid
+  (an exact boundary value goes to the wetter class: our choice)
+scarcity = 0 at AI ≥ 0.65, rising linearly to 1 at AI ≤ 0.20       ← DESIGN curve between the UNEP anchors
+w_water  = slider_water × scarcity, then normalised with profit and soil
+```
+
+| Case | Scarcity |
+|---|---|
+| Irrigated farms | Always 1: irrigation water is a real cost |
+| Unknown climate (no daily weather) | 1 |
+
+On NASA POWER data:
+
+| Location | Aridity index | Class | Scarcity |
+|---|---|---|---|
+| Ames | 0.90 | humid | 0 |
+| Saline County KS | 0.49 | semi-arid | 0.35 |
+
+So neutral Iowa plans no longer trade a fallow year for lower water use. A high water slider in Kansas can still choose fallow. The factor is shown in every plan's `objectiveTerms`, for example "Water is plentiful here (aridity index 0.90, humid), so water use counts for little".
+
 | Plan | Definition |
 |---|---|
 | **Current** | Each paddock's shortest repeating pattern from the last 3 years, carried forward. This is the baseline. |
@@ -491,6 +516,7 @@ Fallow is scored over the same May–Sep window as summer crops. The surface sta
 | `CALIBRATION_PRIOR_SD` / `CALIBRATION_OBS_SD` | 0.15 / 0.20 | Field calibration shrinkage |
 | `CALIBRATION_EXCLUDED_EVENTS` | hail, flood, replant | One-off seasons not learned from |
 | `SWITCHING_PENALTY_WEIGHT` | 0.05 | Re-planning stability |
+| `SCARCITY_CURVE` (`waterParams.ts`) | 0 at AI 0.65 → 1 at AI 0.20 | Water weight vs aridity (design; anchors are UNEP classes) |
 
 Also:
 - `FALLBACK_SEASONS` in `seasons.ts`: summer May–Sep, winter Oct–Jul, perennial uses summer. Used for states without a Handbook 628 row (only IA and KS are entered).

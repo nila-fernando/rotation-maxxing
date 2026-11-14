@@ -144,7 +144,7 @@ function shifted(p: Priorities, key: 'profit' | 'soilHealth' | 'water'): Priorit
 }
 
 /** Share of jittered priority vectors (each slider +/- RANK_JITTER) where each candidate ranks first. */
-function rankStability(pool: Candidate[], bounds: ReferenceBounds, priorities: Priorities, n: number, rng: Rng, switchWeight = 0): number[] {
+function rankStability(pool: Candidate[], bounds: ReferenceBounds, priorities: Priorities, n: number, rng: Rng, switchWeight = 0, scarcity = 1): number[] {
   const wins = new Array<number>(pool.length).fill(0);
   const jit = (x: number) => Math.min(100, Math.max(0, x + (rng.next() * 2 - 1) * RANK_JITTER));
   for (let j = 0; j < n; j++) {
@@ -154,7 +154,7 @@ function rankStability(pool: Candidate[], bounds: ReferenceBounds, priorities: P
       water: jit(priorities.water),
       risk: jit(priorities.risk),
     };
-    const w = criteriaWeights(p);
+    const w = criteriaWeights(p, scarcity);
     const l = riskLambda(p);
     wins[argmax(pool, (c) => objectiveOf(c, bounds, w, l, false, switchWeight).value)]!++;
   }
@@ -231,7 +231,16 @@ function buildResult(
     },
     waterUse: c.water,
     objective: obj.value,
-    objectiveTerms: obj.terms,
+    objectiveTerms: [
+      ...obj.terms,
+      {
+        label: ctx.water.explanation,
+        value: ctx.water.scarcity,
+        unit: 'water weight factor',
+        basis: 'design',
+        ...(ctx.water.aridityIndex !== null ? { sources: ['nasaPower', 'unepAridity'] } : {}),
+      },
+    ],
     localReview: localReviewFor({
       paddocks: explained.paddocks,
       crops: ctx.crops,
@@ -296,7 +305,7 @@ export function generatePlans(
 ): GenerateResult {
   const ctx = createContext(farm, market, scenarios, options);
   const rng = createRng(options.seed ?? 1);
-  const w = criteriaWeights(priorities);
+  const w = criteriaWeights(priorities, ctx.water.scarcity);
   const lambda = riskLambda(priorities);
 
   // Stage 1: hard filters.
@@ -316,9 +325,9 @@ export function generatePlans(
   const runs: { w: CriteriaWeights; lambda: number; sw: number }[] = [
     { w: profitOnly, lambda: 0, sw: 0 },
     { w, lambda, sw },
-    { w: criteriaWeights(shifted(priorities, 'soilHealth')), lambda, sw },
-    { w: criteriaWeights(shifted(priorities, 'water')), lambda, sw },
-    { w: criteriaWeights(shifted(priorities, 'profit')), lambda, sw },
+    { w: criteriaWeights(shifted(priorities, 'soilHealth'), ctx.water.scarcity), lambda, sw },
+    { w: criteriaWeights(shifted(priorities, 'water'), ctx.water.scarcity), lambda, sw },
+    { w: criteriaWeights(shifted(priorities, 'profit'), ctx.water.scarcity), lambda, sw },
     ...(sw > 0 ? [{ w, lambda, sw: 0 }] : []), // what would win without the switching cost
   ];
   const found = new Map<string, Candidate>();
@@ -364,7 +373,7 @@ export function generatePlans(
   // Selection.
   const maxProfit = pool[argmax(pool, (c) => c.mc!.expected + c.endValue)]!;
   const priority = pool[argmax(pool, (c) => objectiveOf(c, bounds, w, lambda, false, sw).value)]!;
-  const stability = rankStability(pool, bounds, priorities, options.rankJitterSamples ?? RANK_JITTER_SAMPLES, rng, sw);
+  const stability = rankStability(pool, bounds, priorities, options.rankJitterSamples ?? RANK_JITTER_SAMPLES, rng, sw, ctx.water.scarcity);
   const unconstrained = sw > 0 ? pool[argmax(pool, (c) => objectiveOf(c, bounds, w, lambda).value)]! : priority;
   const stabilityOf = (c: Candidate) => {
     const i = pool.indexOf(c);
@@ -512,7 +521,7 @@ export function evaluatePlan(
 ): PlanResult {
   const ctx = createContext(farm, market, scenarios, options);
   const rng = createRng(options.seed ?? 1);
-  const w = criteriaWeights(priorities);
+  const w = criteriaWeights(priorities, ctx.water.scarcity);
   const lambda = riskLambda(priorities);
 
   const seqs = sequencesFromPlan(plan, ctx.paddocks, ctx.horizon, new Set(Object.keys(ctx.crops)));

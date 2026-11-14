@@ -253,6 +253,8 @@ export interface WeatherScenario {
   water?: Record<PaddockId, Record<CropId, FieldWater>>;
   /** That year's RUSLE rainfall erosivity R (US customary units). */
   erosivityR?: number;
+  /** That calendar year's precipitation and FAO-56 reference ET0, mm (for the aridity index). */
+  climate?: { precipMm: number; et0Mm: number };
   /** Evidence for this year, e.g. ['nasaPower', 'fao56', 'fao33']. */
   sources?: string[];
 }
