@@ -4,6 +4,7 @@
  * multipliers). Later: an APSIM lookup-table model.
  */
 import { getCrop, isFallow, salinityRelativeYield, typicalYield } from './cropData';
+import { sourceIds } from './evidence';
 import { productOf, rotationEffect, timelineOf } from './rotation';
 import { computeShade, type ShadeResult } from './shade';
 import type { CropId, CropTable, Factor, Paddock, PaddockId, PreparedFarm, Term, WeatherScenario } from './types';
@@ -99,7 +100,7 @@ export class TraitYieldModel implements YieldModel {
     const sal = salinityRelativeYield(crop, paddock.land.salinityECe);
     if (sal.gap) gaps.push(sal.gap);
     if (sal.value < 1) {
-      factors.push({ label: `Salinity (ECe ${paddock.land.salinityECe} dS/m)`, factor: sal.value, basis: 'sourced' });
+      factors.push({ label: `Salinity (ECe ${paddock.land.salinityECe} dS/m)`, factor: sal.value, basis: 'sourced', sources: ['fao61Salinity'] });
     }
 
     const timeline = timelineOf(paddock, sequence.slice(0, yearIndex + 1));
@@ -125,6 +126,7 @@ export class TraitYieldModel implements YieldModel {
           : `Shade (tolerance unknown, ${ctx.shadeToleranceDraw ? 'sampled' : 'midpoint assumed'}; ${pct(shade.shadedFraction)} shaded)`,
         factor: 1 - shade.yieldLoss,
         basis: shade.toleranceKnown ? 'sourced' : 'assumption',
+        sources: ['fao56'],
       });
     }
 
@@ -132,22 +134,27 @@ export class TraitYieldModel implements YieldModel {
     if (w === undefined) gaps.push(`No weather multiplier for ${crop.name} in the supplied scenarios; using 1.`);
     const weatherFactor = w ?? 1;
     if (weatherFactor !== 1) {
-      factors.push({ label: `Weather (${weather.label ?? 'scenario'})`, factor: weatherFactor, basis: 'input' });
+      factors.push({
+        label: `Weather (${weather.label ?? 'scenario'})`,
+        factor: weatherFactor,
+        basis: 'input',
+        ...(weather.sources ? { sources: weather.sources } : {}),
+      });
     }
 
     const value = base * productOf(factors);
 
     const terms: Term[] = [];
     if (explain) {
-      terms.push({ label: `US average ${crop.name} yield`, value: base, unit, basis: 'sourced' });
+      terms.push({ label: `US average ${crop.name} yield`, value: base, unit, basis: 'sourced', sources: sourceIds(crop.yieldPerAcre?.source) });
       let running = base;
       for (const f of factors) {
         if (f.factor === 1) {
-          terms.push({ label: f.label, value: 0, unit, basis: f.basis });
+          terms.push({ label: f.label, value: 0, unit, basis: f.basis, ...(f.sources ? { sources: f.sources } : {}) });
           continue;
         }
         const next = running * f.factor;
-        terms.push({ label: f.label, value: next - running, unit, basis: f.basis });
+        terms.push({ label: f.label, value: next - running, unit, basis: f.basis, ...(f.sources ? { sources: f.sources } : {}) });
         running = next;
       }
     }

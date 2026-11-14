@@ -12,6 +12,7 @@
 import { CROP_BY_ID } from './croptraits';
 import { END_SOIL_WEIGHT, HORIZON_YEARS } from './constants';
 import { economicsStatus, FALLOW_COST_GAP, getCrop, isFallow, operatingCost } from './cropData';
+import { sourceIds } from './evidence';
 import { prepareFarm } from './geometry';
 import { priceInfo, sell, type PriceInfo } from './market';
 import { DEFAULT_N_PRICE, nitrogenCreditReceived, nitrogenLeftBehind, sequenceViolation, timelineOf } from './rotation';
@@ -336,7 +337,14 @@ export function explainPlan(ctx: ModelContext, seqs: CropId[][]): ExplainedPlan 
       const revenue = ep ? yv * ep.price : 0;
       if (ep) {
         const split = ep.distant > 0 ? ` (${Math.round((ep.local / ep.production) * 100)}% sold locally, rest at distant price less freight)` : '';
-        terms.push({ label: `Effective ${crop.name} price${split}`, value: ep.price, unit: `$/${crop.yieldUnit}`, basis: 'input' });
+        const fromMarket = ctx.prices[crop.id]?.fromMarket ?? false;
+        terms.push({
+          label: `Effective ${crop.name} price${split}`,
+          value: ep.price,
+          unit: `$/${crop.yieldUnit}`,
+          basis: fromMarket ? 'input' : 'sourced',
+          sources: fromMarket ? ['marketInput'] : sourceIds(crop.pricePerUnit?.source),
+        });
       }
       terms.push({ label: 'Revenue', value: revenue, unit: '$/ac', basis: 'input' });
       const oc = operatingCost(crop);
@@ -351,7 +359,13 @@ export function explainPlan(ctx: ModelContext, seqs: CropId[][]): ExplainedPlan 
             : `Operating cost for ${crop.name.toLowerCase()} is not sourced (shown as $0).`,
         );
       } else {
-        terms.push({ label: `Operating cost (${crop.operatingCostPerAcre?.source ?? 'source'})`, value: -oc, unit: '$/ac', basis: 'sourced' });
+        terms.push({
+          label: `Operating cost (${crop.operatingCostPerAcre?.source ?? 'source'})`,
+          value: -oc,
+          unit: '$/ac',
+          basis: 'sourced',
+          sources: sourceIds(crop.operatingCostPerAcre?.source),
+        });
       }
       const nc = nitrogenCreditReceived(crops, t, off + y, ctx.nPricePerLb);
       if (nc.term) terms.push(nc.term);

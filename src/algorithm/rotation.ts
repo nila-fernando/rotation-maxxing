@@ -13,6 +13,7 @@ import {
   ROTATION_RULES,
 } from './constants';
 import { nCreditMid } from './cropData';
+import { sourceIds } from './evidence';
 import type { CropId, CropTable, Factor, Paddock, Term } from './types';
 
 /** History (last 3 years, oldest first) followed by the planned crops. */
@@ -112,13 +113,14 @@ export function rotationEffect(crops: CropTable, paddock: Paddock, timeline: Cro
           : 'Corn after corn (year 2 in a row) yield drag',
       factor: 1 - p,
       basis: 'sourced',
+      sources: ['seifert2017', 'unlCropWatch2020'],
     });
     risks.push('Corn rootworm: continuous corn usually needs rootworm control (corn after soybean does not).');
     sourcedRepeat = true;
   } else if (crop === 'corn' && prev === 'soybeans') {
     // The national yield already reflects mostly-rotated corn; the "boost" is
     // avoiding the continuous-corn drag, so no extra factor is applied.
-    factors.push({ label: 'Corn after soybean (rotation effect: no corn-on-corn drag)', factor: 1, basis: 'sourced' });
+    factors.push({ label: 'Corn after soybean (rotation effect: no corn-on-corn drag)', factor: 1, basis: 'sourced', sources: ['seifert2017', 'isuRotationEcon'] });
   }
 
   // Sourced: continuous soybean (Seifert 2017).
@@ -127,6 +129,7 @@ export function rotationEffect(crops: CropTable, paddock: Paddock, timeline: Cro
       label: 'Soybean after soybean yield drag',
       factor: 1 - ROTATION_EFFECTS.continuousSoybeanPenalty.value.average,
       basis: 'sourced',
+      sources: ['seifert2017'],
     });
     risks.push('Soybean on soybean builds soybean cyst nematode and white mold.');
     sourcedRepeat = true;
@@ -241,6 +244,7 @@ export function nitrogenCreditReceived(
       value: dollars,
       unit: '$/ac',
       basis: 'sourced',
+      sources: sourceIds(pc.nCreditToNextCornLbPerAcre?.source).concat('ndsuBudgets2026'),
     },
     gap: null,
   };

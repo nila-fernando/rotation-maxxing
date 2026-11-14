@@ -34,6 +34,12 @@ export interface Term {
   value: number;
   unit: string;
   basis: Basis;
+  /**
+   * Evidence: ids of the sources behind this number (keys of SOURCES in
+   * croptraits.ts, SOIL_SOURCES in soilData.ts, or DATA_SOURCES in
+   * evidence.ts, e.g. 'nasaPower', 'ssurgo'). Absent for design terms.
+   */
+  sources?: string[];
 }
 
 /** A labelled multiplicative factor, e.g. 0.945 for a 5.5% yield drag. */
@@ -41,6 +47,7 @@ export interface Factor {
   label: string;
   factor: number;
   basis: Basis;
+  sources?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +161,8 @@ export type Market = Record<CropId, MarketEntry>;
 export interface WeatherScenario {
   label?: string;
   multipliers: Record<CropId, number>;
+  /** Evidence for this year, e.g. ['nasaPower', 'fao56', 'fao33']. */
+  sources?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +255,8 @@ export interface PlanResult {
   /** Weighted objective (normalised criteria) and its terms. */
   objective: number;
   objectiveTerms: Term[];
+  /** Things a farmer or extension agent should check locally before acting on this plan. */
+  localReview: string[];
   /** Share of priority jitters (+/-15) where this plan ranks first. Null for custom plans. */
   rankStability: number | null;
   reasons: string[];

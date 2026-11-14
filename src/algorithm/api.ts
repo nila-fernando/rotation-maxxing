@@ -1,8 +1,10 @@
 /**
  * Public API: generatePlans and evaluatePlan. checkPlacement lives in placement.ts.
  */
+import { localReviewFor } from './evidence';
 import {
   CANDIDATE_WEIGHT_SHIFT,
+  EROSION_WARNING_LEVELS,
   MC_SAMPLES,
   MC_TOP_K,
   RANK_JITTER,
@@ -217,6 +219,13 @@ function buildResult(
     waterUse: c.water,
     objective: obj.value,
     objectiveTerms: obj.terms,
+    localReview: localReviewFor({
+      paddocks: explained.paddocks,
+      crops: ctx.crops,
+      gaps: explained.gaps,
+      usesMarketInput: Object.keys(ctx.market).length > 0,
+      steepPaddocks: ctx.paddocks.filter((p) => p.land.slopePct >= EROSION_WARNING_LEVELS[1]).map((p) => p.name),
+    }),
     rankStability: extra.rankStability,
     reasons,
     risks: [...new Set(risks)],

@@ -11,6 +11,7 @@
  */
 import { BARE_MONTH_COVER_DISCOUNT, DIVERSITY_DEDUCTIONS, SOIL_INDEX_WEIGHTS } from './constants';
 import { isFallow, kcMid, nCreditMid, typicalYield } from './cropData';
+import { sourceIds } from './evidence';
 import { monthsOccupied, seasonFor } from './seasons';
 import { ALFALFA_C_FACTOR, COVER_REFERENCE, DEFAULT_TILLAGE, RESIDUE_FACTORS, TILLAGE_RESIDUE_RETENTION } from './soilData';
 import type { CropId, CropTable, CropTraits, Paddock, Term, Tillage } from './types';
@@ -46,11 +47,11 @@ export function groundCover(
   state: string | undefined,
 ): ComponentScore & { bareMonths: number } {
   if (isFallow(crop)) {
-    return { value: 0, term: term('Ground cover: fallow leaves bare soil', 0, 'sourced'), gap: null, bareMonths: 12 };
+    return { value: 0, term: term('Ground cover: fallow leaves bare soil', 0, 'sourced', ['nrcsRusleCFactor']), gap: null, bareMonths: 12 };
   }
   if (crop.id === 'alfalfa') {
     const v = 1 - ALFALFA_C_FACTOR.value;
-    return { value: v, term: term('Ground cover: alfalfa stand (NRCS C factor 0.020)', v, 'sourced'), gap: null, bareMonths: 0 };
+    return { value: v, term: term('Ground cover: alfalfa stand (NRCS C factor 0.020)', v, 'sourced', ['nrcsRusleCFactor']), gap: null, bareMonths: 0 };
   }
   const season = seasonFor(crop, state);
   const bareMonths = 12 - monthsOccupied(season.span);
@@ -73,6 +74,7 @@ export function groundCover(
       `Ground cover: ${Math.round(residue)} lb/ac residue x ${tillage} tillage retention (placeholder ${retention}), ${bareMonths} bare month(s)`,
       v,
       'placeholder',
+      ['nrcsVaResidue1'],
     ),
     gap: null,
     bareMonths,
@@ -96,8 +98,8 @@ export function nCreditReference(crops: CropTable): number {
   return max || 1;
 }
 
-function term(label: string, value: number, basis: Term['basis']): Term {
-  return { label, value, unit: 'index 0-1', basis };
+function term(label: string, value: number, basis: Term['basis'], sources?: string[]): Term {
+  return { label, value, unit: 'index 0-1', basis, ...(sources ? { sources } : {}) };
 }
 
 export interface SoilYearInput {
@@ -147,7 +149,11 @@ export function soilHealthIndex(input: SoilYearInput): SoilHealthResult {
   if (n === null) gaps.push(`N credit from ${crop.name} is not sourced; nitrogen component counts as 0.`);
   else {
     nScore = Math.min(1, n / refs.nCreditLb);
-    components.push(term(`Nitrogen left for the next crop (${n} lb N/ac)`, nScore, 'sourced'));
+    components.push(
+      n > 0
+        ? term(`Nitrogen left for the next crop (${n} lb N/ac)`, nScore, 'sourced', sourceIds(crop.nCreditToNextCornLbPerAcre?.source))
+        : term('Nitrogen left for the next crop: none (not a legume)', 0, 'design'),
+    );
   }
 
   // (c) rotation diversity / pest break
@@ -178,7 +184,7 @@ export function soilHealthIndex(input: SoilYearInput): SoilHealthResult {
     if (r === null) gaps.push(`Organic-matter proxy for ${crop.name} needs a residue factor; counts as 0.`);
     else {
       om = Math.min(1, r / refs.residueLb);
-      components.push(term(`Organic matter (proxy: ${Math.round(r)} lb/ac residue)`, om, 'proxy'));
+      components.push(term(`Organic matter (proxy: ${Math.round(r)} lb/ac residue)`, om, 'proxy', ['nrcsVaResidue1']));
     }
   }
 
@@ -216,7 +222,7 @@ export function waterUseIndex(
   const v = kc * (months / 12);
   return {
     value: v,
-    term: { label: `Water use: kc ${kc} x ${months} month season`, value: v, unit: 'index', basis: 'sourced' },
+    term: { label: `Water use: kc ${kc} x ${months} month season`, value: v, unit: 'index', basis: 'sourced', sources: ['fao56'] },
     gap: null,
   };
 }
