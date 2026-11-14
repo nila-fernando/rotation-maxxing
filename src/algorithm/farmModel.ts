@@ -1,0 +1,427 @@
+/**
+ * The farm model: turns a set of paddock sequences into money, soil health
+ * and water numbers. Search, Monte Carlo and evaluatePlan all go through
+ * these functions, so a plan scores the same wherever it is scored.
+ *
+ * Split into:
+ *  - per-sequence "statics" that don't depend on neighbours, weather or prices
+ *    (costs, N credits, soil health, water, end-of-horizon value)
+ *  - farm-wide revenue, which depends on every paddock's yield (shade) and on
+ *    total production (market caps)
+ */
+import { CROP_BY_ID } from './croptraits';
+import { END_SOIL_WEIGHT, HORIZON_YEARS } from './constants';
+import { economicsStatus, FALLOW_COST_GAP, getCrop, isFallow, operatingCost } from './cropData';
+import { prepareFarm } from './geometry';
+import { priceInfo, sell, type PriceInfo } from './market';
+import { DEFAULT_N_PRICE, nitrogenCreditReceived, nitrogenLeftBehind, sequenceViolation, timelineOf } from './rotation';
+import { nCreditReference, residueReference, soilHealthIndex, waterUseIndex } from './soilHealth';
+import { meanScenario, TraitYieldModel, type YieldModel } from './yieldModel';
+import type {
+  CropId,
+  CropTable,
+  Farm,
+  Market,
+  Paddock,
+  PaddockId,
+  PaddockResult,
+  PreparedFarm,
+  Term,
+  WeatherScenario,
+  YearResult,
+} from './types';
+
+export interface ModelOptions {
+  /** Default: TraitYieldModel. */
+  yieldModel?: YieldModel;
+  /** Default: CROP_BY_ID from croptraits.ts. */
+  crops?: CropTable;
+  /** $/lb N used to value N credits. Default: NITROGEN_PRICE_PER_LB from croptraits.ts. */
+  nitrogenPricePerLb?: number;
+  /** Count the soil health and N left behind at the end of the horizon. Default true. */
+  endOfHorizon?: boolean;
+}
+
+export interface ModelContext {
+  prepared: PreparedFarm;
+  paddocks: Paddock[];
+  crops: CropTable;
+  model: YieldModel;
+  market: Market;
+  prices: Record<CropId, PriceInfo | null>;
+  nPricePerLb: number;
+  horizon: number;
+  endOfHorizon: boolean;
+  /** Weather pool supplied by the caller (never empty: falls back to an average year). */
+  weatherPool: WeatherScenario[];
+  /** Mean of the pool: used for every expected (deterministic) number. */
+  expectedWeather: WeatherScenario;
+  refs: { residueLb: number; nCreditLb: number };
+  totalAcres: number;
+  /** Paddock id -> position in `paddocks`. */
+  paddockIndex: Map<PaddockId, number>;
+  /** Gaps that apply to the whole run (market, weather). */
+  globalGaps: string[];
+}
+
+export function createContext(
+  farm: Farm | PreparedFarm,
+  market: Market,
+  scenarios: WeatherScenario[],
+  options: ModelOptions = {},
+): ModelContext {
+  const prepared = 'adjacency' in farm ? farm : prepareFarm(farm);
+  const crops = options.crops ?? CROP_BY_ID;
+  const globalGaps: string[] = [];
+  const prices: Record<CropId, PriceInfo | null> = {};
+  for (const c of Object.values(crops)) {
+    const { info, gap } = priceInfo(market, c);
+    prices[c.id] = info;
+    if (gap && Object.keys(market).length > 0) globalGaps.push(gap);
+  }
+  if (Object.keys(market).length === 0) {
+    globalGaps.push('No local market data supplied; US average prices with no demand caps are used.');
+  }
+  let pool = scenarios;
+  if (pool.length === 0) {
+    pool = [{ label: 'Average year', multipliers: {} }];
+    globalGaps.push('No weather scenarios supplied: yields use average weather and Monte Carlo varies prices only.');
+  }
+  const paddocks = prepared.farm.paddocks;
+  return {
+    prepared,
+    paddocks,
+    crops,
+    model: options.yieldModel ?? new TraitYieldModel(),
+    market,
+    prices,
+    nPricePerLb: options.nitrogenPricePerLb ?? DEFAULT_N_PRICE,
+    horizon: HORIZON_YEARS,
+    endOfHorizon: options.endOfHorizon ?? true,
+    weatherPool: pool,
+    expectedWeather: meanScenario(pool),
+    refs: { residueLb: residueReference(crops), nCreditLb: nCreditReference(crops) },
+    totalAcres: paddocks.reduce((a, p) => a + p.acres, 0),
+    paddockIndex: new Map(paddocks.map((p, i) => [p.id, i])),
+    globalGaps,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Per-sequence statics
+// ---------------------------------------------------------------------------
+
+export interface SequenceStatics {
+  seq: CropId[];
+  key: string;
+  /** Shade-free expected yield per acre per year (0 when there is no harvest). */
+  yields: number[];
+  /** Operating cost over the horizon, $ (whole paddock). */
+  cost: number;
+  /** N credits received over the horizon, $ (whole paddock). */
+  nCredit: number;
+  /** $ value of N left for the next corn crop (0 if endOfHorizon is off). */
+  endValue: number;
+  /** Horizon soil score 0-1 (mean, final year weighted up if endOfHorizon). */
+  soil: number;
+  /** Final-year soil health index 0-1. */
+  endSoil: number;
+  /** Mean water-use index over the horizon. */
+  water: number;
+  families: string[];
+}
+
+/**
+ * Everything about a paddock sequence that doesn't depend on neighbours,
+ * weather draws or market totals.
+ * @param yieldCache optional cache keyed by prefix, shared across sequences of one paddock
+ */
+export function sequenceStatics(
+  ctx: ModelContext,
+  paddock: Paddock,
+  seq: CropId[],
+  yieldCache?: Map<string, number>,
+): SequenceStatics {
+  const { crops } = ctx;
+  const t = timelineOf(paddock, seq);
+  const off = t.length - seq.length;
+  const yields: number[] = [];
+  let cost = 0;
+  let nCredit = 0;
+  let soilSum = 0;
+  let endSoil = 0;
+  let water = 0;
+  const state = ctx.prepared.farm.state;
+  for (let y = 0; y < seq.length; y++) {
+    const prefix = seq.slice(0, y + 1).join(',');
+    let yv = yieldCache?.get(prefix);
+    if (yv === undefined) {
+      const est = ctx.model.yieldFor(paddock, seq, y, ctx.expectedWeather, {
+        prepared: ctx.prepared,
+        crops,
+        neighbourCrop: () => null,
+        explain: false,
+      });
+      yv = est.value ?? 0;
+      yieldCache?.set(prefix, yv);
+    }
+    yields.push(yv);
+    const crop = getCrop(crops, seq[y]!);
+    cost += (operatingCost(crop) ?? 0) * paddock.acres;
+    nCredit += nitrogenCreditReceived(crops, t, off + y, ctx.nPricePerLb).dollarsPerAcre * paddock.acres;
+    const soil = soilHealthIndex({
+      crops,
+      paddock,
+      timeline: t,
+      index: off + y,
+      yieldPerAcre: yv || null,
+      state,
+      refs: ctx.refs,
+    }).value;
+    soilSum += soil;
+    if (y === seq.length - 1) endSoil = soil;
+    water += waterUseIndex(crops, crop, state).value;
+  }
+  const n = seq.length;
+  const endW = ctx.endOfHorizon ? END_SOIL_WEIGHT : 0;
+  const last = seq[n - 1]!;
+  return {
+    seq,
+    key: seq.join('>'),
+    yields,
+    cost,
+    nCredit,
+    endValue: ctx.endOfHorizon ? nitrogenLeftBehind(crops, last, ctx.nPricePerLb).dollars * paddock.acres : 0,
+    soil: (soilSum + endW * endSoil) / (n + endW),
+    endSoil,
+    water: water / n,
+    families: seq.map((id) => getCrop(crops, id).family),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Farm-wide revenue
+// ---------------------------------------------------------------------------
+
+/**
+ * Revenue of the whole farm over the horizon, given every paddock's yield.
+ * @param seqs crop per paddock (by paddock index) per year
+ * @param yields yield per acre per paddock per year
+ * @param priceMultiplier Monte Carlo price draw per crop and year (default 1)
+ */
+export function farmRevenue(
+  ctx: ModelContext,
+  seqs: CropId[][],
+  yields: number[][],
+  priceMultiplier?: (cropId: CropId, year: number) => number,
+): number {
+  let total = 0;
+  const production = new Map<CropId, number>();
+  for (let y = 0; y < ctx.horizon; y++) {
+    production.clear();
+    for (let p = 0; p < seqs.length; p++) {
+      const c = seqs[p]![y]!;
+      const units = yields[p]![y]! * ctx.paddocks[p]!.acres;
+      if (units > 0) production.set(c, (production.get(c) ?? 0) + units);
+    }
+    for (const [c, units] of production) {
+      const info = ctx.prices[c];
+      if (!info) continue;
+      total += sell(info, units, priceMultiplier ? priceMultiplier(c, y) : 1).revenue;
+    }
+  }
+  return total;
+}
+
+/** Yield of paddock p in year y with neighbours from `seqs` (no caching). */
+export function yieldWithNeighbours(
+  ctx: ModelContext,
+  seqs: CropId[][],
+  p: number,
+  y: number,
+  weather: WeatherScenario,
+  shadeToleranceDraw?: (cropId: CropId) => number | undefined,
+  explain = false,
+) {
+  const index = ctx.paddockIndex;
+  return ctx.model.yieldFor(ctx.paddocks[p]!, seqs[p]!, y, weather, {
+    prepared: ctx.prepared,
+    crops: ctx.crops,
+    neighbourCrop: (id) => {
+      const q = index.get(id);
+      return q === undefined ? null : (seqs[q]?.[y] ?? null);
+    },
+    ...(shadeToleranceDraw ? { shadeToleranceDraw } : {}),
+    explain,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Explained evaluation (for display)
+// ---------------------------------------------------------------------------
+
+export interface ExplainedPlan {
+  paddocks: PaddockResult[];
+  /** Deterministic GM with expected weather and prices, $. */
+  grossMargin: number;
+  endValue: number;
+  soil: number;
+  endSoil: number;
+  water: number;
+  gaps: string[];
+  risks: string[];
+  /** Production per crop per year vs local demand (for market warnings). */
+  marketExcess: { cropId: CropId; year: number; production: number; localDemand: number }[];
+  /** Largest shaded fraction found per paddock-year. */
+  shade: { paddockId: PaddockId; year: number; fraction: number }[];
+}
+
+/** Score a whole plan with expected weather and full explanations. */
+export function explainPlan(ctx: ModelContext, seqs: CropId[][]): ExplainedPlan {
+  const { crops } = ctx;
+  const gaps = new Set<string>(ctx.globalGaps);
+  const risks = new Set<string>();
+  const shade: ExplainedPlan['shade'] = [];
+
+  // Yields with neighbours, explained.
+  const yieldEst = seqs.map((_, p) =>
+    seqs[p]!.map((__, y) => yieldWithNeighbours(ctx, seqs, p, y, ctx.expectedWeather, undefined, true)),
+  );
+  const yields = yieldEst.map((row) => row.map((e) => e.value ?? 0));
+
+  // Effective prices per crop-year.
+  const effPrice = new Map<string, { price: number; local: number; distant: number; production: number }>();
+  const marketExcess: ExplainedPlan['marketExcess'] = [];
+  for (let y = 0; y < ctx.horizon; y++) {
+    const prod = new Map<CropId, number>();
+    seqs.forEach((s, p) => {
+      const u = yields[p]![y]! * ctx.paddocks[p]!.acres;
+      if (u > 0) prod.set(s[y]!, (prod.get(s[y]!) ?? 0) + u);
+    });
+    for (const [c, u] of prod) {
+      const info = ctx.prices[c];
+      if (!info) continue;
+      const sale = sell(info, u);
+      effPrice.set(`${c}|${y}`, { price: sale.effectivePrice, local: sale.localUnits, distant: sale.distantUnits, production: u });
+      if (sale.distantUnits > 0) marketExcess.push({ cropId: c, year: y, production: u, localDemand: info.localDemand });
+    }
+  }
+
+  let grossMargin = 0;
+  let endValue = 0;
+  let soilW = 0;
+  let endSoilW = 0;
+  let waterW = 0;
+  const paddocks: PaddockResult[] = ctx.paddocks.map((pad, p) => {
+    const seq = seqs[p]!;
+    const t = timelineOf(pad, seq);
+    const off = t.length - seq.length;
+    const violation = sequenceViolation(crops, pad, seq);
+    if (violation) risks.add(`${pad.name}: ${violation}`);
+    const years: YearResult[] = [];
+    let soilSum = 0;
+    let lastSoil = 0;
+    let waterSum = 0;
+    for (let y = 0; y < seq.length; y++) {
+      const crop = getCrop(crops, seq[y]!);
+      const est = yieldEst[p]![y]!;
+      est.gaps.forEach((g) => gaps.add(g));
+      est.risks.forEach((r) => risks.add(`${pad.name}, year ${y + 1}: ${r}`));
+      if (est.shadedFraction > 0) shade.push({ paddockId: pad.id, year: y, fraction: est.shadedFraction });
+      const terms: Term[] = [...est.terms];
+
+      // Money per acre.
+      const yv = yields[p]![y]!;
+      const ep = effPrice.get(`${crop.id}|${y}`);
+      const revenue = ep ? yv * ep.price : 0;
+      if (ep) {
+        const split = ep.distant > 0 ? ` (${Math.round((ep.local / ep.production) * 100)}% sold locally, rest at distant price less freight)` : '';
+        terms.push({ label: `Effective ${crop.name} price${split}`, value: ep.price, unit: `$/${crop.yieldUnit}`, basis: 'input' });
+      }
+      terms.push({ label: 'Revenue', value: revenue, unit: '$/ac', basis: 'input' });
+      const oc = operatingCost(crop);
+      const econ = economicsStatus(crop);
+      if (isFallow(crop)) {
+        gaps.add(FALLOW_COST_GAP);
+        terms.push({ label: 'Operating cost (fallow: field operations not costed yet)', value: 0, unit: '$/ac', basis: 'assumption' });
+      } else if (oc === null) {
+        gaps.add(
+          econ.status === 'incomplete'
+            ? `Operating cost for ${crop.name} is not sourced: its gross margin is incomplete (cost shown as $0).`
+            : `Operating cost for ${crop.name.toLowerCase()} is not sourced (shown as $0).`,
+        );
+      } else {
+        terms.push({ label: `Operating cost (${crop.operatingCostPerAcre?.source ?? 'source'})`, value: -oc, unit: '$/ac', basis: 'sourced' });
+      }
+      const nc = nitrogenCreditReceived(crops, t, off + y, ctx.nPricePerLb);
+      if (nc.term) terms.push(nc.term);
+      if (nc.gap) gaps.add(nc.gap);
+      const gm = revenue - (oc ?? 0) + nc.dollarsPerAcre;
+      terms.push({ label: 'Gross margin', value: gm, unit: '$/ac', basis: 'input' });
+      grossMargin += gm * pad.acres;
+
+      // Soil and water.
+      const sh = soilHealthIndex({
+        crops,
+        paddock: pad,
+        timeline: t,
+        index: off + y,
+        yieldPerAcre: sequenceYieldShadeFree(ctx, pad, seq, y),
+        state: ctx.prepared.farm.state,
+        refs: ctx.refs,
+        ...(est.soil ? { override: est.soil } : {}),
+      });
+      sh.gaps.forEach((g) => gaps.add(g));
+      terms.push(...sh.components, { label: 'Soil health index', value: sh.value, unit: 'index 0-1', basis: 'design' });
+      const w = waterUseIndex(crops, crop, ctx.prepared.farm.state);
+      if (w.gap) gaps.add(w.gap);
+      terms.push(w.term);
+      soilSum += sh.value;
+      lastSoil = sh.value;
+      waterSum += w.value;
+
+      years.push({
+        year: y,
+        cropId: crop.id,
+        yieldPerAcre: est.value,
+        yieldUnit: crop.yieldUnit,
+        grossMarginPerAcre: gm,
+        soilHealthIndex: sh.value,
+        waterUseIndex: w.value,
+        terms,
+      });
+    }
+    const n = seq.length;
+    const endW = ctx.endOfHorizon ? END_SOIL_WEIGHT : 0;
+    const share = pad.acres / ctx.totalAcres;
+    soilW += share * ((soilSum + endW * lastSoil) / (n + endW));
+    endSoilW += share * lastSoil;
+    waterW += share * (waterSum / n);
+    if (ctx.endOfHorizon) endValue += nitrogenLeftBehind(crops, seq[n - 1]!, ctx.nPricePerLb).dollars * pad.acres;
+    return { paddockId: pad.id, name: pad.name, acres: pad.acres, sequence: seq.slice(), years };
+  });
+
+  return {
+    paddocks,
+    grossMargin,
+    endValue,
+    soil: soilW,
+    endSoil: endSoilW,
+    water: waterW,
+    gaps: [...gaps],
+    risks: [...risks],
+    marketExcess,
+    shade,
+  };
+}
+
+/** Shade-free expected yield used for residue-based soil components (same as in statics). */
+function sequenceYieldShadeFree(ctx: ModelContext, pad: Paddock, seq: CropId[], y: number): number | null {
+  return ctx.model.yieldFor(pad, seq, y, ctx.expectedWeather, {
+    prepared: ctx.prepared,
+    crops: ctx.crops,
+    neighbourCrop: () => null,
+    explain: false,
+  }).value;
+}
+
