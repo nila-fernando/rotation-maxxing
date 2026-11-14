@@ -90,7 +90,8 @@ export function scenariosFromDailyWeather(farm: Farm, weather: DailyWeather, opt
         const span = seasonFor(CROP_BY_ID[cropId]!, farm.state).span;
         if (!span) continue;
         const winter = span.plantMonth > span.harvestMonth;
-        const start = indexOfDate(weather, `${winter ? year - 1 : year}-${pad2(span.plantMonth)}-15`);
+        const plantMd = span.plantDate ?? `${pad2(span.plantMonth)}-15`;
+        const start = indexOfDate(weather, `${winter ? year - 1 : year}-${plantMd}`);
         const base = { startIndex: start, awc: p.land.awcInPerIn!, et0 };
         const dry = start >= 0 ? simulateSeason(weather, params, base) : null;
         if (!dry) {

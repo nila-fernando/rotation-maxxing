@@ -18,6 +18,8 @@
  *    region and include crop insurance. They are close but not identical.
  */
 
+import { SEASONS as HANDBOOK_SEASONS } from './cropTraitsUpdate';
+
 // ---------------------------------------------------------------------------
 // Sources
 // ---------------------------------------------------------------------------
@@ -130,6 +132,34 @@ export type StateCode = string;
 export interface SeasonSpan {
   plantMonth: number;
   harvestMonth: number;
+  /** Exact dates when known ('MM-DD'), e.g. from Handbook 628. */
+  plantDate?: string;
+  harvestDate?: string;
+  /** Evidence id for the span. */
+  source?: string;
+}
+
+/**
+ * Field span per state from Handbook 628 (cropTraitsUpdate.ts SEASONS), by
+ * SEASON_SPAN_RULE: plant.activeStart -> harvest.activeEnd, falling back to
+ * begin -> end. Alfalfa has only a harvest (cutting) window, which is used as
+ * its span. A design rule over sourced dates.
+ */
+function handbookSpans(cropId: string): Record<StateCode, SeasonSpan> {
+  const out: Record<StateCode, SeasonSpan> = {};
+  for (const [state, s] of Object.entries(HANDBOOK_SEASONS[cropId] ?? {})) {
+    if (!s) continue;
+    const start = s.plant ? (s.plant.activeStart ?? s.plant.begin) : (s.harvest.activeStart ?? s.harvest.begin);
+    const end = s.harvest.activeEnd ?? s.harvest.end;
+    out[state] = {
+      plantMonth: Number(start.slice(0, 2)),
+      harvestMonth: Number(end.slice(0, 2)),
+      ...(s.plant ? { plantDate: start } : {}),
+      harvestDate: end,
+      source: 'nassHandbook628',
+    };
+  }
+  return out;
 }
 
 /**
@@ -247,7 +277,7 @@ export const CROPS: CropTraits[] = [
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: ['cornRootworm'],
     seasonType: 'summer',
-    season: {},
+    season: handbookSpans('corn'),
     ...unsourced,
   },
   {
@@ -273,7 +303,7 @@ export const CROPS: CropTraits[] = [
     nCreditToNextCornLbPerAcre: { value: { low: 30, high: 40 }, source: ['mdaLegumeCredits', 'uwLegumeCredits'] },
     hostsPestGroups: ['soybeanCystNematode', 'whiteMold'],
     seasonType: 'summer',
-    season: {},
+    season: handbookSpans('soybeans'),
     ...unsourced,
   },
   {
@@ -298,7 +328,7 @@ export const CROPS: CropTraits[] = [
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: [],
     seasonType: 'winter',
-    season: {},
+    season: handbookSpans('winter-wheat'),
     sensitiveMonths: { plantMonth: 4, harvestMonth: 6 }, // design choice: spring growth to grain fill (Apr-Jun)
     ...unsourced,
   },
@@ -324,7 +354,7 @@ export const CROPS: CropTraits[] = [
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: [],
     seasonType: 'summer',
-    season: {},
+    season: handbookSpans('spring-wheat'),
     ...unsourced,
   },
   {
@@ -350,7 +380,7 @@ export const CROPS: CropTraits[] = [
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: [],
     seasonType: 'summer',
-    season: {},
+    season: handbookSpans('sorghum'),
     ...unsourced,
   },
   {
@@ -377,7 +407,7 @@ export const CROPS: CropTraits[] = [
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: [],
     seasonType: 'summer',
-    season: {},
+    season: handbookSpans('cotton'),
     ...unsourced,
   },
   {
@@ -408,7 +438,7 @@ export const CROPS: CropTraits[] = [
     },
     hostsPestGroups: ['whiteMold'],
     seasonType: 'perennial',
-    season: {},
+    season: handbookSpans('alfalfa'),
     ...unsourced,
   },
   {
@@ -433,7 +463,7 @@ export const CROPS: CropTraits[] = [
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: [],
     seasonType: 'summer',
-    season: {},
+    season: handbookSpans('oats'),
     ...unsourced,
   },
   {
@@ -459,7 +489,7 @@ export const CROPS: CropTraits[] = [
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: [],
     seasonType: 'summer',
-    season: {},
+    season: handbookSpans('barley'),
     ...unsourced,
   },
   {
@@ -485,7 +515,7 @@ export const CROPS: CropTraits[] = [
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: ['whiteMold'],
     seasonType: 'summer',
-    season: {},
+    season: handbookSpans('sunflower'),
     requiresBuyer: true, // design decision: needs a confirmed buyer
     ...unsourced,
   },
@@ -512,7 +542,7 @@ export const CROPS: CropTraits[] = [
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: ['whiteMold'],
     seasonType: 'summer',
-    season: {},
+    season: handbookSpans('canola'),
     requiresBuyer: true, // design decision: needs a confirmed buyer
     ...unsourced,
   },
@@ -539,7 +569,7 @@ export const CROPS: CropTraits[] = [
     nCreditToNextCornLbPerAcre: { value: { low: 20, high: 20 }, source: ['mdaLegumeCredits', 'uwLegumeCredits'] },
     hostsPestGroups: ['soybeanCystNematode', 'whiteMold'],
     seasonType: 'summer',
-    season: {},
+    season: handbookSpans('dry-beans'),
     requiresBuyer: true, // design decision: needs a confirmed buyer
     ...unsourced,
   },
@@ -559,7 +589,7 @@ export const CROPS: CropTraits[] = [
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: [],
     seasonType: 'winter',
-    season: {},
+    season: handbookSpans('cereal-rye'),
     ...unsourced,
   },
   {
@@ -578,7 +608,7 @@ export const CROPS: CropTraits[] = [
     nCreditToNextCornLbPerAcre: null,
     hostsPestGroups: [],
     seasonType: 'none',
-    season: {},
+    season: handbookSpans('fallow'),
     ...unsourced,
   },
 ];

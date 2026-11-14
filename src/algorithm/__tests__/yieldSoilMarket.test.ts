@@ -97,7 +97,7 @@ describe('soilHealthIndex', () => {
 describe('water use index', () => {
   it('uses kc x season months; fallow uses none; unknown kc is worst case', () => {
     const corn = waterUseIndex(crops, crops['corn']!, 'IA');
-    expect(corn.value).toBeCloseTo(1.2 * (5 / 12));
+    expect(corn.value).toBeCloseTo(1.2 * (8 / 12)); // Handbook 628 IA: Apr-Nov
     expect(waterUseIndex(crops, crops['fallow']!, 'IA').value).toBe(0);
     const rye = waterUseIndex(crops, crops['cereal-rye']!, 'IA');
     expect(rye.gap).toMatch(/not sourced/);
