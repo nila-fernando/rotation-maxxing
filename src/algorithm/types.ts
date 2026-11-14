@@ -65,6 +65,35 @@ export interface Land {
   /** Soil salinity as saturated-paste electrical conductivity, dS/m. */
   salinityECe: number;
   ph: number;
+  /** Optional, from SSURGO: root-zone available water capacity, in/in (= cm/cm). Enables the water balance. */
+  awcInPerIn?: number;
+  /** Optional, from SSURGO: RUSLE soil erodibility K (surface horizon kffact). */
+  kFactor?: number;
+  /** Optional, from SSURGO: tolerable soil loss T, tons/ac/yr. */
+  tFactorTonsPerAcre?: number;
+  /** Optional, from SSURGO: surface organic matter, %. */
+  organicMatterPct?: number;
+  /** Optional: RUSLE slope length, ft. */
+  slopeLengthFt?: number;
+}
+
+/** Daily weather for one location (e.g. from NASA POWER). Arrays are aligned with `dates`. */
+export interface DailyWeather {
+  /** YYYY-MM-DD */
+  dates: string[];
+  tmaxC: number[];
+  tminC: number[];
+  rainMm: number[];
+  /** Incoming shortwave radiation, MJ/m2/day. */
+  solarMJ: number[];
+  /** Mean relative humidity at 2 m, %. */
+  rhPct: number[];
+  /** Wind speed at 2 m, m/s. */
+  wind2m: number[];
+  latitude: number;
+  elevationM: number;
+  /** Evidence id, e.g. 'nasaPower'. */
+  source: string;
 }
 
 /** [longitude, latitude] in degrees. */
