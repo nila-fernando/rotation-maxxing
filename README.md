@@ -9,7 +9,7 @@ Given a US farm (paddocks, land, last 3 years of crops), the farmer's priorities
 
 It also says what the priorities cost in profit. Every number comes with labelled terms so the mascot can explain it.
 
-This repo is the algorithm plus a thin data layer: TypeScript in strict mode with zero runtime dependencies. The algorithm (`src/algorithm`) is pure; `src/data` is the only code that makes network calls. There is no UI. The 3D frontend is built separately. See [ALGORITHM.md](ALGORITHM.md) for how it works, every formula, and every constant and placeholder.
+This repo is the algorithm plus a thin data layer: TypeScript in strict mode with zero runtime dependencies. The algorithm (`src/algorithm`) is pure; `src/data` is the only code that makes network calls. There is no UI. The 3D frontend is built separately. See [ALGORITHM.md](ALGORITHM.md) for how it works, every formula, and every constant and placeholder. Frontend developers: start with [API.md](API.md).
 
 ## Install and test
 
