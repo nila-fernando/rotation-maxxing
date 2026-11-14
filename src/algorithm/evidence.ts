@@ -9,7 +9,6 @@
 import { SOURCES } from './croptraits';
 import { SOIL_SOURCES } from './soilData';
 import { WATER_SOURCES } from './waterParams';
-import { SOURCES_ADDITIONS } from './cropTraitsUpdate';
 import type { CropTraits, PaddockResult, Term } from './types';
 
 export interface SourceInfo {
@@ -59,7 +58,6 @@ export function describeSource(id: string): SourceInfo | null {
     ...(SOURCES as unknown as Record<string, SourceInfo>),
     ...(SOIL_SOURCES as unknown as Record<string, SourceInfo>),
     ...(WATER_SOURCES as unknown as Record<string, SourceInfo>),
-    ...(SOURCES_ADDITIONS as unknown as Record<string, SourceInfo>),
     ...DATA_SOURCES,
   };
   return all[id] ?? null;

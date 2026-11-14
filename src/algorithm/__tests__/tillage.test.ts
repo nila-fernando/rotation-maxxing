@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generatePlans } from '../api';
 import { CROP_BY_ID } from '../croptraits';
-import { tillageRetention } from '../cropTraitsUpdate';
+import { tillageRetention } from '../croptraits';
 import { residueRetention } from '../soilData';
 import { groundCover } from '../soilHealth';
 import { syntheticWeatherForTestsOnly } from '../weather';

@@ -492,7 +492,7 @@ Fallow is scored over the same May–Sep window as summer crops. The surface sta
 
 Also:
 - `FALLBACK_SEASONS` in `seasons.ts`: summer May–Sep, winter Oct–Jul, perennial uses summer. Used for states without a Handbook 628 row (only IA and KS are entered).
-- In `cropTraitsUpdate.ts`: `TILLAGE_SYSTEMS` (which operations each tillage system means) and the season span rule (`plant.activeStart -> harvest.activeEnd`). Both are design.
+- In `croptraits.ts`: `TILLAGE_SYSTEMS` (which operations each tillage system means) and the season span rule (`plant.activeStart -> harvest.activeEnd`). Both are design.
 - The SSURGO → EcoCrop drainage mapping, and the 0.175 m initial root depth (midpoint of FAO-56's 0.15–0.20 m).
 - The linear **height ramp** in `shade.ts` (`heightInMonth`): an assumption.
 - In `croptraits.ts`: `sensitiveMonths` (winter wheat Apr–Jun) and `requiresBuyer` (dry beans, sunflower, canola). Both are design decisions, not data.
@@ -501,7 +501,7 @@ Also:
 
 | Item | Where | Status |
 |---|---|---|
-| Season spans for states other than IA and KS | `cropTraitsUpdate.ts` `SEASONS` | Fallback spans used |
+| Season spans for states other than IA and KS | `croptraits.ts` `SEASONS` | Fallback spans used |
 | Ky for oats, barley, canola; FAO-56 stage lengths for canola, alfalfa, rye | `waterParams.ts` | Not sourced: these crops don't vary with weather |
 | RUSLE C, Kc and biomass for a rye cover crop | `waterParams.ts` | Not sourced |
 | Fallow evaporation without daily weather | `waterParams.ts` | Dry bare-soil minimum (lower bound) |

@@ -15,7 +15,7 @@ import {
 import { depletionP, getCrop, isFallow, kcMid, nCreditMid, salinityRelativeYield, typicalYield } from './cropData';
 import { prepareFarm } from './geometry';
 import { equipmentReason, missingEquipmentFor, needsBuyerReason } from './filters';
-import { STATE_PRESENCE } from './cropTraitsUpdate';
+import { STATE_PRESENCE } from './croptraits';
 import { drainageCheck, phCheck } from './landSuitability';
 
 const STATE_NAMES: Record<string, string> = { IA: 'Iowa', KS: 'Kansas' };

@@ -1,5 +1,5 @@
 /**
- * Land suitability from FAO EcoCrop (cropTraitsUpdate.ts LAND_SUITABILITY):
+ * Land suitability from FAO EcoCrop (croptraits.ts LAND_SUITABILITY):
  * soil pH and drainage. EcoCrop parameters are EXPERT OPINION (global, not
  * US-calibrated); every term says so.
  *
@@ -12,7 +12,7 @@
  *  Killing temperature is deliberately NOT used as a frost filter.
  */
 import { DRAINAGE_SUBOPTIMAL_FACTOR } from './constants';
-import { LAND_SUITABILITY, type EcocropDrainage } from './cropTraitsUpdate';
+import { LAND_SUITABILITY, type EcocropDrainage } from './croptraits';
 import { isFallow } from './cropData';
 import type { CropTraits, Drainage, Factor, Paddock } from './types';
 

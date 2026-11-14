@@ -6,7 +6,7 @@
  * Crops with no residue factor are left out on purpose: they become an
  * information gap rather than borrowing another crop's number.
  */
-import { RESIDUE_FACTOR_ADDITIONS, RESIDUE_FRAGILITY, TILLAGE_OPERATIONS, TILLAGE_SYSTEMS, tillageRetention } from './cropTraitsUpdate';
+import { RESIDUE_FACTOR_ADDITIONS, RESIDUE_FRAGILITY, TILLAGE_OPERATIONS, TILLAGE_SYSTEMS, tillageRetention } from './croptraits';
 import type { CropId, Tillage } from './types';
 
 export const SOIL_SOURCES = {
@@ -29,7 +29,7 @@ export interface ResidueFactor {
   /** lb of residue per unit of the crop's yield unit (per bu here). */
   lbPerYieldUnit: number;
   type: ResidueType;
-  /** Evidence id (SOIL_SOURCES or SOURCES_ADDITIONS in cropTraitsUpdate.ts). */
+  /** Evidence id (SOIL_SOURCES here or SOURCES in croptraits.ts). */
   source: string;
   note?: string;
 }
