@@ -241,6 +241,8 @@ export interface WeatherScenario {
   byPaddock?: Record<PaddockId, Record<CropId, number>>;
   /** Field water results from the water balance, per paddock and crop. */
   water?: Record<PaddockId, Record<CropId, FieldWater>>;
+  /** That year's RUSLE rainfall erosivity R (US customary units). */
+  erosivityR?: number;
   /** Evidence for this year, e.g. ['nasaPower', 'fao56', 'fao33']. */
   sources?: string[];
 }
