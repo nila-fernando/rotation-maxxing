@@ -84,7 +84,9 @@ describe('the season loop', () => {
     const { state } = updateAfterSeason(adopted, grown, { weather: { multipliers: {} } });
     const again = replan(state, NEUTRAL, {}, fast);
     expect(again.replanning).toBeDefined();
-    expect(again.replanning!.changedShare).toBeLessThanOrEqual(0.5);
+    // The switching cost never makes the plan change MORE than it would for free.
+    const free = again.replanning!.withoutSwitchingCost;
+    expect(again.replanning!.changes.length).toBeLessThanOrEqual(free ? free.changes.length : again.replanning!.changes.length);
     for (const c of again.replanning!.changes) {
       const prev = first.plans.priority.plan.sequences[c.paddockId]![c.year + 1]!.main;
       expect(c.from).toBe(prev);

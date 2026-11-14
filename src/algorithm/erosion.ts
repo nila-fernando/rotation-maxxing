@@ -16,7 +16,7 @@
  * conservative (too high) in mid-season.
  */
 import { isFallow } from './cropData';
-import { ALFALFA_C_FACTOR, RESIDUE_FACTORS, TILLAGE_RESIDUE_RETENTION } from './soilData';
+import { ALFALFA_C_FACTOR, RESIDUE_FACTORS, residueRetention } from './soilData';
 import { residueLb, residueToCover } from './soilHealth';
 import { SURFACE_COVER_B, UNIT_PLOT_LENGTH_FT } from './waterParams';
 import type { CropTraits, Land, Tillage } from './types';
@@ -39,17 +39,18 @@ export interface CFactor {
 }
 
 /** Cover-management factor for one year of a crop. Null when we can't say. */
-export function cFactor(crop: CropTraits, yieldPerAcre: number | null, tillage: Tillage): CFactor {
+export function cFactor(crop: CropTraits, yieldPerAcre: number | null, tillage: Tillage, retentionAt?: number): CFactor {
   if (isFallow(crop)) return { value: 1, label: 'tilled fallow (C = 1 by definition)', sources: ['ah703'] };
   if (crop.id === 'alfalfa') return { value: ALFALFA_C_FACTOR.value, label: 'established alfalfa (C 0.020)', sources: ['nrcsRusleCFactor'] };
   const f = RESIDUE_FACTORS[crop.id];
   const r = residueLb(crop, yieldPerAcre);
   if (!f || r === null) return { value: null, label: `no sourced residue factor for ${crop.name}`, sources: [] };
-  const cover = residueToCover(r * TILLAGE_RESIDUE_RETENTION[tillage].value, f.type);
+  const ret = residueRetention(crop.id, tillage, retentionAt);
+  const cover = residueToCover(r * ret.value, f.type);
   return {
     value: Math.exp(-SURFACE_COVER_B * cover * 100),
     label: `${Math.round(cover * 100)}% residue cover after ${tillage} tillage`,
-    sources: ['ah703', 'nrcsVaResidue1'],
+    sources: ['ah703', f.source, 'nrcsVaResidueNote'],
   };
 }
 

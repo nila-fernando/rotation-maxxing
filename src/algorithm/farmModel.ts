@@ -572,6 +572,42 @@ export function explainPlan(ctx: ModelContext, seqs: CropId[][], covers?: (CropI
   };
 }
 
+/**
+ * Acre-weighted horizon soil score with tillage retention at position `at`
+ * (0 = low end, 1 = high end of the NRCS ranges). Cover only rises with
+ * retention, and one draw is shared farm-wide, so the soil score's P10/P90
+ * under a uniform draw are exactly its values at at = 0.1 / 0.9.
+ */
+export function planSoilAt(ctx: ModelContext, seqs: CropId[][], covers: (CropId | null)[][] | undefined, at: number): number {
+  const endW = ctx.endOfHorizon ? END_SOIL_WEIGHT : 0;
+  let total = 0;
+  ctx.paddocks.forEach((pad, p) => {
+    const seq = seqs[p]!;
+    const t = timelineOf(pad, seq);
+    const off = t.length - seq.length;
+    let sum = 0;
+    let last = 0;
+    seq.forEach((_, y) => {
+      const v = soilHealthIndex({
+        crops: ctx.crops,
+        paddock: pad,
+        timeline: t,
+        index: off + y,
+        yieldPerAcre: sequenceYieldShadeFree(ctx, pad, seq, y),
+        state: ctx.prepared.farm.state,
+        refs: ctx.refs,
+        ...erosionInput(ctx),
+        coverCrop: !!covers?.[p]?.[y],
+        retentionAt: at,
+      }).value;
+      sum += v;
+      last = v;
+    });
+    total += (pad.acres / ctx.totalAcres) * ((sum + endW * last) / (seq.length + endW));
+  });
+  return total;
+}
+
 /** Shade-free expected yield used for residue-based soil components (same as in statics). */
 function sequenceYieldShadeFree(ctx: ModelContext, pad: Paddock, seq: CropId[], y: number): number | null {
   return ctx.model.yieldFor(pad, seq, y, ctx.expectedWeather, {

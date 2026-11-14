@@ -12,7 +12,7 @@ import {
   RANK_JITTER_SAMPLES,
   SHADE_WARNING_FRACTIONS,
 } from './constants';
-import { createContext, explainPlan, sequenceStatics, type ExplainedPlan, type ModelContext, type ModelOptions, type SequenceStatics } from './farmModel';
+import { createContext, explainPlan, planSoilAt, sequenceStatics, type ExplainedPlan, type ModelContext, type ModelOptions, type SequenceStatics } from './farmModel';
 import { screenCrops, sequenceViolation, UNSOURCED_LAND_CHECKS } from './filters';
 import { drawSamples, probBeats, simulate, summarise, type Draws, type McSummary } from './montecarlo';
 import {
@@ -225,6 +225,10 @@ function buildResult(
     riskAdjustedProfit: riskAdjusted(mc.expected, mc.p10, extra.lambda) + c.endValue,
     soilHealth: c.soil,
     endSoilHealth: c.endSoil,
+    soilHealthRange: {
+      p10: planSoilAt(ctx, c.seqs, c.statics.map((s) => s.covers), 0.1),
+      p90: planSoilAt(ctx, c.seqs, c.statics.map((s) => s.covers), 0.9),
+    },
     waterUse: c.water,
     objective: obj.value,
     objectiveTerms: obj.terms,

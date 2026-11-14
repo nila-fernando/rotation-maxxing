@@ -30,5 +30,6 @@ export { createRng, type Rng } from './rng';
 export { syntheticWeatherForTestsOnly } from './weather';
 export * as constants from './constants';
 export { CROPS, CROP_BY_ID, DATA_GAPS, SOURCES, PEST_GROUPS, ROTATION_EFFECTS, NITROGEN_PRICE_PER_LB } from './croptraits';
-export { SOIL_SOURCES, RESIDUE_FACTORS, TILLAGE_RESIDUE_RETENTION } from './soilData';
+export { SOIL_SOURCES, RESIDUE_FACTORS, residueRetention } from './soilData';
+export { SOURCES_ADDITIONS, SEASONS, TILLAGE_OPERATIONS, TILLAGE_SYSTEMS, LAND_SUITABILITY, STATE_PRESENCE } from './cropTraitsUpdate';
 export type * from './types';

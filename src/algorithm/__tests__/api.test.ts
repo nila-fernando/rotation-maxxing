@@ -143,7 +143,7 @@ describe('generatePlans', () => {
 
   it('the end-of-horizon value changes the final-year choice', () => {
     // (a) Soil weight: the final year counts extra, so a high-residue crop is left behind.
-    const f = gridFarm(1, 1, 80, { availableCrops: ['corn', 'soybeans', 'barley', 'winter-wheat', 'oats', 'sorghum'] });
+    const f = { ...gridFarm(1, 1, 80, { availableCrops: ['corn', 'soybeans', 'winter-wheat', 'oats', 'sorghum'] }), state: 'KS' };
     const pr: Priorities = { profit: 50, soilHealth: 50, water: 0, risk: 0 };
     const on = generatePlans(f, pr, {}, [], fast).plans.priority.paddocks[0]!.sequence;
     const off = generatePlans(f, pr, {}, [], { ...fast, endOfHorizon: false }).plans.priority.paddocks[0]!.sequence;

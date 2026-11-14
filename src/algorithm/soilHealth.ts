@@ -13,7 +13,7 @@ import { BARE_MONTH_COVER_DISCOUNT, COVER_CROP_MONTHS, DIVERSITY_DEDUCTIONS, SOI
 import { isFallow, kcMid, nCreditMid, typicalYield } from './cropData';
 import { sourceIds } from './evidence';
 import { monthsOccupied, seasonFor } from './seasons';
-import { ALFALFA_C_FACTOR, COVER_REFERENCE, DEFAULT_TILLAGE, RESIDUE_FACTORS, TILLAGE_RESIDUE_RETENTION } from './soilData';
+import { ALFALFA_C_FACTOR, COVER_REFERENCE, DEFAULT_TILLAGE, RESIDUE_FACTORS, residueRetention } from './soilData';
 import { cFactor, soilLoss } from './erosion';
 import type { CropId, CropTable, CropTraits, FieldWater, Paddock, Term, Tillage } from './types';
 
@@ -47,6 +47,7 @@ export function groundCover(
   tillage: Tillage,
   state: string | undefined,
   coverMonths = 0,
+  retentionAt?: number,
 ): ComponentScore & { bareMonths: number } {
   if (isFallow(crop)) {
     if (coverMonths > 0) {
@@ -74,17 +75,17 @@ export function groundCover(
       bareMonths,
     };
   }
-  const retention = TILLAGE_RESIDUE_RETENTION[tillage].value;
-  const cover = residueToCover(residue * retention, f.type);
+  const ret = residueRetention(crop.id, tillage, retentionAt);
+  const cover = residueToCover(residue * ret.value, f.type);
   const v = cover * (1 - (BARE_MONTH_COVER_DISCOUNT * bareMonths) / 12);
   return {
     value: v,
     term: term(
-      `Ground cover: ${Math.round(residue)} lb/ac residue x ${tillage} tillage retention (placeholder ${retention}), ${bareMonths} bare month(s)` +
+      `Ground cover: ${Math.round(residue)} lb/ac residue; ${ret.label}; ${bareMonths} bare month(s)` +
         (coverMonths > 0 ? `, winter cover crop for ${coverMonths} months` : ''),
       v,
-      'placeholder',
-      ['nrcsVaResidue1'],
+      'design',
+      [f.source, 'nrcsVaResidueNote'],
     ),
     gap: null,
     bareMonths,
@@ -140,6 +141,8 @@ export interface SoilYearInput {
   erosivityR?: number;
   /** A winter cover crop follows this year's crop. */
   coverCrop?: boolean;
+  /** Position in the tillage-retention low..high range (0-1); default the midpoint values. */
+  retentionAt?: number;
 }
 
 export interface SoilHealthResult {
@@ -164,7 +167,8 @@ export function soilHealthIndex(input: SoilYearInput): SoilHealthResult {
   let cover: number;
   let erosionTonsPerAcre: number | null = null;
   const tillage = paddock.tillage ?? DEFAULT_TILLAGE;
-  const loss = input.erosivityR !== undefined ? soilLoss(paddock.land, input.erosivityR, cFactor(crop, yieldPerAcre, tillage)) : null;
+  const loss =
+    input.erosivityR !== undefined ? soilLoss(paddock.land, input.erosivityR, cFactor(crop, yieldPerAcre, tillage, input.retentionAt)) : null;
   if (loss) erosionTonsPerAcre = loss.tonsPerAcre;
   if (override?.groundCover) {
     cover = override.groundCover.value;
@@ -184,7 +188,7 @@ export function soilHealthIndex(input: SoilYearInput): SoilHealthResult {
     if (coverMonths) gaps.push('RUSLE C for a cereal rye cover crop is not sourced: its erosion benefit counts only through bare months.');
   } else {
     if (loss) gaps.push(...loss.gaps);
-    const gc = groundCover(crop, yieldPerAcre, paddock.tillage ?? DEFAULT_TILLAGE, state, coverMonths);
+    const gc = groundCover(crop, yieldPerAcre, paddock.tillage ?? DEFAULT_TILLAGE, state, coverMonths, input.retentionAt);
     cover = gc.value ?? 0;
     if (gc.term) components.push(gc.term);
     if (gc.gap) gaps.push(gc.gap);

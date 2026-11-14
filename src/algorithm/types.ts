@@ -344,6 +344,8 @@ export interface PlanResult {
   soilHealth: number;
   /** Acre-weighted soilHealthIndex in the final year (0-1). */
   endSoilHealth: number;
+  /** Soil health under tillage-retention uncertainty (NRCS low..high ranges): P10 and P90. */
+  soilHealthRange: { p10: number; p90: number };
   /** Acre-weighted mean water-use index (lower is better). */
   waterUse: number;
   /** Weighted objective (normalised criteria) and its terms. */
