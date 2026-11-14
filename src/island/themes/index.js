@@ -42,6 +42,7 @@ import buildThanksgiving from './thanksgiving.js';
 import buildChristmas from './christmas.js';
 import buildNewYear from './newyear.js';
 import { costumeFor } from './costumes.js';
+import { hitsProp, shrunk } from '../clearance.js';
 
 export const THEMES = ['easter', 'independence', 'halloween', 'thanksgiving', 'christmas', 'newyear'];
 export const THEME_NAMES = { easter: 'Easter', independence: 'July 4th', halloween: 'Halloween', thanksgiving: 'Thanksgiving', christmas: 'Christmas', newyear: 'New Year' };
@@ -203,34 +204,8 @@ export function makeThemeContext(view, { attach, reduced = () => false } = {}) {
 // fields (up to the fence tops), the barnyard decorations and the things already kept. Whatever
 // would overlap is left out. Things deliberately on a fence or a building (onFence / onBuilding)
 // and island-wide sets (noPop) are the module's own business.
-const SHRINK = 0.1; // each box is taken a tenth in from every side first (touching is fine)
-
-function shrunk(box) {
-  const b = box.clone(), s = new THREE.Vector3();
-  b.getSize(s);
-  b.min.addScaledVector(s, SHRINK / 2);
-  b.max.addScaledVector(s, -SHRINK / 2);
-  return b;
-}
-
-/** Does a box in island space overlap a prop's own rotated box (both shrunk a little)? */
-function hitsProp(box, p) {
-  if (!p.box) return false;
-  const s = p.scale || 1, c = Math.cos(p.ry || 0), sn = Math.sin(p.ry || 0);
-  const pmin = p.box.min, pmax = p.box.max;
-  const sx = (pmax[0] - pmin[0]) * s, sy = (pmax[1] - pmin[1]) * s, sz = (pmax[2] - pmin[2]) * s;
-  const lo = [pmin[0] * s + sx * SHRINK / 2, p.y + pmin[1] * s + sy * SHRINK / 2, pmin[2] * s + sz * SHRINK / 2];
-  const hi = [pmax[0] * s - sx * SHRINK / 2, p.y + pmax[1] * s - sy * SHRINK / 2, pmax[2] * s - sz * SHRINK / 2];
-  if (box.max.y < lo[1] || box.min.y > hi[1]) return false;
-  // the box's corners in the prop's own frame (x right, z front)
-  let ax = Infinity, bx = -Infinity, az = Infinity, bz = -Infinity;
-  for (const x of [box.min.x, box.max.x]) for (const z of [box.min.z, box.max.z]) {
-    const dx = x - p.x, dz = z - p.z;
-    const lx = dx * c - dz * sn, lz = dx * sn + dz * c;
-    ax = Math.min(ax, lx); bx = Math.max(bx, lx); az = Math.min(az, lz); bz = Math.max(bz, lz);
-  }
-  return !(bx < lo[0] || ax > hi[0] || bz < lo[2] || az > hi[2]);
-}
+// (the boxes are measured by src/island/clearance.js: each is taken a tenth in from every side
+// first, so touching is fine)
 
 /**
  * Leaves out of `root` every free-standing thing that would clip into the island's props, the
