@@ -4,58 +4,53 @@
  *   npm run backtest                      # model series only (keyless)
  *   NASS_API_KEY=... npm run backtest     # + USDA QuickStats county yields and skill scores
  *
- * For each county: NASA POWER daily weather + SSURGO soil at the county point
- * -> the planner's weather pool -> the model's yield multiplier per year.
- * With a key, QuickStats county yields are detrended (linear trend, so
- * genetics/management gains are removed) and compared year by year:
- *   anomaly(actual) = yield / trend,   anomaly(model) = multiplier
- * Reported: correlation, mean absolute error of anomalies, and the worst year.
+ * Two soil set-ups per county, so changes can be compared:
+ *   point:  one SSURGO point at the county centroid (the original method)
+ *   sample: ~15 seeded random points on the county's cropland (CDL corn/soy/
+ *           wheat/sorghum pixels), each with its own SSURGO soil. Uniform
+ *           points make the average area-weighted over cropland soils.
+ * Weather: NASA POWER at the county centroid. Actual yields: QuickStats county
+ * yields, detrended linearly (anomaly = yield / trend). Reported: correlation r,
+ * mean absolute anomaly error, spread (sd) and the worst real year.
  *
- * Network: calls NASA POWER, Soil Data Access and (with a key) QuickStats.
+ * Story IA and Saline KS were used while developing the model; Boone IA and
+ * McPherson KS are held out (never looked at before this run).
  * The key is read from the environment only and never written anywhere.
  */
 import { scenariosFromDailyWeather } from '../src/algorithm/climate';
-import type { Farm } from '../src/algorithm/types';
+import type { Farm, Land, Paddock } from '../src/algorithm/types';
+import { fetchCountyOutline, sampleCroplandSoils } from '../src/data/countySample';
 import { fetchPowerDaily } from '../src/data/power';
 import { fetchSoilAtPoint } from '../src/data/ssurgo';
 
 interface County {
-  name: string;
+  geoid: string;
   state: 'IA' | 'KS';
   county: string;
-  lat: number;
-  lng: number;
+  heldOut: boolean;
   crops: { cropId: string; commodity: string; util?: string }[];
 }
 
-const COUNTIES: County[] = [
-  {
-    name: 'Story County, IA',
-    state: 'IA',
-    county: 'STORY',
-    lat: 42.03,
-    lng: -93.47,
-    crops: [
-      { cropId: 'corn', commodity: 'CORN', util: 'GRAIN' },
-      { cropId: 'soybeans', commodity: 'SOYBEANS' },
-    ],
-  },
-  {
-    name: 'Saline County, KS',
-    state: 'KS',
-    county: 'SALINE',
-    lat: 38.78,
-    lng: -97.65,
-    crops: [
-      { cropId: 'winter-wheat', commodity: 'WHEAT' },
-      { cropId: 'sorghum', commodity: 'SORGHUM', util: 'GRAIN' },
-      { cropId: 'soybeans', commodity: 'SOYBEANS' },
-    ],
-  },
+const IA_CROPS = [
+  { cropId: 'corn', commodity: 'CORN', util: 'GRAIN' },
+  { cropId: 'soybeans', commodity: 'SOYBEANS' },
 ];
-
+const KS_CROPS = [
+  { cropId: 'winter-wheat', commodity: 'WHEAT' },
+  { cropId: 'sorghum', commodity: 'SORGHUM', util: 'GRAIN' },
+  { cropId: 'soybeans', commodity: 'SOYBEANS' },
+];
+const COUNTIES: County[] = [
+  { geoid: '19169', state: 'IA', county: 'STORY', heldOut: false, crops: IA_CROPS },
+  { geoid: '19015', state: 'IA', county: 'BOONE', heldOut: true, crops: IA_CROPS },
+  { geoid: '20169', state: 'KS', county: 'SALINE', heldOut: false, crops: KS_CROPS },
+  { geoid: '20113', state: 'KS', county: 'MCPHERSON', heldOut: true, crops: KS_CROPS },
+];
+const CROPLAND = ['Corn', 'Soybeans', 'Winter Wheat', 'Sorghum', 'Dbl Crop WinWht/Soybeans'];
 const FIRST = 2001;
 const LAST = 2024;
+const SAMPLE_N = 15;
+const CDL_YEAR = 2020;
 
 async function quickStatsYields(key: string, c: County, commodity: string, util?: string): Promise<Map<number, number>> {
   const q = new URLSearchParams({
@@ -97,12 +92,12 @@ function detrend(series: Map<number, number>): Map<number, number> {
   return out;
 }
 
+const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
+const sd = (a: number[]) => Math.sqrt(mean(a.map((v) => (v - mean(a)) ** 2)));
 function correlation(a: number[], b: number[]): number {
-  const n = a.length;
-  const ma = a.reduce((s, v) => s + v, 0) / n;
-  const mb = b.reduce((s, v) => s + v, 0) / n;
+  const ma = mean(a), mb = mean(b);
   let num = 0, da = 0, db = 0;
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < a.length; i++) {
     num += (a[i]! - ma) * (b[i]! - mb);
     da += (a[i]! - ma) ** 2;
     db += (b[i]! - mb) ** 2;
@@ -110,68 +105,104 @@ function correlation(a: number[], b: number[]): number {
   return num / Math.sqrt(da * db);
 }
 
+function farmFrom(c: County, lat: number, lands: Land[]): Farm {
+  const paddocks: Paddock[] = lands.map((land, i) => ({
+    id: `s${i}`,
+    name: `${c.county} sample ${i + 1}`,
+    acres: 1,
+    // Separate 1-acre squares (no shared edges, so no shade between samples).
+    polygon: { localM: [[i * 200, 0], [i * 200 + 63.6, 0], [i * 200 + 63.6, 63.6], [i * 200, 63.6]] },
+    land,
+    history: [],
+    availableCrops: c.crops.map((x) => x.cropId),
+  }));
+  return { latitude: lat, state: c.state, paddocks };
+}
+
 async function main(): Promise<void> {
   const key = process.env['NASS_API_KEY'];
   const lines: string[] = [`# Backtest: NASA POWER water balance vs county yields (${FIRST}-${LAST})`, ''];
-  if (!key) {
-    lines.push('> **No `NASS_API_KEY` set: only the model series is shown. Set a free QuickStats key to score it against county yields.**', '');
-  }
+  if (!key) lines.push('> **No `NASS_API_KEY` set: only model series are shown.**', '');
+  const summary: string[] = ['| County | Crop | Soils | r | Mean abs. error | Spread model / actual | Worst real year (actual / model) |', '|---|---|---|---|---|---|---|'];
+
   for (const c of COUNTIES) {
-    const power = await fetchPowerDaily(c.lat, c.lng, FIRST - 1, LAST);
-    const soil = await fetchSoilAtPoint(c.lng, c.lat);
-    const farm: Farm = {
-      latitude: c.lat,
-      state: c.state,
-      paddocks: [
-        {
-          id: 'x',
-          name: c.name,
-          acres: 100,
-          polygon: { localM: [[0, 0], [100, 0], [100, 100], [0, 100]] },
-          land: soil.land,
-          history: [],
-          availableCrops: c.crops.map((x) => x.cropId),
-        },
-      ],
-    };
-    const climate = scenariosFromDailyWeather(farm, power.weather, { crops: c.crops.map((x) => x.cropId) });
-    const byYear = new Map(climate.scenarios.map((s) => [Number(s.label!.slice(0, 4)), s]));
-    lines.push(`## ${c.name}`, '', `Soil: ${soil.mapUnit} (AWC ${soil.land.awcInPerIn?.toFixed(2)} in/in).`, '');
+    const outline = await fetchCountyOutline(c.geoid);
+    const [lng, lat] = outline.centroid;
+    const power = await fetchPowerDaily(lat, lng, FIRST - 2, LAST);
+    const pointSoil = await fetchSoilAtPoint(lng, lat);
+    const sample = await sampleCroplandSoils(outline, { n: SAMPLE_N, year: CDL_YEAR, categories: CROPLAND, seed: 1 });
+    const units = new Map<string, number>();
+    for (const p of sample.points) units.set(p.soil.mapUnit, (units.get(p.soil.mapUnit) ?? 0) + 1);
+
+    lines.push(
+      `## ${outline.name}, ${c.state}${c.heldOut ? ' (held out)' : ''}`,
+      '',
+      `- Point soil (centroid): ${pointSoil.mapUnit} (AWC ${pointSoil.land.awcInPerIn?.toFixed(2)}).`,
+      `- Cropland sample: ${sample.points.length} points from ${sample.draws} draws (CDL ${CDL_YEAR}); mean AWC ` +
+        `${mean(sample.points.map((p) => p.soil.land.awcInPerIn ?? 0)).toFixed(2)}; ${units.size} map units: ` +
+        [...units.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([u, n]) => `${u} (${n})`).join('; ') + '.',
+      ...sample.gaps.map((g) => `- ${g}`),
+      '',
+    );
+
+    const modes: [string, Land[]][] = [
+      ['point', [pointSoil.land]],
+      ['sample', sample.points.map((p) => p.soil.land)],
+    ];
+    const models: Record<string, Map<string, Map<number, number>>> = {};
+    for (const [mode, lands] of modes) {
+      const climate = scenariosFromDailyWeather(farmFrom(c, lat, lands), power.weather, { crops: c.crops.map((x) => x.cropId) });
+      const byCrop = new Map<string, Map<number, number>>();
+      for (const s of climate.scenarios) {
+        const y = Number(s.label!.slice(0, 4));
+        for (const crop of c.crops) {
+          const m = s.multipliers[crop.cropId];
+          if (m === undefined) continue;
+          if (!byCrop.has(crop.cropId)) byCrop.set(crop.cropId, new Map());
+          byCrop.get(crop.cropId)!.set(y, m);
+        }
+      }
+      models[mode] = byCrop;
+    }
 
     for (const crop of c.crops) {
-      const model = new Map<number, number>();
-      for (const [y, s] of byYear) {
-        const m = s.multipliers[crop.cropId];
-        if (m !== undefined) model.set(y, m);
-      }
       lines.push(`### ${crop.cropId}`, '');
       if (!key) {
-        const worst = [...model.entries()].sort((a, b) => a[1] - b[1]).slice(0, 3);
-        lines.push(`Model's three worst years: ${worst.map(([y, m]) => `${y} (${m.toFixed(2)})`).join(', ')}.`, '');
+        for (const mode of ['point', 'sample']) {
+          const m = models[mode]!.get(crop.cropId) ?? new Map();
+          const worst = [...m.entries()].sort((a, b) => a[1] - b[1]).slice(0, 3);
+          lines.push(`- ${mode}: model's worst years ${worst.map(([y, v]) => `${y} (${v.toFixed(2)})`).join(', ')}`);
+        }
+        lines.push('');
         continue;
       }
       const actual = detrend(await quickStatsYields(key, c, crop.commodity, crop.util));
-      const years = [...model.keys()].filter((y) => actual.has(y)).sort();
-      if (years.length < 5) {
-        lines.push(`Too few overlapping years with QuickStats (${years.length}).`, '');
-        continue;
+      const rows: string[] = ['| Year | Actual / trend | Model (point) | Model (sample) |', '|---|---|---|---|'];
+      for (const mode of ['point', 'sample']) {
+        const model = models[mode]!.get(crop.cropId) ?? new Map<number, number>();
+        const years = [...model.keys()].filter((y) => actual.has(y)).sort();
+        if (years.length < 5) {
+          summary.push(`| ${outline.name} | ${crop.cropId} | ${mode} | too few years (${years.length}) | | | |`);
+          continue;
+        }
+        const a = years.map((y) => actual.get(y)!);
+        const m = years.map((y) => model.get(y)!);
+        const worst = years[a.indexOf(Math.min(...a))]!;
+        summary.push(
+          `| ${outline.name}${c.heldOut ? ' *' : ''} | ${crop.cropId} | ${mode} | ${correlation(a, m).toFixed(2)} | ` +
+            `${((a.reduce((s, v, i) => s + Math.abs(v - m[i]!), 0) / a.length) * 100).toFixed(0)}% | ` +
+            `${sd(m).toFixed(2)} / ${sd(a).toFixed(2)} | ${worst}: ${actual.get(worst)!.toFixed(2)} / ${model.get(worst)!.toFixed(2)} |`,
+        );
       }
-      const a = years.map((y) => actual.get(y)!);
-      const m = years.map((y) => model.get(y)!);
-      const mae = a.reduce((s, v, i) => s + Math.abs(v - m[i]!), 0) / a.length;
-      const worstActual = years[a.indexOf(Math.min(...a))]!;
-      lines.push(
-        `Years: ${years.length}. Correlation of anomalies r = ${correlation(a, m).toFixed(2)}. ` +
-          `Mean absolute anomaly error ${(mae * 100).toFixed(0)}%. ` +
-          `Worst real year ${worstActual}: actual ${(actual.get(worstActual)! * 100).toFixed(0)}% of trend, model ${(model.get(worstActual)! * 100).toFixed(0)}%.`,
-        '',
-        '| Year | Actual / trend | Model |',
-        '|---|---|---|',
-        ...years.map((y) => `| ${y} | ${actual.get(y)!.toFixed(2)} | ${model.get(y)!.toFixed(2)} |`),
-        '',
-      );
+      const pm = models['point']!.get(crop.cropId) ?? new Map<number, number>();
+      const sm = models['sample']!.get(crop.cropId) ?? new Map<number, number>();
+      for (const y of [...actual.keys()].sort()) {
+        if (pm.has(y) || sm.has(y)) rows.push(`| ${y} | ${actual.get(y)!.toFixed(2)} | ${pm.get(y)?.toFixed(2) ?? ''} | ${sm.get(y)?.toFixed(2) ?? ''} |`);
+      }
+      lines.push(...rows, '');
     }
   }
+  if (key) lines.splice(2, 0, '## Summary (* = held-out county)', '', ...summary, '');
   console.log(lines.join('\n'));
 }
 

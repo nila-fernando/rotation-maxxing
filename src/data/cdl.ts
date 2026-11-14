@@ -82,6 +82,12 @@ export function samplePoints(ring: LngLat[]): LngLat[] {
   return pts;
 }
 
+/** CDL category at one lng/lat point (null if CropScape doesn't answer). */
+export async function cdlCategoryAt(point: LngLat, year: number, fetchFn: FetchFn = fetch as unknown as FetchFn): Promise<string | null> {
+  const [x, y] = toAlbers5070(point);
+  return fetchCategory(fetchFn, cdlValueUrl(year, x, y));
+}
+
 /** CropScape returns intermittent 5xx proxy errors: retry a few times, then give up on that point. */
 async function fetchCategory(fetchFn: FetchFn, url: string, attempts = 3): Promise<string | null> {
   for (let a = 0; a < attempts; a++) {
