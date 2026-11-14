@@ -9,11 +9,11 @@ Given a US farm (paddocks, land, last 3 years of crops), the farmer's priorities
 
 It also says what the priorities cost in profit. Every number comes with labelled terms so the mascot can explain it.
 
-This repo is **only the algorithm**: TypeScript in strict mode with zero runtime dependencies. There is no UI and no data fetching. The 3D frontend is built separately. See [ALGORITHM.md](ALGORITHM.md) for how it works, every formula, and every constant and placeholder.
+This repo is the algorithm plus a thin data layer: TypeScript in strict mode with zero runtime dependencies. The algorithm (`src/algorithm`) is pure; `src/data` is the only code that makes network calls. There is no UI. The 3D frontend is built separately. See [ALGORITHM.md](ALGORITHM.md) for how it works, every formula, and every constant and placeholder.
 
 ## Install and test
 
-Requires Node 20+.
+Requires Node 20+ (uses the built-in `fetch`).
 
 ```sh
 npm install
@@ -101,6 +101,58 @@ const warnings = checkPlacement(farm, mine.plan, 'north40', 1, 'corn', { market 
 | `yieldModel` | `TraitYieldModel` | Any implementation of the `YieldModel` interface (e.g. a future APSIM lookup) |
 
 Southern-hemisphere farms (latitude < 0) throw an error for now, because the shade logic assumes the sun is to the south.
+
+## From a pin to a plan: NASA and USDA data
+
+`src/data/` fetches what the planner needs from keyless services:
+- **NASA POWER:** daily weather
+- **SSURGO:** soil
+- **Cropland Data Layer:** the last 3 years of crops
+
+It turns them into a farm plus a weather pool built with a FAO-56 water balance. This is the only code that touches the network.
+
+```ts
+import { buildFarm } from './src/data/buildFarm';
+import { generatePlans } from './src/algorithm';
+
+const built = await buildFarm({
+  fields: [{ id: 'n40', name: 'North 40', polygon: [[-93.64, 42.03], [-93.63, 42.03], [-93.63, 42.034], [-93.64, 42.034]],
+             availableCrops: ['corn', 'soybeans', 'oats', 'winter-wheat', 'cereal-rye', 'fallow'], tileDrained: true }],
+  state: 'IA',
+  weatherYears: [2001, 2024],
+});
+const plans = generatePlans(built.farm, priorities, market, built.scenarios);
+built.gaps;        // what couldn't be filled
+built.provenance;  // where each field's soil and history came from
+```
+
+## The season loop: plan, grow, report, re-plan
+
+```ts
+import { createFarmState, adoptPlan, updateAfterSeason, replan } from './src/algorithm';
+
+let state = createFarmState(built.farm, built.scenarios, 2026);
+const first = replan(state, priorities, market);
+state = adoptPlan(state, first.plans.priority.plan);
+
+// After harvest: what was grown and how it did, plus that season's NASA POWER weather year.
+const { state: next, notes } = updateAfterSeason(state, {
+  season: 2026,
+  paddocks: [{ paddockId: 'n40', cropId: 'corn', yieldPerAcre: 204, events: [] }],
+}, { weather: observed2026 });
+
+const again = replan(next, priorities, market);  // 2027-2029, stays close to the adopted plan
+again.replanning;                                // what changed, and what would win if changes were free
+```
+
+Each field learns a yield factor from the reports, with shrinkage so one odd year can't swing the plan. Hail, flood and replant years are recorded but not learned from.
+
+## Backtest
+
+```sh
+npm run backtest                    # model's weather-driven yield anomalies, 2001-2024 (keyless)
+NASS_API_KEY=... npm run backtest   # + USDA QuickStats county yields: correlation, error, worst year
+```
 
 ## Data
 

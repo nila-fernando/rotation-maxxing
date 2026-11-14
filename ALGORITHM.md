@@ -26,18 +26,21 @@ A `null` in the data is a real data gap. The code never fills it with a guess. T
 A crop is removed from a paddock, with a plain-English reason (the mascot's "why not X?"), when any of these holds:
 
 1. **Seed availability.** It isn't in `paddock.availableCrops`.
+1. **Equipment.** The farmer has said they lack equipment the crop needs (`farm.constraints.missingEquipment`; `EQUIPMENT_NEEDED` is a design list: alfalfa needs hay equipment, cotton a picker). This applies to the farmer's own plans too (a severity-3 `land` warning).
 1. **Contract-market gate.** This is a design decision, not data. Dry beans, sunflower and canola are marked `requiresBuyer: true` in `croptraits.ts`, because their local markets are thin. They are recommended only if they appear in `farm.confirmedBuyers`; otherwise the reason is "Needs a confirmed buyer". Farmers can still place them in their own plan, where `checkPlacement` raises a `market` warning.
 2. **Salinity.** Maas–Hoffman relative yield
    `relYield = 1 − slope/100 × (ECe − threshold)` (FAO-61) is below `SALINITY_MIN_RELATIVE_YIELD`.
    Crops rated tolerant with no published threshold (oats) are allowed, and that is recorded as a gap.
-3. **Incomplete economics (recommended plans only).** The crop is a cash crop but its yield, price or cost is missing, so its profit can't be computed. Today this applies to **alfalfa**, which has no operating cost. Farmers can still put alfalfa in their own plan, where its margin is flagged as incomplete. Fallow and cereal rye (cover) have $0 revenue, and their unknown cost is flagged.
+3. **Soil pH and drainage** (FAO EcoCrop, expert opinion; see *Land suitability* below). Excluded only outside the crop's pH min..max or outside its tolerated drainage classes.
+4. **Incomplete economics (recommended plans only).** The crop is a cash crop and something its profit depends on is missing. Today this applies to **alfalfa**: it has a sourced cost (ISU 2026), but its establishment-year yield isn't sourced, so its first-year margin would be overstated. Farmers can still put alfalfa in their own plan.
+5. **Cereal rye is a cover crop**, offered only in the winter cover slot, never as a main crop.
 
 A 3-year sequence is removed when it breaks a **hard rotation rule**. History counts, so the rules apply across the history/plan boundary:
 
 - Sunflower, canola and dry beans can't follow themselves (`NO_BACK_TO_BACK_CROPS`).
 - An alfalfa stand can't run longer than `ALFALFA_MAX_STAND_YEARS`. A longer run would mean replanting alfalfa straight after alfalfa, which autotoxicity rules out.
 
-**Not checked yet:** pH, drainage/waterlogging, frost and slope suitability. These traits are `null` for every crop in `croptraits.ts`. Each plan lists this as an information gap.
+**Not checked:** frost and winter hardiness (EcoCrop killing temperatures are unusable). Slope belongs in erosion (RUSLE), not suitability. Crops that aren't usual in the farm's state (Handbook 628, IA/KS) get a severity-1 warning, not an exclusion.
 
 ## Stage 2: gross margin per crop, year and paddock
 
@@ -56,8 +59,10 @@ Yield sits behind a `YieldModel` interface. Search and Monte Carlo only call `yi
 The shipped model is **TraitYieldModel**:
 
 ```
-yield = US average yield × salinity factor × rotation factors × (1 − shade loss) × weather multiplier
+yield = US average yield × salinity × pH × drainage × rotation factors × (1 − shade loss) × weather multiplier
 ```
+
+Every model is wrapped by `withCalibration()`, which multiplies by the field's learned yield factor (see *The season loop*). The weather multiplier is per field when the pool came from NASA POWER.
 
 Each factor becomes a labelled term in yield units, for example "Corn after corn (year 2 in a row) yield drag: −3.6 bu/ac". The terms add up exactly to the yield.
 
@@ -157,8 +162,10 @@ The weights are `SOIL_INDEX_WEIGHTS`, a design choice. A component with missing 
 
 ```
 residue lb/ac   = yield × NRCS residue factor
-                  (corn 75 lb/bu, sorghum 1.35 lb/lb, soybean 60 lb/bu, wheat 100 lb/bu)
-retained        = residue × tillage retention          (TILLAGE_RESIDUE_RETENTION, PLACEHOLDER)
+                  (corn 75, sorghum 1.35/lb, soybean 60, wheat 100, barley 70, oats 80, rye 90 lb/bu)
+retained        = residue × tillage-system retention × over-winter decomposition
+                  (NRCS VA Tech Note Table 2 per operation; which operations a system means is DESIGN;
+                   fragile residue keeps less; unknown fragility counts as fragile)
 cover           = 1 − exp(−k × retained)
                   k chosen so 2,600 lb corn or 1,500 lb small-grain/soy residue → 60% cover (NRCS)
 groundCover     = cover × (1 − BARE_MONTH_COVER_DISCOUNT × bareMonths / 12)
@@ -167,7 +174,10 @@ groundCover     = cover × (1 − BARE_MONTH_COVER_DISCOUNT × bareMonths / 12)
 Special cases:
 - An alfalfa stand scores 1 − C, where C = 0.020 (NRCS legume meadow).
 - Fallow scores 0.
-- Canola, sunflower, dry beans, cotton, oats, barley and cereal rye have **no residue factor**. They get a gap, not another crop's number.
+- Canola, sunflower, dry beans, cotton and alfalfa have **no residue factor**. They get a gap, not another crop's number.
+- **With SSURGO K and T and NASA POWER rain**, (a) becomes an erosion score: `1 − A/T` from RUSLE (see *Erosion*), still discounted for bare months.
+- A winter cover crop fills up to `COVER_CROP_MONTHS` bare months (design).
+- `soilHealthRange` reports the index at the 10th and 90th percentile of the tillage low..high ranges. Cover only rises with retention, so those are exactly the P10/P90 of a farm-wide uniform draw.
 - Using the corn (coarse) curve for sorghum is an assumption.
 
 **(b) Nitrogen.** The N credit midpoint divided by the largest credit in the table.
@@ -178,11 +188,11 @@ Special cases:
 
 **Water-use index.** Lower is better.
 
-```
-water = FAO-56 kc mid × months occupied / 12
-```
+With a NASA POWER weather pool, the water score is field-specific, in inches per season:
+- **dryland:** the shortfall between crop demand (ETm) and what rain and soil supplied (ETa)
+- **irrigated:** irrigation water applied
 
-Fallow is 0. An unknown kc (cereal rye) gets the table's worst value, and a gap is recorded.
+Otherwise it falls back to `kc mid × months occupied / 12`. Fallow is 0 (known: no crop). A crop missing from the water balance gets the field's worst value, and a gap is recorded.
 
 ## Stage 5: plan search (`search.ts`, `farmModel.ts`)
 
@@ -284,6 +294,133 @@ Each plan also carries `objectiveTerms`, `reasons`, `risks` and `informationGaps
 
 ---
 
+## NASA and USDA data (`src/data/`, `climate.ts`)
+
+`buildFarm(fields)` fills a planner-ready farm from keyless services, and records where every value came from. Farmer-entered values always win.
+
+| Service | Gives | Used for |
+|---|---|---|
+| **NASA POWER** daily (temperature, rain, radiation, humidity, wind) | one call per farm | water balance, weather pool, rainfall erosivity |
+| **SSURGO** (Soil Data Access) at each field centroid | AWC (top 150 cm), K, T, pH, EC, OM, texture, drainage, map-unit slope | water balance, RUSLE, suitability |
+| **Cropland Data Layer** (CropScape), majority of 5 points per field | last 3 years of crops | history and "current rotation" |
+
+CropScape needs EPSG:5070 coordinates; the projection is implemented and checked against `pyproj`. CropScape's intermittent 5xx errors are retried; a year that still fails becomes "unknown" with a gap. Adapters are tested offline on recorded responses (`src/data/__tests__/fixtures`).
+
+## Water balance (`et0.ts`, `waterBalance.ts`, `climate.ts`)
+
+```
+ET0      FAO-56 Penman-Monteith, daily (checked against FAO-56 Examples 8 and 18)
+ETm      = Kc(day) × ET0          Kc curve from FAO-56 Table 11 stage lengths and Table 12 Kc
+TAW      = 1000 × AWC × Zr        Zr grows from 0.175 m (FAO-56 Annex 8) to the Table 22 midpoint
+Ks       = (TAW − Dr) / ((1 − p) TAW) once depletion passes RAW = p × TAW
+Ya/Ym    = 1 − Ky × (1 − ΣETa / ΣETm)       Ky from FAO-66 Table 1 (FAO-33 values)
+multiplier(field, crop, year) = Ya/Ym ÷ mean dryland Ya/Ym over all years
+```
+
+Dividing by the dryland mean keeps the national yield meaning "an average year", and lets irrigated fields come out above average. Irrigated fields are refilled to field capacity when depletion passes RAW, until the seasonal allocation runs out. Planting uses the Handbook 628 active-start date where available.
+
+**Simplifications:**
+- no surface runoff
+- no capillary rise
+- the profile starts at field capacity
+- linear root growth
+
+These make the model drought-sensitive: in the first test, 2012 corn in central Iowa came out at 57% of normal. The backtest is how we check this. **No Ky** is sourced for oats, barley or canola, and **no stage lengths** for canola, alfalfa cutting cycles or rye. Those crops don't vary with weather (gap).
+
+## Erosion (`erosion.ts`)
+
+```
+A  = R × K × LS × C × P           tons/acre/year
+R  = Σ daily EI / 17.02           EI = a × P^1.81 (a = 0.41 Apr–Sep, 0.18 Oct–Mar; Richardson 1983), US units (ARS)
+K, T from SSURGO; LS from slope and slope length (AH703 eqs. 4-1..4-5; 72.6 ft assumed if unknown)
+C  = 1 fallow (by definition); 0.020 established alfalfa; else exp(−0.035 × % residue cover) (AH703 eq. 5-12)
+P  = 1
+```
+
+Canopy and residue decay are not modelled, so row-crop A is conservative. With R, K and T known, the soil index's cover component becomes `1 − A/T` (then the bare-month discount). Central Iowa R from POWER came out at 79–227 per year (mean about 144), close to published isoerodent values (about 150–175); gridded daily rain smooths intensity.
+
+## Winter cover crop (`SeasonSlot.cover`)
+
+Cereal rye can follow a summer-harvested crop and precede a spring-planted one. It never goes around winter wheat or inside an alfalfa stand, and needs rye seed to be available.
+
+**Sourced effects:**
+- $37/ac, the SARE 2019 median for all cover crops
+- no change to the next corn yield (Marcillo & Miguez 2017, grass covers)
+
+**Design effect:** it fills up to 7 bare months in the soil index.
+
+**Gaps:**
+- RUSLE C for rye
+- spring water use (about 1 in per 1,000 lb/ac biomass, UNL; biomass unknown)
+- N tie-up
+
+**How the search picks it.** A cover's effects stay within its paddock-year, so for each weight vector the search adds a cover only where `w_soil × share × Δsoil / soil range > w_profit × cost / profit range`. This decision is independent per year, so no 8× enumeration is needed. The max-profit plan never takes one.
+
+## Land suitability (`landSuitability.ts`, FAO EcoCrop)
+
+These values are expert opinion: global, not US-calibrated, and wheat is a single entry for winter and spring.
+
+**pH: plateau curve.** The yield multiplier is 1 inside optMin..optMax and falls linearly to 0 at min / max. The crop is excluded only outside min..max. Unknown pH means the check is skipped, with a gap.
+
+**Drainage.**
+- **Mapping (design):** SSURGO classes map to EcoCrop as excessive → E, well → W, moderately well → W, poor → I. EcoCrop's I still needs its exact definition confirmed.
+- **Tile drainage** counts as one class better.
+- **Outside the crop's tolerated classes:** excluded.
+- **Tolerated but not optimal:** × `DRAINAGE_SUBOPTIMAL_FACTOR`, an unsourced design value.
+
+## The season loop (`update.ts`)
+
+```
+state = createFarmState(farm, weatherPool, 2026)
+plans = replan(state, priorities, market)            // 2026-2028
+state = adoptPlan(state, plans.plans.priority.plan)
+... season ...
+{ state } = updateAfterSeason(state, report, { weather: observed2026 })
+plans = replan(state, priorities, market)            // 2027-2029, close to the adopted plan
+```
+
+`updateAfterSeason` does four things:
+- **History:** the reported crop becomes the newest year.
+- **Weather pool:** the observed weather year joins the pool.
+- **Land:** optional updates.
+- **Calibration:** each field's yield factor is updated per crop from reported vs predicted yield. The prediction uses that season's *actual* weather and neighbours, before calibration.
+
+Calibration uses shrinkage on the log scale:
+
+```
+prior   log f ~ N(0, 0.15²)                              CALIBRATION_PRIOR_SD
+season  log(reported / predicted) ~ N(log f, 0.20²)      CALIBRATION_OBS_SD
+posterior mean = (Σ log r / 0.20²) / (1/0.15² + n/0.20²)
+```
+
+One season moves the factor only part of the way, and it converges as seasons accumulate. Seasons flagged hail, flood or replant are recorded but not used.
+
+`replan` stays close to the adopted plan through a switching cost: `SWITCHING_PENALTY_WEIGHT` × the acre-weighted share of planned paddock-years changed. It never applies to max-profit. `GenerateResult.replanning` lists the changes, and what would win if changes were free.
+
+## Evidence (`evidence.ts`)
+
+Every sourced term carries `sources` (ids). `describeSource(id)` resolves any id across croptraits, the update file, soil, water and data sources. A test checks that every sourced number in real plans resolves. Each plan also has `localReview`, the list of things to check with an agronomist before acting.
+
+## Backtest (`scripts/backtest.ts`)
+
+`npm run backtest` builds the water-balance yield anomalies for Story County, IA and Saline County, KS, 2001–2024, from NASA POWER and SSURGO.
+
+With `NASS_API_KEY` set, it also pulls QuickStats county yields, detrends them linearly, and reports:
+- correlation
+- mean absolute anomaly error
+- the worst year, real vs model
+
+Without a key it lists the model's worst years. 2012 is the worst for every county and crop.
+
+## Open modelling issue: fallow and the water criterion
+
+Fallow is known to use no crop water, so it scores best on water. Under neutral priorities, on Iowa ground after a soy–soy history, the priority plan can choose fallow for a year. That is consistent with the objective, but agronomically odd where water isn't scarce.
+
+Options, pending a decision:
+1. count bare-soil evaporation for fallow (FAO-56 ch. 7, needs sourcing)
+2. score dryland water as shortfall per unit of production
+3. let the water slider default lower for dryland farms
+
 ## Everything a teammate can tune or needs to source
 
 ### Design constants (`constants.ts`)
@@ -320,9 +457,17 @@ Each plan also carries `objectiveTerms`, `reasons`, `risks` and `informationGaps
 | `EROSION_WARNING_LEVELS` | 2 / 4 / 8 | slope% × (1 − cover) |
 | `MARKET_WARNING_EXCESS` | >0 / 25% / 50% | Share sold at the distant price |
 | `WATER_HIGH_KC` / `WATER_SENSITIVE_P` | 1.15 / 0.45 | Water lens on sandy soil |
+| `EQUIPMENT_NEEDED` | alfalfa: hay; cotton: picker | Equipment exclusions |
+| `DRAINAGE_SUBOPTIMAL_FACTOR` | 0.9 | **Unsourced magnitude** |
+| `COVER_CROP_ID` / `COVER_CROP_MONTHS` | cereal-rye / 7 | Cover slot; bare months filled |
+| `CALIBRATION_PRIOR_SD` / `CALIBRATION_OBS_SD` | 0.15 / 0.20 | Field calibration shrinkage |
+| `CALIBRATION_EXCLUDED_EVENTS` | hail, flood, replant | One-off seasons not learned from |
+| `SWITCHING_PENALTY_WEIGHT` | 0.05 | Re-planning stability |
 
 Also:
-- `FALLBACK_SEASONS` in `seasons.ts`: summer May–Sep, winter Oct–Jul, perennial uses summer. Used until Handbook 628 values are entered.
+- `FALLBACK_SEASONS` in `seasons.ts`: summer May–Sep, winter Oct–Jul, perennial uses summer. Used for states without a Handbook 628 row (only IA and KS are entered).
+- In `cropTraitsUpdate.ts`: `TILLAGE_SYSTEMS` (which operations each tillage system means) and the season span rule (`plant.activeStart -> harvest.activeEnd`). Both are design.
+- The SSURGO → EcoCrop drainage mapping, and the 0.175 m initial root depth (midpoint of FAO-56's 0.15–0.20 m).
 - The linear **height ramp** in `shade.ts` (`heightInMonth`): an assumption.
 - In `croptraits.ts`: `sensitiveMonths` (winter wheat Apr–Jun) and `requiresBuyer` (dry beans, sunflower, canola). Both are design decisions, not data.
 
@@ -330,19 +475,20 @@ Also:
 
 | Item | Where | Status |
 |---|---|---|
-| Tillage residue retention (0.3 / 0.6 / 0.9) | `soilData.ts` `TILLAGE_RESIDUE_RETENTION` | **Placeholder**: a teammate will supply |
-| Season spans by state (IA, KS first) | `croptraits.ts` `season` | Empty: [Ag Handbook 628](https://esmis.nal.usda.gov/concern/publications/vm40xr56k) |
+| Season spans for states other than IA and KS | `cropTraitsUpdate.ts` `SEASONS` | Fallback spans used |
+| Ky for oats, barley, canola; FAO-56 stage lengths for canola, alfalfa, rye | `waterParams.ts` | Not sourced: these crops don't vary with weather |
+| RUSLE C, Kc and biomass for a rye cover crop | `waterParams.ts` | Not sourced |
+| Bare-soil evaporation for fallow | — | Not modelled (see open issue) |
 | Fallow field operations cost | `cropData.ts` | Shown as $0 (gap) |
 | Crop height through the season | `shade.ts` | Linear ramp assumption |
 | Dry bean margin | `croptraits.ts` | National yield and US price vs a North Dakota cost: likely overstated |
-| Shade tolerance, frost, waterlogging, pH range | `croptraits.ts` | null for every crop |
-| Residue factors for canola, sunflower, dry beans, cotton, oats, barley, cereal rye | `soilData.ts` | Not sourced |
-| Alfalfa operating cost and establishment-year yield | `croptraits.ts`, `constants.ts` | Not sourced (alfalfa is not recommended until then) |
-| Cereal rye cover and fallow costs; rye height, roots, kc | `croptraits.ts` | Not sourced |
+| Shade tolerance, frost / winter hardiness | `croptraits.ts` | null for every crop |
+| Residue factors for canola, sunflower, dry beans, cotton, alfalfa | `soilData.ts` | Not sourced |
+| Alfalfa establishment-year yield | `constants.ts` | Not sourced (alfalfa is not recommended until then; its ISU cost is in) |
+| Rye height and roots; fallow field-operation costs | `croptraits.ts` | Not sourced |
 | Magnitudes of the pest-repeat and white-mold penalties | `constants.ts` | Unsourced design values |
 | Legume N credits to wheat and sorghum | — | Not modelled (corn only) |
 | Corn/soy price correlation; 10+ years of prices for σ | — | Not modelled / 3 years only |
-| Slope suitability per crop | — | Not checked (only the erosion warning) |
 | State/county yields instead of national | `croptraits.ts` | National only |
 
 See also `DATA_GAPS` in `croptraits.ts`.
