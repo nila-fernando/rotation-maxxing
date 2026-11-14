@@ -203,6 +203,19 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     ro.observe(dock);
     ro.observe(card);
     offs.push(() => ro.disconnect());
+    // Manami's bubble grows, shrinks and folds away with each line: the chips look again
+    const manamiHost = document.getElementById('manami');
+    let lastBottom = -1;
+    const mo = manamiHost && new MutationObserver(() => {
+      chipsDirty = true;
+      // (on a phone the island is framed above her bubble: measure again when it moves a fair bit)
+      const bottom = insets().bottom || 0;
+      if (active && Math.abs(bottom - lastBottom) > 8) { lastBottom = bottom; session()?.relayout(); }
+    });
+    if (mo) {
+      mo.observe(manamiHost, { attributes: true, attributeFilter: ['class'], subtree: true, childList: true, characterData: true });
+      offs.push(() => mo.disconnect());
+    }
     addEventListener('keydown', onKey, true);
     offs.push(() => removeEventListener('keydown', onKey, true));
 
@@ -521,7 +534,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     titleEl.textContent = `Your next 3 seasons: ${years()[0]} to ${years()[2]}`;
     plansEl.innerHTML = VIEWS.map((k) => `<button type="button" role="radio" class="fut-plan fut-plan--${k}" data-view="${k}" aria-description="${esc(BLURB[k])}">
       <span class="fut-plan__icon">${PLAN_ICONS[k]}</span>
-      <span class="fut-plan__text"><span class="fut-plan__name">${esc(NAME[k])}${k === 'priority' ? '<span class="fut-plan__badge">Recommended</span>' : ''}</span><span class="fut-plan__sub"></span></span>
+      <span class="fut-plan__text"><span class="fut-plan__name">${esc(NAME[k])}</span><span class="fut-plan__subrow"><span class="fut-plan__sub"></span>${k === 'priority' ? '<span class="fut-plan__badge">Recommended</span>' : ''}</span></span>
     </button>`).join('');
     seasonsEl.innerHTML = years().map((y, i) => `<button type="button" role="radio" class="fut-season" data-i="${i}">
       <span class="fut-season__year">${SEASON_ICONS.summer}${y}</span><span class="fut-season__cash"></span>
@@ -556,6 +569,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     paintScore();
     const mix = voice.mixLine(cmp, choice, mixScore);
     if (mixEl.textContent !== mix) mixEl.textContent = mix;
+    mixEl.hidden = view !== 'mix'; // (only beside the mix: next to "Use Keep going" it reads as a contradiction)
     const label = voice.saveLabel(view);
     saveBtn.innerHTML = `${ACTION_ICONS.tick}<span>${esc(label)}</span>`;
     fieldsBtn.setAttribute('aria-expanded', String(!!cardId));
@@ -577,6 +591,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     if (mixSub && mixSub.textContent !== sub) mixSub.textContent = sub;
     const mix = voice.mixLine(cmp, choice, mixScore);
     if (mixEl.textContent !== mix) mixEl.textContent = mix;
+    mixEl.hidden = view !== 'mix'; // (only beside the mix: next to "Use Keep going" it reads as a contradiction)
   }
 
   function tileHtml(t, busy) {
@@ -650,6 +665,16 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     chipsDirty = true;
   }
 
+  const hubPanelEl = document.getElementById('hubPanel');
+  /** Manami's face, and her bubble while it's open. */
+  function manamiParts() {
+    const host = document.getElementById('manami');
+    if (!host || !host.classList.contains('is-shown')) return [];
+    const parts = [host.querySelector('.manami__avatar')];
+    if (!host.classList.contains('is-collapsed')) parts.push(host.querySelector('.manami__bubble'));
+    return parts;
+  }
+
   /** Where a field's chip floats: over its coins, or over the soil when it has no stack. */
   function chipAnchor(id) {
     const spot = coins?.spotOf(id);
@@ -675,10 +700,11 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     if (same) return;
     chipsDirty = false;
     const r = isle.canvas.getBoundingClientRect();
-    const avoid = [dock, card, notes].filter((el) => !el.hidden).map((el) => {
+    // (and off the field list and Manami: a chip over them reads as part of them)
+    const avoid = [dock, card, notes, hubPanelEl, ...manamiParts()].filter((el) => el && !el.hidden && el.getClientRects().length).map((el) => {
       const q = el.getBoundingClientRect();
       return { x: q.left, y: q.top, w: q.width, h: q.height };
-    });
+    }).filter((q) => q.w > 0 && q.h > 0);
     const items = [];
     const at = new Map();
     for (const c of chips) {
@@ -1066,7 +1092,15 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
 
   /** The room the card takes (hub getPanelInsets while the mode is on). */
   function insets() {
-    if (!active || !cardId || card.hidden) return {};
+    if (!active) return {};
+    if (!cardId || card.hidden) {
+      // a phone: Manami's open bubble sits over the island's middle, so the island is framed above it
+      if (!(sheetQ.matches || phoneQ.matches)) return {};
+      const bubble = manamiParts()[1];
+      if (!bubble) return {};
+      const top = bubble.getBoundingClientRect().top;
+      return top > innerHeight * 0.3 ? { right: 0, bottom: Math.max(0, innerHeight - top + 8) } : {};
+    }
     const r = card.getBoundingClientRect();
     if (sheetQ.matches || phoneQ.matches) return { right: 0, bottom: Math.max(0, innerHeight - r.top + 12) };
     const gutter = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gutter')) || 24;

@@ -18,9 +18,9 @@ import { boxHitsProp, sphereHitsBox } from './clearance.js';
 import { distanceToEdges, footprint, pointInPolygons } from './picking.js';
 
 export const MAX_COINS = 12;
-export const COIN_PITCH = 0.065; // one coin's height plus a hair of air
-export const COLUMN_HALF = 0.17; // the column is 0.34 across (a coin is 0.30)
-export const EDGE_ROOM = 0.35; // the column's middle keeps this far in from the field's edge
+export const COIN_PITCH = 0.08; // one coin's height plus a hair of air
+export const COLUMN_HALF = 0.24; // the column is 0.48 across (a coin is 0.44)
+export const EDGE_ROOM = 0.42; // the column's middle keeps this far in from the field's edge
 export const PIVOT_ROOM = 0.5; // and this far from a centre pivot's tower
 export const LIFT = 1.05; // the bottom coin over the soil: clears corn, the gate posts and the outline
 export const PIVOT_LIFT = 1.25; // over a pivot field: clears the pivot's pipe and cap too

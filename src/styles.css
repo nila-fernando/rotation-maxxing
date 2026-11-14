@@ -1280,6 +1280,7 @@ body.plan-futures .manami { bottom: calc(var(--fut-dock-h, 200px) + 30px); }
 .fut-plan__icon img { height: 18px; }
 .fut-plan__text { display: grid; min-width: 0; }
 .fut-plan__name { display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fut-plan__subrow { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .fut-plan__sub { font-size: 12px; font-weight: 600; opacity: .85; font-variant-numeric: tabular-nums; }
 .fut-plan__badge { flex: none; padding: 1px 6px; border-radius: 999px; background: var(--green-dark); color: #fff; font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; }
 .fut-season { flex-direction: column; align-items: flex-start; gap: 1px; padding: 4px 12px; font-variant-numeric: tabular-nums; }

@@ -147,10 +147,10 @@ describe('coin stack spots', () => {
     });
   }
 
-  it('puts the demo stacks where the spec measured them (Home place: 2.48 to 3.54)', () => {
+  it('puts the demo stacks where the spec measured them (Home place: 2.48 to 3.72)', () => {
     const { fields } = farm(demoFields);
     const f1 = stackSpot(fields.find((f) => f.id === 'f1'), {});
-    assert.ok(Math.abs(f1.baseY - 2.48) < 0.01 && Math.abs(f1.top - 3.54) < 0.01, `${f1.baseY} to ${f1.top}`);
+    assert.ok(Math.abs(f1.baseY - 2.48) < 0.01 && Math.abs(f1.top - 3.72) < 0.01, `${f1.baseY} to ${f1.top}`);
     assert.ok(Math.abs(f1.box.min.y - (f1.baseY - 0.03)) < 1e-9);
   });
 
@@ -176,8 +176,8 @@ describe('coin stack spots', () => {
 
   it('columnBox spans the coins and their drop-in room', () => {
     const b = columnBox(1, 2, 3);
-    assert.deepEqual([b.min.x, b.max.x, b.min.z, b.max.z].map((v) => +v.toFixed(3)), [0.83, 1.17, 1.83, 2.17]);
-    assert.ok(Math.abs(b.min.y - 2.97) < 1e-9 && Math.abs(b.max.y - 4.06) < 1e-9);
+    assert.deepEqual([b.min.x, b.max.x, b.min.z, b.max.z].map((v) => +v.toFixed(3)), [0.76, 1.24, 1.76, 2.24]);
+    assert.ok(Math.abs(b.min.y - 2.97) < 1e-9 && Math.abs(b.max.y - 4.24) < 1e-9);
   });
 
   it("keeps off the pivot tower where the paddock puts it: the biggest part's middle", () => {

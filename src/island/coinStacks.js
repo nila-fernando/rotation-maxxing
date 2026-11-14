@@ -18,8 +18,8 @@
 import * as THREE from 'three';
 import { COIN_PITCH, MAX_COINS, stackSpot } from './stackSpots.js';
 
-const COIN_R = 0.15;
-const COIN_H = 0.055;
+const COIN_R = 0.22; // big enough to read as coins from the whole-farm view
+const COIN_H = 0.07;
 const DROP = 0.25; // a new coin falls from this far over its place
 const DROP_TIME = 0.22;
 const DROP_GAP = 0.04; // seconds between coins dropping in, bottom one first
@@ -27,8 +27,8 @@ const LIFT = 0.15; // a coin taken away rises this far as it shrinks
 const LIFT_TIME = 0.18;
 const FLASH_TIME = 0.15; // a new coin shines pale for a moment
 // the coins keeping going also has, then the ones the plan adds (each pair alternates up the stack)
-const SOFT = [new THREE.Color('#e8c46a'), new THREE.Color('#dcb25a')];
-const BRIGHT = [new THREE.Color('#f2c14e'), new THREE.Color('#e3ad35')];
+const SOFT = [new THREE.Color('#e9cf8a'), new THREE.Color('#dcc07a')];
+const BRIGHT = [new THREE.Color('#ffd040'), new THREE.Color('#ffc21f')];
 const FLASH = new THREE.Color('#fff3c9');
 const THEME_PAD = 0.6; // festival things drift a little (ghosts bob, bunting sways)
 
@@ -107,8 +107,12 @@ export function createCoinStacks(view, { reduced = defaultReduced } = {}) {
   const fields = view.fields || [];
   const capacity = Math.max(1, fields.length * MAX_COINS);
   const geometry = new THREE.CylinderGeometry(COIN_R, COIN_R, COIN_H, 18);
-  const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.45, metalness: 0.25 });
-  material.userData.noSeason = true; // no snow on the coins
+  // a darker rim and bright faces, with a little warm glow of their own, so a stack reads as coins
+  // (not hay) from far off, and still shows at night; the instance colours tint both
+  const face = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.3, emissive: 0x5a3a00, emissiveIntensity: 0.55 });
+  const rim = new THREE.MeshStandardMaterial({ color: 0xc08a2c, roughness: 0.4, metalness: 0.3, emissive: 0x3a2400, emissiveIntensity: 0.5 });
+  const material = [rim, face, face]; // CylinderGeometry's groups: side, top, bottom
+  for (const m of [face, rim]) m.userData.noSeason = true; // no snow on the coins
   const mesh = new THREE.InstancedMesh(geometry, material, capacity);
   mesh.name = 'coin stacks';
   mesh.castShadow = false;
@@ -276,7 +280,8 @@ export function createCoinStacks(view, { reduced = defaultReduced } = {}) {
     mesh.parent?.remove(mesh);
     mesh.dispose();
     geometry.dispose();
-    material.dispose();
+    face.dispose();
+    rim.dispose();
     for (const st of stacks.values()) st.coins = [];
   }
 

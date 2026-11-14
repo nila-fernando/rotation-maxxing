@@ -98,8 +98,8 @@ describe('coin stacks', () => {
     const s1 = spots.get('f1');
     const f1 = all.filter((c) => Math.abs(c.x - s1.x) < 1e-6 && Math.abs(c.z - s1.z) < 1e-6).sort((a, b) => a.y - b.y);
     assert.equal(f1.length, 9);
-    f1.forEach((c, k) => assert.ok(Math.abs(c.y - (s1.baseY + k * COIN_PITCH + 0.0275)) < 1e-6, `coin ${k} in its place`));
-    assert.deepEqual(f1.map((c) => c.color).slice(6), ['e8c46a', 'dcb25a', 'f2c14e'], 'soft gold up to keeping going, bright over it');
+    f1.forEach((c, k) => assert.ok(Math.abs(c.y - (s1.baseY + k * COIN_PITCH + 0.035)) < 1e-6, `coin ${k} in its place`));
+    assert.deepEqual(f1.map((c) => c.color).slice(6), ['e9cf8a', 'dcc07a', 'ffd040'], 'soft gold up to keeping going, bright over it');
     assert.equal(coins.topOf('f1'), s1.baseY + 9 * COIN_PITCH);
     assert.equal(coins.countOf('f3'), 12);
   });
@@ -117,7 +117,7 @@ describe('coin stacks', () => {
     assert.ok(mesh.count <= view.fields.length * MAX_COINS);
     assert.equal(mesh.castShadow, false);
     assert.equal(mesh.receiveShadow, false);
-    assert.equal(mesh.material.userData.noSeason, true);
+    for (const m of [mesh.material].flat()) assert.equal(m.userData.noSeason, true);
     assert.ok(mesh.instanceColor, 'coloured per coin');
     assert.ok(mesh.boundingSphere?.radius > 0, 'has a bound, so culling works');
     let meshes = 0;
@@ -161,7 +161,7 @@ describe('coin stacks', () => {
     let top = -Infinity;
     for (let t = 0; t < 0.5; t += 1 / 60) {
       coins.step(1 / 60);
-      for (const c of instances(coins.mesh).filter(on)) top = Math.max(top, c.y + 0.0275);
+      for (const c of instances(coins.mesh).filter(on)) top = Math.max(top, c.y + 0.035);
     }
     assert.ok(top <= s0.box.max.y, `stays inside its column (${top.toFixed(3)} <= ${s0.box.max.y.toFixed(3)})`);
     assert.equal(coins.countOf('f0'), 2);
@@ -186,7 +186,7 @@ describe('coin stacks', () => {
     const s2 = coins.spotOf('f2');
     const f2 = instances(coins.mesh).filter((c) => Math.abs(c.x - s2.x) < 1e-6).sort((a, b) => a.y - b.y);
     // (each coin alternates with the one under it, all the way up)
-    assert.deepEqual(f2.map((c) => c.color), ['e8c46a', 'dcb25a', 'e8c46a', 'e3ad35', 'f2c14e', 'e3ad35']);
+    assert.deepEqual(f2.map((c) => c.color), ['e9cf8a', 'dcc07a', 'e9cf8a', 'ffc21f', 'ffd040', 'ffc21f']);
   });
 
   it('snaps the counts when motion is reduced', () => {
