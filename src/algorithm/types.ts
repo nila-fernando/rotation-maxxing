@@ -117,6 +117,38 @@ export interface Paddock {
   /** Default 'reduced'. Scales residue retention and therefore ground cover. */
   tillage?: Tillage;
   diseaseHistory?: { whiteMold?: boolean };
+  /**
+   * What this field has taught us, per crop: a yield factor learned from the
+   * farmer's end-of-season reports (see update.ts). Applied to every yield
+   * model's output.
+   */
+  yieldCalibration?: Record<CropId, CropCalibration>;
+}
+
+/** One season's evidence for a field's yield factor. */
+export interface CalibrationRecord {
+  season: number;
+  reported: number;
+  /** Model yield for that season's actual crop, weather and neighbours, before calibration. */
+  predicted: number;
+  /** false when the farmer flagged a one-off event (hail, flood, replant). */
+  used: boolean;
+  note?: string;
+}
+
+/**
+ * Field yield factor with shrinkage: a log-normal prior centred on 1 (the
+ * model is right), updated by each season's reported/predicted ratio.
+ */
+export interface CropCalibration {
+  /** Multiply model yield by this. */
+  factor: number;
+  /** Posterior mean and sd of log(factor). */
+  logMean: number;
+  logSd: number;
+  /** Seasons used. */
+  seasons: number;
+  records: CalibrationRecord[];
 }
 
 export interface Farm {
@@ -331,6 +363,31 @@ export interface GenerateResult {
   exclusions: Record<PaddockId, Exclusion[]>;
   referenceBounds: ReferenceBounds;
   stats: { candidatesScored: number; descentIterations: number; monteCarloSamples: number };
+  /** Re-planning only (options.previousPlan): how the priority plan relates to last season's plan. */
+  replanning?: Replanning;
+}
+
+export interface PlanChange {
+  paddockId: PaddockId;
+  /** 0-based horizon year. */
+  year: number;
+  from: CropId;
+  to: CropId;
+}
+
+export interface Replanning {
+  /** Acre-weighted share of last season's planned paddock-years that the priority plan changes. */
+  changedShare: number;
+  changes: PlanChange[];
+  /** The plan that would win if changes were free, when that differs ("what it would take to switch"). */
+  withoutSwitchingCost?: {
+    plan: Plan;
+    changes: PlanChange[];
+    /** Expected cash margin gained by switching anyway, $. */
+    expectedGMGain: number;
+    /** Objective points gained before the switching cost. */
+    objectiveGain: number;
+  };
 }
 
 /** Crop lookup used throughout. Defaults to CROP_BY_ID from croptraits.ts. */

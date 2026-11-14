@@ -54,6 +54,36 @@ export interface YieldModel {
   ): YieldEstimate;
 }
 
+/**
+ * Wrap any yield model so each field's learned yield factor
+ * (paddock.yieldCalibration, from the farmer's season reports) is applied
+ * and explained. createContext() always wraps the model with this.
+ */
+export function withCalibration(inner: YieldModel): YieldModel {
+  return {
+    name: `${inner.name} + field calibration`,
+    yieldFor(paddock, sequence, yearIndex, weather, ctx) {
+      const est = inner.yieldFor(paddock, sequence, yearIndex, weather, ctx);
+      const cal = paddock.yieldCalibration?.[sequence[yearIndex]!];
+      if (!cal || est.value === null || cal.factor === 1) return est;
+      const value = est.value * cal.factor;
+      const terms = ctx.explain
+        ? [
+            ...est.terms,
+            {
+              label: `Your field's record: ${cal.seasons} season(s), ${cal.factor >= 1 ? '+' : ''}${((cal.factor - 1) * 100).toFixed(0)}% vs model (+/-${(cal.logSd * 100).toFixed(0)}%)`,
+              value: value - est.value,
+              unit: est.terms[0]?.unit ?? 'per ac',
+              basis: 'input' as const,
+              sources: ['farmerReport'],
+            },
+          ]
+        : est.terms;
+      return { ...est, value, terms };
+    },
+  };
+}
+
 /** The mean weather year of a pool: each crop's average multiplier. Used for expected values. */
 export function meanScenario(pool: WeatherScenario[]): WeatherScenario {
   const sums: Record<CropId, { s: number; n: number }> = {};

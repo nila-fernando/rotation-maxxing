@@ -17,7 +17,7 @@ import { prepareFarm } from './geometry';
 import { priceInfo, sell, type PriceInfo } from './market';
 import { DEFAULT_N_PRICE, nitrogenCreditReceived, nitrogenLeftBehind, sequenceViolation, timelineOf } from './rotation';
 import { nCreditReference, residueReference, soilHealthIndex, waterUseIndex } from './soilHealth';
-import { meanScenario, TraitYieldModel, type YieldModel } from './yieldModel';
+import { meanScenario, TraitYieldModel, withCalibration, type YieldModel } from './yieldModel';
 import type {
   CropId,
   CropTable,
@@ -41,6 +41,11 @@ export interface ModelOptions {
   nitrogenPricePerLb?: number;
   /** Count the soil health and N left behind at the end of the horizon. Default true. */
   endOfHorizon?: boolean;
+  /**
+   * Re-planning: last season's plan aligned to this horizon (null = no
+   * earlier plan for that year). Changing it costs SWITCHING_PENALTY_WEIGHT.
+   */
+  previousPlan?: Record<PaddockId, (CropId | null)[]>;
 }
 
 export interface ModelContext {
@@ -61,6 +66,7 @@ export interface ModelContext {
   totalAcres: number;
   /** Paddock id -> position in `paddocks`. */
   paddockIndex: Map<PaddockId, number>;
+  previousPlan: Record<PaddockId, (CropId | null)[]> | null;
   /** Gaps that apply to the whole run (market, weather). */
   globalGaps: string[];
 }
@@ -93,7 +99,7 @@ export function createContext(
     prepared,
     paddocks,
     crops,
-    model: options.yieldModel ?? new TraitYieldModel(),
+    model: withCalibration(options.yieldModel ?? new TraitYieldModel()),
     market,
     prices,
     nPricePerLb: options.nitrogenPricePerLb ?? DEFAULT_N_PRICE,
@@ -104,6 +110,7 @@ export function createContext(
     refs: { residueLb: residueReference(crops), nCreditLb: nCreditReference(crops) },
     totalAcres: paddocks.reduce((a, p) => a + p.acres, 0),
     paddockIndex: new Map(paddocks.map((p, i) => [p.id, i])),
+    previousPlan: options.previousPlan ?? null,
     globalGaps,
   };
 }
@@ -130,6 +137,8 @@ export interface SequenceStatics {
   /** Mean water-use index over the horizon. */
   water: number;
   families: string[];
+  /** Years that differ from last season's plan (re-planning only). */
+  switches: number;
 }
 
 /**
@@ -197,7 +206,13 @@ export function sequenceStatics(
     endSoil,
     water: water / n,
     families: seq.map((id) => getCrop(crops, id).family),
+    switches: countSwitches(seq, ctx.previousPlan?.[paddock.id]),
   };
+}
+
+export function countSwitches(seq: CropId[], previous: (CropId | null)[] | undefined): number {
+  if (!previous) return 0;
+  return seq.reduce((n, c, y) => n + (previous[y] != null && previous[y] !== c ? 1 : 0), 0);
 }
 
 // ---------------------------------------------------------------------------

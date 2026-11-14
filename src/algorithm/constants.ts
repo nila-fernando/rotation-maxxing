@@ -135,6 +135,24 @@ export const MAX_DESCENT_ITERATIONS = 20;
 export const CANDIDATE_WEIGHT_SHIFT = 25;
 
 // ---------------------------------------------------------------------------
+// Learning from the farmer's season reports (update.ts)
+// ---------------------------------------------------------------------------
+
+/** Prior sd of log(field yield factor): how far a field can plausibly sit from the model before any reports. Design choice. */
+export const CALIBRATION_PRIOR_SD = 0.15;
+/** Season-to-season sd of log(reported / predicted) the model can't explain. Design choice. */
+export const CALIBRATION_OBS_SD = 0.2;
+/** Events that make a season a one-off: recorded, but not used to calibrate. */
+export const CALIBRATION_EXCLUDED_EVENTS: readonly string[] = ['hail', 'flood', 'replant'];
+
+/**
+ * Re-planning: objective units lost if EVERY paddock-year of last season's
+ * plan is changed (scaled by the share changed). Stops the plan flip-flopping
+ * on small differences. Not applied to the max-profit plan. Design choice.
+ */
+export const SWITCHING_PENALTY_WEIGHT = 0.05;
+
+// ---------------------------------------------------------------------------
 // Monte Carlo (stage 6)
 // ---------------------------------------------------------------------------
 

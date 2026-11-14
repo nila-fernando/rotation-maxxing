@@ -7,9 +7,24 @@
  */
 export { generatePlans, evaluatePlan, priceOfPriorities, type GenerateOptions, type EvaluateOptions } from './api';
 export { checkPlacement, type PlacementOptions } from './placement';
+export {
+  createFarmState,
+  adoptPlan,
+  updateAfterSeason,
+  replan,
+  calibrate,
+  alignedPreviousPlan,
+  type FarmState,
+  type SeasonReport,
+  type PaddockReport,
+  type SeasonObservations,
+  type SeasonEvent,
+  type SeasonLogEntry,
+} from './update';
+export { describeSource, planSources, DATA_SOURCES } from './evidence';
 export { prepareFarm, lngLatToLocal, SQ_M_PER_ACRE } from './geometry';
 export { planFromCrops, continueHistory } from './plans';
-export { TraitYieldModel, meanScenario, type YieldModel, type YieldContext, type YieldEstimate } from './yieldModel';
+export { TraitYieldModel, withCalibration, meanScenario, type YieldModel, type YieldContext, type YieldEstimate } from './yieldModel';
 export type { ModelOptions } from './farmModel';
 export { createRng, type Rng } from './rng';
 export { syntheticWeatherForTestsOnly } from './weather';

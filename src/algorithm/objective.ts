@@ -69,6 +69,8 @@ export interface CriteriaValues {
   water: number;
   /** From varietyExcess(). */
   varietyExcess: number;
+  /** Share of last season's planned paddock-years (acre-weighted) this plan changes (re-planning only). */
+  switchShare?: number;
 }
 
 export interface ObjectiveScore {
@@ -82,12 +84,14 @@ export function scoreObjective(
   w: CriteriaWeights,
   lambda: number,
   explain = false,
+  switchWeight = 0,
 ): ObjectiveScore {
   const nP = normalise(bounds.profit, v.profit);
   const nS = normalise(bounds.soilHealth, v.soilHealth);
   const nW = normalise(bounds.water, v.water);
   const variety = VARIETY_PENALTY_WEIGHT * lambda * v.varietyExcess;
-  const value = w.profit * nP + w.soilHealth * nS + w.water * nW - variety;
+  const switching = switchWeight * (v.switchShare ?? 0);
+  const value = w.profit * nP + w.soilHealth * nS + w.water * nW - variety - switching;
   if (!explain) return { value, terms: [] };
   const t = (label: string, x: number, basis: Term['basis'] = 'design'): Term => ({ label, value: x, unit: 'score', basis });
   return {
@@ -97,6 +101,7 @@ export function scoreObjective(
       t(`Soil health: ${(nS * 100).toFixed(0)}% of the way from worst to best, weight ${pct(w.soilHealth)}`, w.soilHealth * nS),
       t(`Water: ${(nW * 100).toFixed(0)}% of the way from worst to best, weight ${pct(w.water)}`, w.water * nW),
       ...(variety > 0 ? [t(`Crop-variety penalty (over ${pct(VARIETY_MAX_FAMILY_SHARE)} of the farm in one family)`, -variety)] : []),
+      ...(switching > 0 ? [t(`Switching cost: changes ${pct(v.switchShare ?? 0)} of last season's plan`, -switching)] : []),
     ],
   };
 }

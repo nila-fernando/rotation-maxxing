@@ -88,7 +88,7 @@ export interface Searcher {
   /** Expected-value criteria for a full choice vector (shade and market included). */
   criteria(choice: number[]): CriteriaValues & { grossMargin: number; endValue: number };
   /** Coordinate descent from a start point under the given weights. */
-  descend(start: number[], w: CriteriaWeights, lambda: number, maxIterations?: number): { choice: number[]; iterations: number };
+  descend(start: number[], w: CriteriaWeights, lambda: number, maxIterations?: number, switchWeight?: number): { choice: number[]; iterations: number };
   /** Per-paddock best option ignoring farm-wide effects (a good starting point). */
   standaloneStart(w: CriteriaWeights): number[];
   sequences(choice: number[]): CropId[][];
@@ -141,7 +141,7 @@ export function createSearcher(ctx: ModelContext, spaces: PaddockSpace[], bounds
     counter.evaluations++;
     const seqs = sequences(choice);
     const revenue = farmRevenue(ctx, seqs, yields);
-    let cost = 0, credit = 0, endValue = 0, soil = 0, water = 0;
+    let cost = 0, credit = 0, endValue = 0, soil = 0, water = 0, switched = 0;
     const fam: Map<string, number>[] = Array.from({ length: Y }, () => new Map());
     for (let p = 0; p < P; p++) {
       const o = spaces[p]!.options[choice[p]!]!;
@@ -152,6 +152,7 @@ export function createSearcher(ctx: ModelContext, spaces: PaddockSpace[], bounds
       endValue += o.endValue;
       soil += share * o.soil;
       water += share * o.water;
+      switched += acres * o.switches;
       for (let y = 0; y < Y; y++) fam[y]!.set(o.families[y]!, (fam[y]!.get(o.families[y]!) ?? 0) + acres);
     }
     const grossMargin = revenue - cost + credit;
@@ -162,13 +163,14 @@ export function createSearcher(ctx: ModelContext, spaces: PaddockSpace[], bounds
       soilHealth: soil,
       water,
       varietyExcess: varietyExcess(fam, ctx.totalAcres),
+      switchShare: switched / (ctx.totalAcres * Y),
     };
   }
 
-  function descend(start: number[], w: CriteriaWeights, lambda: number, maxIterations = MAX_DESCENT_ITERATIONS) {
+  function descend(start: number[], w: CriteriaWeights, lambda: number, maxIterations = MAX_DESCENT_ITERATIONS, switchWeight = 0) {
     const choice = start.slice();
     const yields = choice.map((_, p) => row(p, choice));
-    const score = () => scoreObjective(criteriaFrom(choice, yields), refBounds, w, lambda).value;
+    const score = () => scoreObjective(criteriaFrom(choice, yields), refBounds, w, lambda, false, switchWeight).value;
     let iterations = 0;
     for (; iterations < maxIterations; iterations++) {
       let changed = false;
