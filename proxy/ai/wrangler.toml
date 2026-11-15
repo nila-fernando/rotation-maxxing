@@ -1,0 +1,17 @@
+# Cloudflare Worker: Ask Manami's AI server for the live site (see README.md)
+name = "rotation-maxxing-ai"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The Anthropic SDK comes from the app's own install (run `npm ci` in app/ first).
+[alias]
+"@anthropic-ai/sdk" = "../../app/node_modules/@anthropic-ai/sdk"
+
+# The key is a secret, never a var here: npx wrangler@4 secret put ANTHROPIC_API_KEY
+[vars]
+AI_MODEL = "claude-sonnet-5-5"
+# Extra origins allowed to use the Worker, comma separated (exact match), on top of worker.js's.
+EXTRA_ORIGINS = ""
+# Soft cap on chat requests per day, per Worker isolate.
+DAILY_REQUEST_LIMIT = "500"
