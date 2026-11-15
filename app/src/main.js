@@ -39,6 +39,9 @@ import { createManami } from './ui/manami.js';
 import { createFarmSpins } from './ui/rotateManami.js';
 import { createSearchBox } from './ui/searchBox.js';
 import { warmUpLiveOutlines } from './fields/liveOutlines.js';
+import { createAmbience } from './audio/ambience.js';
+import { sceneOf } from './audio/mix.js';
+import { bindSoundToggle } from './audio/soundToggle.js';
 
 const $ = (id) => document.getElementById(id);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -520,6 +523,8 @@ const reveal = createReveal({
     paintStatuses();
     startJars(island); // each field's soil jar test, by its gate
     timeTravel.show(island, { history: cropHistories(), today: today(), hour: hourParam(), liveDate: !params.has('today') });
+    // the farm's sounds follow the time of day, the season and the festival (after the first tap)
+    ambience.attach({ getScene: () => sceneOf(timeTravel.session), hasWindmill: () => !!island.view.spinners?.length });
     farmSpins?.dispose();
     farmSpins = createFarmSpins(island.view); // now and then Manami turns on the spot: "When they see me rotate…"
     // dev shortcut: ?hub=5&futures=1 opens the plans on the island with Manami's walk, &futures=explore without
@@ -531,6 +536,9 @@ const reveal = createReveal({
 });
 
 let farmSpins = null;
+// the island's ambient sound, and its switch on the top bar (src/audio/)
+const ambience = createAmbience();
+bindSoundToggle($('hubSound'), ambience);
 
 function startReveal({ instant = false } = {}) {
   farmSpins?.dispose();
@@ -544,6 +552,7 @@ function startReveal({ instant = false } = {}) {
   planFutures?.stop();
   islandPlanner.stop();
   timeTravel.hide();
+  ambience.detach();
   hub.hide();
   reveal.start({ fields: app.fields, farm: app.farm, instant });
   setTimeout(() => checkIn.stop(), 400); // once the island view has faded in over it
@@ -622,6 +631,7 @@ function handle(event) {
       planFutures?.stop();
       islandPlanner.stop();
       timeTravel.hide();
+      ambience.detach();
       hub.hide();
       reveal.stop();
       document.body.classList.remove('reveal-done');
@@ -662,7 +672,7 @@ function testFields(n) {
   return out;
 }
 
-if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, jarPanel, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now() }; // for poking at in the console
+if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, jarPanel, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now(), ambience }; // for poking at in the console
 
 // ---------------------------------------------------------------- the first five seconds
 (async function intro() {

@@ -583,6 +583,8 @@ export function createTimeTravel({ hub, onYear } = {}) {
       seek(seconds) { if (!playback) play(); playT = Math.max(0, Math.min(playback.duration - 0.01, seconds)); apply(playback.at(playT)); },
       get mode() { return mode; },
       get state() { return current; },
+      /** The time of day now (dayNight.info: hour, night, golden, morning...), for the farm's sounds. */
+      get dayInfo() { return dayNight.info; },
       get playback() { return playback; },
       dispose() {
         offs.reverse().forEach((fn) => fn());
