@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jar test – soil type from a photo</title>
+<style>
+  :root { --bg:#f6f3ec; --card:#fff; --ink:#2b2a26; --muted:#6b675d; --green:#4f7a3a; --line:#e3ded2; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:20px 16px 4px; text-align:center; }
+  header h1 { margin:0 0 4px; font-size:1.5rem; }
+  header p { margin:0; color:var(--muted); }
+  main { max-width:1000px; margin:0 auto; padding:16px; display:grid; gap:16px; grid-template-columns:1fr; }
+  @media (min-width:860px) { main { grid-template-columns:1fr 1fr; align-items:start; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; }
+  .card h2 { margin:0 0 10px; font-size:1.05rem; }
+  .card h3 { margin:16px 0 6px; font-size:.95rem; }
+  ol.steps { margin:0; padding-left:20px; color:var(--muted); font-size:.92rem; line-height:1.5; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:12px 0; }
+  button, .btn { background:var(--green); color:#fff; border:0; border-radius:10px; padding:9px 14px; font-size:.95rem; cursor:pointer; display:inline-block; }
+  button.secondary { background:#fff; color:var(--green); border:1px solid var(--green); }
+  select { padding:8px; border-radius:8px; border:1px solid var(--line); font-size:.95rem; background:#fff; }
+  canvas#view { width:100%; height:auto; border-radius:10px; display:block; touch-action:none; cursor:crosshair; }
+  canvas#tri { width:100%; max-width:300px; height:auto; display:block; margin:0 auto; }
+  .hint { color:var(--muted); font-size:.85rem; margin:8px 0 0; }
+  .texture { font-size:1.7rem; font-weight:700; display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+  .badge { font-size:.75rem; font-weight:600; padding:3px 9px; border-radius:99px; color:#fff; }
+  .badge.high { background:#4f7a3a; } .badge.medium { background:#d19a1a; }
+  .badge.low { background:#c0504d; } .badge.adjusted { background:#6b675d; }
+  .stack { display:flex; height:34px; border-radius:8px; overflow:hidden; margin:12px 0 6px; font-size:.8rem; color:#fff; }
+  .stack div { display:flex; align-items:center; justify-content:center; white-space:nowrap; overflow:hidden; }
+  #pcts { margin:0 0 8px; color:var(--muted); font-size:.9rem; }
+  table.props { width:100%; border-collapse:collapse; font-size:.92rem; }
+  table.props th { text-align:left; width:130px; color:var(--muted); font-weight:600; padding:6px 0; vertical-align:top; }
+  table.props td { padding:6px 0; }
+  #warnings { margin:10px 0 0; padding-left:18px; color:#9a5b00; font-size:.9rem; }
+  #notesList { margin:6px 0 0; padding-left:18px; font-size:.9rem; line-height:1.45; }
+  #notesList li { margin-bottom:4px; }
+  .caption { text-align:center; color:var(--muted); font-size:.8rem; margin:4px 0 0; }
+  .lrow { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:8px 0; border-top:1px solid var(--line); }
+  .lrow:first-child { border-top:0; }
+  .chip { width:14px; height:14px; border-radius:4px; flex:none; border:1px solid rgba(0,0,0,.25); }
+  .seen { width:22px; height:22px; border-radius:50%; flex:none; border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.3); }
+  .lrow select { flex:1 1 170px; min-width:0; }
+  .lpct { width:78px; text-align:right; color:var(--muted); font-size:.85rem; }
+  .why { flex-basis:100%; color:var(--muted); font-size:.8rem; padding-left:50px; line-height:1.35; }
+  button.mini { padding:5px 9px; font-size:.8rem; background:#fff; color:var(--green); border:1px solid var(--green); border-radius:8px; }
+  #toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#2b2a26; color:#fff; padding:10px 16px; border-radius:10px; opacity:0; transition:opacity .25s; pointer-events:none; }
+  #toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🫙 Jar test</h1>
+  <p>Photograph your settled soil jar and we'll work out what is in it.</p>
+</header>
+
+<main>
+  <!-- LEFT: photo + layers -->
+  <section class="card">
+    <h2>1. Your jar</h2>
+    <ol class="steps">
+      <li>Fill a clear, straight-sided jar about one third with soil. Add water until nearly full, plus a squirt of dish soap.</li>
+      <li>Shake well for a couple of minutes, then leave it on a flat surface.</li>
+      <li>Wait 24–48 hours so the clay settles, then take a photo in good, even light with the jar upright and the camera level with the soil.</li>
+    </ol>
+
+    <div class="row">
+      <label class="btn">📷 Upload photo<input id="file" type="file" accept="image/*" hidden></label>
+      <button id="sample" class="secondary" type="button">Try a sample jar</button>
+    </div>
+
+    <div class="row">
+      <label for="elapsed">Photo taken after:</label>
+      <select id="elapsed">
+        <option value="short">Less than 2 hours</option>
+        <option value="mid">2 to 24 hours</option>
+        <option value="ok" selected>24 to 48 hours or more</option>
+      </select>
+    </div>
+
+    <canvas id="view" width="480" height="320"></canvas>
+    <p class="hint">
+      Drag a box from <b>just below the lid down to the bottom of the soil</b>. Keep it inside the glass and away from
+      labels and bright reflections. We'll find the layers. Drag a line to move it.
+    </p>
+
+    <div id="layersBox" hidden>
+      <h3>Layers we found (top to bottom)</h3>
+      <p class="hint">The round dot is the colour we saw in your photo. Check each label and change it if we got it wrong, split a layer in two, or merge it with the one above.</p>
+      <div id="rows"></div>
+    </div>
+  </section>
+
+  <!-- RIGHT: results -->
+  <section class="card">
+    <h2>2. Your soil</h2>
+    <p id="empty" class="hint">Upload a photo or try the sample jar to see your results.</p>
+
+    <div id="output" hidden>
+      <div class="texture"><span id="texClass"></span><span id="badge" class="badge"></span></div>
+      <div class="stack" id="stack"></div>
+      <p id="pcts"></p>
+
+      <table class="props">
+        <tr><th>Drainage</th><td id="drain"></td></tr>
+        <tr><th>Water holding</th><td id="water"></td></tr>
+        <tr><th>Organic matter</th><td id="organic"></td></tr>
+        <tr><th>Stones</th><td id="stones"></td></tr>
+        <tr><th>Good to know</th><td id="note"></td></tr>
+      </table>
+      <ul id="warnings"></ul>
+
+      <div id="notesBox" hidden>
+        <h3>What else is in your jar</h3>
+        <ul id="notesList"></ul>
+      </div>
+
+      <div id="triWrap">
+        <h3>Where your soil sits on the soil triangle</h3>
+        <canvas id="tri" width="300" height="270"></canvas>
+        <p class="caption">Typical values, not a lab measurement.</p>
+      </div>
+
+      <div class="row"><button id="send" type="button">Use this soil in my field</button></div>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   1. WHAT CAN BE IN A JAR
+   Order here = order of the dropdown (top of the jar to the bottom).
+   ===================================================================== */
+const TYPES = {
+  air:      { label: 'Air gap',                            short: 'Air',              color: '#8fb8de', note: '' },
+  foam:     { label: 'Foam / bubbles',                     short: 'Foam',             color: '#b0bec5', note: 'Usually soap bubbles. Harmless. Use a little less soap next time.' },
+  floating: { label: 'Floating organic matter',            short: 'Floating organic', color: '#8d6e63', note: 'Light bits of plant material (roots, straw, leaf pieces) that float. A sign of fresh organic matter that has not broken down yet.' },
+  water:    { label: 'Clear water',                        short: 'Clear water',      color: '#4fc3f7', note: '' },
+  tea:      { label: 'Tea-coloured water',                 short: 'Tea-coloured water', color: '#c8861e', note: 'Brown, orange or yellow water that you can still see through usually means dissolved plant material (such as tannins). It is not counted as clay, silt or sand.' },
+  cloudy:   { label: 'Cloudy water (clay still floating)', short: 'Cloudy water',     color: '#9e9e9e', note: '' },
+  organic:  { label: 'Organic matter (settled)',           short: 'Organic matter',   color: '#5d4037', note: 'A thin, dark layer of settled organic matter on top of the soil. It helps the soil hold water and nutrients.' },
+  clay:     { label: 'Clay',                               short: 'Clay',             color: '#c0504d', note: '' },
+  fines:    { label: "Silt + clay (can't tell apart)",     short: 'Silt + clay',      color: '#d4785a', note: 'Silt and clay settled into one layer that looks the same. We count it as half silt and half clay, which is a rough guess. If you can see a line inside it, use Split.' },
+  silt:     { label: 'Silt',                               short: 'Silt',             color: '#e6b422', note: '' },
+  sand:     { label: 'Sand',                               short: 'Sand',             color: '#4a90d9', note: '' },
+  gravel:   { label: 'Gravel / stones',                    short: 'Gravel',           color: '#455a64', note: 'Stones and coarse grit. They are not counted in the sand, silt and clay shares, but they show how stony the soil is.' },
+  other:    { label: 'Something else',                     short: 'Other',            color: '#8e24aa', note: 'Not counted in any result. If you can tell what it is, pick a better label.' },
+  ignore:   { label: 'Not jar contents (lid, rim, label)', short: 'Ignored',          color: '#9a9a9a', note: 'Parts of the photo that are not inside the jar (lid, rim, labels). Left out of every result.' }
+};
+const TYPE_ORDER = Object.keys(TYPES);
+const MAX_LAYERS = 12;
+const MINERAL = ['sand', 'silt', 'clay', 'fines'];
+
+/* Detection settings */
+const MAX_BINS = 300;        // the jar column is resampled to at most this many rows
+const DP_MAX_SEGMENTS = 14;  // first pass: generous number of candidate layers
+const MERGE_T = 4.5;         // merge neighbours that differ less than this (colour difference + texture)
+const LIQUID_MERGE_T = 8;    // stricter merging in the water part (glass embossing, glare)
+
+/* =====================================================================
+   2. SOIL SCIENCE
+   ===================================================================== */
+
+// USDA soil texture classes from sand / silt / clay percentages (sum = 100)
+function textureClass(sand, silt, clay) {
+  if (silt + 1.5 * clay < 15) return 'Sand';
+  if (silt + 1.5 * clay >= 15 && silt + 2 * clay < 30) return 'Loamy sand';
+  if ((clay >= 7 && clay < 20 && sand > 52 && silt + 2 * clay >= 30) ||
+      (clay < 7 && silt < 50 && silt + 2 * clay >= 30)) return 'Sandy loam';
+  if (clay >= 7 && clay < 27 && silt >= 28 && silt < 50 && sand <= 52) return 'Loam';
+  if ((silt >= 50 && clay >= 12 && clay < 27) ||
+      (silt >= 50 && silt < 80 && clay < 12)) return 'Silt loam';
+  if (silt >= 80 && clay < 12) return 'Silt';
+  if (clay >= 20 && clay < 35 && silt < 28 && sand > 45) return 'Sandy clay loam';
+  if (clay >= 27 && clay < 40 && sand > 20 && sand <= 45) return 'Clay loam';
+  if (clay >= 27 && clay < 40 && sand <= 20) return 'Silty clay loam';
+  if (clay >= 35 && sand > 45) return 'Sandy clay';
+  if (clay >= 40 && silt >= 40) return 'Silty clay';
+  if (clay >= 40 && sand <= 45 && silt < 40) return 'Clay';
+  return 'Unclassified';
+}
+
+// Rough, typical properties for each class (general guidance only)
+const PROPERTIES = {
+  'Sand':            { drain: 'Very fast',        water: 'Low',         note: 'Dries out quickly and loses nutrients. Drought and wind erosion are the main risks.' },
+  'Loamy sand':      { drain: 'Fast',             water: 'Low',         note: 'Drains easily and dries out in dry spells. Holds few nutrients.' },
+  'Sandy loam':      { drain: 'Good to fast',     water: 'Low–medium',  note: 'Easy to work and warms up early. Can dry out quickly.' },
+  'Loam':            { drain: 'Good',             water: 'Medium–high', note: 'A well-balanced soil that suits most crops.' },
+  'Silt loam':       { drain: 'Moderate',         water: 'High',        note: 'Holds lots of water. Erodes and crusts easily if left bare.' },
+  'Silt':            { drain: 'Moderate',         water: 'High',        note: 'Very easily eroded by water and wind. Keep the ground covered.' },
+  'Sandy clay loam': { drain: 'Moderate',         water: 'Medium',      note: 'Fairly balanced. Can set hard when dry.' },
+  'Clay loam':       { drain: 'Moderate to slow', water: 'Medium–high', note: 'Holds water and nutrients well. Can get sticky and compact when wet.' },
+  'Silty clay loam': { drain: 'Slow to moderate', water: 'High',        note: 'Holds a lot of water. Prone to crusting and compaction.' },
+  'Sandy clay':      { drain: 'Slow',             water: 'Medium',      note: 'Heavy to work. Can crack when dry.' },
+  'Silty clay':      { drain: 'Slow',             water: 'High',        note: 'Waterlogs easily. Wait until it is not too wet to work.' },
+  'Clay':            { drain: 'Slow',             water: 'High',        note: 'Holds water and nutrients, but waterlogs and compacts easily.' }
+};
+
+/* =====================================================================
+   3. IMAGE ANALYSIS
+   (a) build a colour + texture profile down the jar
+   (b) find the best layer boundaries for the whole jar at once
+   (c) clean up: drop blurry transition bands, merge look-alike layers
+   (d) decide where the water ends and the soil starts, then label each part
+   ===================================================================== */
+
+/* ---------- colour helpers (sRGB -> CIELAB, so differences match what we see) ---------- */
+const LIN = new Float32Array(256);
+for (let i = 0; i < 256; i++) { const c = i / 255; LIN[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+const labF = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+function rgbToLab(R, G, B) {
+  const r = LIN[R], g = LIN[G], b = LIN[B];
+  const x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047;
+  const y =  0.2126 * r + 0.7152 * g + 0.0722 * b;
+  const z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883;
+  const fx = labF(x), fy = labF(y), fz = labF(z);
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+function median(arr) {
+  if (!arr.length) return 0;
+  const s = Array.from(arr).sort((a, b) => a - b);
+  return s[s.length >> 1];
+}
+
+/* ---------- (a) profile: one colour + texture value per row, resampled into bins ---------- */
+function buildProfile(top, h) {
+  // middle 50% of the box: avoids the curved jar edges, where glare and distortion are worst
+  const bx = Math.round(state.xL + (state.xR - state.xL) * 0.25);
+  const bw = Math.max(4, Math.round((state.xR - state.xL) * 0.5));
+  const data = bctx.getImageData(bx, top, bw, h).data;
+  const step = Math.max(1, Math.floor(bw / 90));
+  const cols = [];
+  for (let x = 0; x < bw; x += step) cols.push(x);
+  const nc = cols.length;
+
+  const Lg = new Float32Array(nc * h), Ag = new Float32Array(nc * h), Bg = new Float32Array(nc * h);
+  const rR = new Float32Array(h), rG = new Float32Array(h), rB = new Float32Array(h);
+  for (let y = 0; y < h; y++) {
+    let sr = 0, sg = 0, sb = 0;
+    for (let c = 0; c < nc; c++) {
+      const i = (y * bw + cols[c]) * 4;
+      const R = data[i], G = data[i + 1], B = data[i + 2];
+      const lab = rgbToLab(R, G, B);
+      Lg[y * nc + c] = lab[0]; Ag[y * nc + c] = lab[1]; Bg[y * nc + c] = lab[2];
+      sr += R; sg += G; sb += B;
+    }
+    rR[y] = sr / nc; rG[y] = sg / nc; rB[y] = sb / nc;
+  }
+
+  // per row: median colour (robust to glare streaks and specks) + graininess
+  const rowL = new Float32Array(h), rowA = new Float32Array(h), rowB = new Float32Array(h), rowT = new Float32Array(h);
+  for (let y = 0; y < h; y++) {
+    const o = y * nc;
+    rowL[y] = median(Lg.subarray(o, o + nc));
+    rowA[y] = median(Ag.subarray(o, o + nc));
+    rowB[y] = median(Bg.subarray(o, o + nc));
+    let hs = 0, vs = 0;
+    for (let c = 0; c < nc - 1; c++) hs += Math.min(25, Math.abs(Lg[o + c + 1] - Lg[o + c]));
+    if (y < h - 1) for (let c = 0; c < nc; c++) vs += Math.min(25, Math.abs(Lg[o + nc + c] - Lg[o + c]));
+    const hv = nc > 1 ? hs / (nc - 1) : 0;
+    rowT[y] = y < h - 1 ? (hv + vs / nc) / 2 : hv;
+  }
+
+  // resample into bins
+  const nb = Math.min(h, MAX_BINS);
+  const P = { nb, rowsPerBin: h / nb,
+    L: new Float32Array(nb), A: new Float32Array(nb), B: new Float32Array(nb), T: new Float32Array(nb),
+    R: new Float32Array(nb), G: new Float32Array(nb), Bc: new Float32Array(nb) };
+  for (let i = 0; i < nb; i++) {
+    const r0 = Math.floor(i * h / nb), r1 = Math.max(r0 + 1, Math.floor((i + 1) * h / nb));
+    let l = 0, a = 0, b = 0, t = 0, R = 0, G = 0, Bc = 0;
+    for (let y = r0; y < r1; y++) { l += rowL[y]; a += rowA[y]; b += rowB[y]; t += rowT[y]; R += rR[y]; G += rG[y]; Bc += rB[y]; }
+    const n = r1 - r0;
+    P.L[i] = l / n; P.A[i] = a / n; P.B[i] = b / n; P.T[i] = t / n; P.R[i] = R / n; P.G[i] = G / n; P.Bc[i] = Bc / n;
+  }
+  // light 3-bin median smoothing of the colour channels
+  ['L', 'A', 'B'].forEach(k => {
+    const src = P[k], out = new Float32Array(nb);
+    for (let i = 0; i < nb; i++) {
+      const a = src[Math.max(0, i - 1)], b = src[i], c = src[Math.min(nb - 1, i + 1)];
+      out[i] = Math.max(Math.min(a, b), Math.min(Math.max(a, b), c));
+    }
+    P[k] = out;
+  });
+  return P;
+}
+
+/* ---------- describe one stretch of bins ---------- */
+function segStats(P, a, b) {
+  const m = (b - a) >= 6 ? Math.floor((b - a) * 0.15) : 0;    // skip the blurry edges
+  const lo = a + m, hi = b - m;
+  const L = [], A = [], B = [], T = [];
+  let r = 0, g = 0, bl = 0;
+  for (let i = lo; i < hi; i++) { L.push(P.L[i]); A.push(P.A[i]); B.push(P.B[i]); T.push(P.T[i]); r += P.R[i]; g += P.G[i]; bl += P.Bc[i]; }
+  const n = Math.max(1, hi - lo);
+  const s = { a, b, L: median(L), A: median(A), B: median(B), T: median(T) };
+  s.C = Math.hypot(s.A, s.B);                                  // chroma = how colourful
+  s.rgb = 'rgb(' + Math.round(r / n) + ',' + Math.round(g / n) + ',' + Math.round(bl / n) + ')';
+  return s;
+}
+// how different two layers look: colour difference (ΔE) plus a texture term
+const segDist = (s, t) => Math.hypot(s.L - t.L, s.A - t.A, s.B - t.B) + 0.5 * Math.abs(s.T - t.T);
+
+/* ---------- (b) best boundaries for the whole jar (dynamic programming) ---------- */
+function dpSegment(P, K, minLen) {
+  const n = P.nb, d = 4;
+  const S = new Float64Array((n + 1) * d), Q = new Float64Array(n + 1);
+  for (let i = 0; i < n; i++) {
+    const v = [P.L[i], P.A[i], P.B[i], P.T[i] * 0.7];
+    let q = 0;
+    for (let f = 0; f < d; f++) { S[(i + 1) * d + f] = S[i * d + f] + v[f]; q += v[f] * v[f]; }
+    Q[i + 1] = Q[i] + q;
+  }
+  const cost = (i, j) => {
+    let c = Q[j] - Q[i];
+    const len = j - i;
+    for (let f = 0; f < d; f++) { const s = S[j * d + f] - S[i * d + f]; c -= s * s / len; }
+    return c;
+  };
+  K = Math.max(1, Math.min(K, Math.floor(n / minLen)));
+  let prev = new Float64Array(n + 1).fill(Infinity);
+  for (let j = minLen; j <= n; j++) prev[j] = cost(0, j);
+  const back = [];
+  for (let k = 2; k <= K; k++) {
+    const cur = new Float64Array(n + 1).fill(Infinity), bk = new Int32Array(n + 1);
+    for (let j = k * minLen; j <= n; j++) {
+      let best = Infinity, bi = -1;
+      for (let i = (k - 1) * minLen; i <= j - minLen; i++) {
+        if (prev[i] === Infinity) continue;
+        const v = prev[i] + cost(i, j);
+        if (v < best) { best = v; bi = i; }
+      }
+      cur[j] = best; bk[j] = bi;
+    }
+    back.push(bk); prev = cur;
+  }
+  const cuts = [];
+  let j = n;
+  for (let k = K; k >= 2; k--) { const i = back[k - 2][j]; cuts.push(i); j = i; }
+  cuts.reverse();
+  return [0, ...cuts, n];
+}
+
+/* ---------- (c) clean-up ---------- */
+function mergeWeak(P, segs, T) {
+  segs = segs.slice();
+  while (segs.length > 1) {
+    let best = Infinity, bi = -1;
+    for (let i = 0; i < segs.length - 1; i++) {
+      const d = segDist(segs[i], segs[i + 1]);
+      if (d < best) { best = d; bi = i; }
+    }
+    if (best >= T) break;
+    segs.splice(bi, 2, segStats(P, segs[bi].a, segs[bi + 1].b));
+  }
+  return segs;
+}
+
+function cleanSegments(P, edges) {
+  let segs = edges.slice(0, -1).map((a, i) => segStats(P, a, edges[i + 1]));
+  const minKeep = Math.max(3, Math.round(P.nb * 0.02));
+  const join = i => segs.splice(i, 2, segStats(P, segs[i].a, segs[i + 1].b));
+
+  // thin bands that are just the blur between two layers, or tiny look-alikes
+  let changed = true;
+  while (changed && segs.length > 1) {
+    changed = false;
+    for (let i = 0; i < segs.length; i++) {
+      const s = segs[i], len = s.b - s.a;
+      if (len >= minKeep * 1.25) continue;
+      const p = segs[i - 1], q = segs[i + 1];
+      const dp = p ? segDist(p, s) : Infinity, dq = q ? segDist(s, q) : Infinity;
+      let merge = false;
+      if (p && q && dp + dq <= 1.1 * segDist(p, q) + 1) merge = true;   // colour sits between its neighbours
+      if (len < minKeep && Math.min(dp, dq) < 15) merge = true;
+      if (merge) { if (dp <= dq) join(i - 1); else join(i); changed = true; break; }
+    }
+  }
+  return mergeWeak(P, segs, MERGE_T);
+}
+
+/* ---------- (d) label the layers ---------- */
+const WHY = {
+  ignore:   'Grey and stripy at the very top. Looks like the lid or the jar rim, so it is left out.',
+  foam:     'Bright, bubbly band on top of the water.',
+  floating: 'Thin band with bits in it near the top of the water.',
+  floatDark:'Thin, dark band near the top of the water.',
+  tea:      'Smooth, see-through and orange/brown. Water stained by dissolved plant material.',
+  cloudy:   'Smooth but duller than the clearest water, so fine clay may still be floating. If you can see clearly through it, change it to clear water.',
+  cloudyDk: 'Smooth, dark and murky. Could also be very dark tea-coloured water. If you can see through it, change the label.',
+  water:    'Smooth, bright and colourless.',
+  air:      'Bright gap above the water line.',
+  orgSoil:  'Thin, grainy, dark band resting right on the soil.',
+  organic:  'Thin, dark band sitting on top of the soil.',
+  gravel:   'Very coarse and grainy at the bottom of the jar.',
+  sand:     'Bottom soil layer. Sand is the heaviest, so it settles first.',
+  silt:     'Middle soil layer. Silt settles after sand.',
+  siltTop:  'Top soil layer. Clay needs 24–48 hours to settle, so this is probably silt.',
+  clay:     'Top soil layer. Clay is the finest and settles last.',
+  fines:    'Top soil layer. Silt and clay often settle into one layer that looks the same. Use Split if you can see a line inside it.',
+  single:   'The only soil layer we could tell apart. If you can see faint lines in it, use Split.'
+};
+
+function classifySegments(P, segsIn, elapsed) {
+  const segs = segsIn.slice();
+  const total = segs[segs.length - 1].b - segs[0].a;
+  const ts = segs.map(s => s.T).sort((a, b) => a - b);
+  const texRef = Math.max(1.5, ts[Math.floor((ts.length - 1) * 0.25)]);    // smooth reference (usually the water)
+  const enrich = s => {
+    s.texN = s.T / texRef;                                                 // graininess relative to the smoothest parts
+    s.hPct = (s.b - s.a) / total;
+    // "soilness": grainy, darker, not strongly coloured = soil; smooth, bright or very colourful = liquid
+    s.soil = 1.2 * Math.log2(Math.min(16, Math.max(0.25, s.texN)) / 2) + (55 - s.L) / 25 - Math.max(0, s.C - 35) / 12;
+    return s;
+  };
+  segs.forEach(enrich);
+
+  // soil sits at the bottom: pick the start point that makes "everything below = soil" fit best
+  let k = segs.length - 1, best = -Infinity, suf = 0;
+  for (let i = segs.length - 1; i >= 0; i--) { suf += segs[i].soil; if (suf > best) { best = suf; k = i; } }
+
+  const out = [];
+  labelUpper(mergeWeak(P, segs.slice(0, k), LIQUID_MERGE_T).map(enrich), out);
+  labelSediment(P, segs.slice(k), elapsed, out, enrich);
+  return mergeSameType(P, out);
+}
+
+function labelUpper(upper, out) {
+  let i = 0;
+  while (i < upper.length && upper[i].C < 12 && upper[i].texN > 2.2 && upper[i].hPct < 0.2) {
+    out.push({ s: upper[i], type: 'ignore', why: WHY.ignore }); i++;
+  }
+  const liq = upper.slice(i);
+  if (!liq.length) return;
+  const smooth = liq.filter(s => s.texN < 2.2);
+  const refL = median((smooth.length ? smooth : liq).map(s => s.L));
+  const lowC = liq.filter(s => s.C < 22 && s.texN < 2.2);
+  const brightest = lowC.length ? Math.max(...lowC.map(s => s.L)) : 0;
+
+  const types = liq.map((s, j) => {
+    const onSoil = j === liq.length - 1;
+    if (s.texN >= 2.2 && s.hPct < 0.15) {
+      if (s.L > 75 && s.C < 15) return ['foam', WHY.foam];
+      if (onSoil) return ['organic', WHY.orgSoil];
+      return ['floating', WHY.floating];
+    }
+    if (s.L < refL - 20 && s.hPct < 0.15 && !onSoil) return ['floating', WHY.floatDark];
+    if (s.C >= 22) return s.L >= 40 ? ['tea', WHY.tea] : ['cloudy', WHY.cloudyDk];
+    if (s.L >= 55 && s.L >= brightest - 10) return ['water', WHY.water];
+    return ['cloudy', WHY.cloudy];
+  });
+  const firstWater = types.findIndex(t => t[0] === 'water');
+  if (firstWater === 0 && liq[0].hPct < 0.15 && types.some((t, j) => j > 0 && t[0] === 'water')) types[0] = ['air', WHY.air];
+  liq.forEach((s, j) => out.push({ s, type: types[j][0], why: types[j][1] }));
+}
+
+function labelSediment(P, sed, elapsed, out, enrich) {
+  if (!sed.length) return;
+  const sedH = sed.reduce((a, s) => a + s.b - s.a, 0);
+  let mins = sed.slice(), gravel = null, organic = null;
+
+  if (mins.length >= 2) {
+    const medTex = median(mins.map(s => s.texN));
+    const b = mins[mins.length - 1];
+    if (b.texN > 1.7 * medTex && b.texN > 2.5) gravel = mins.pop();
+  }
+  if (mins.length >= 2) {
+    const t = mins[0], nx = mins[1];
+    if ((t.b - t.a) / sedH < 0.18 && t.L < nx.L - 8) organic = mins.shift();
+  }
+  while (mins.length > 3) {                         // at most clay / silt / sand
+    let bestD = Infinity, bi = 0;
+    for (let i = 0; i < mins.length - 1; i++) { const d = segDist(mins[i], mins[i + 1]); if (d < bestD) { bestD = d; bi = i; } }
+    mins.splice(bi, 2, enrich(segStats(P, mins[bi].a, mins[bi + 1].b)));
+  }
+
+  if (organic) out.push({ s: organic, type: 'organic', why: WHY.organic });
+  if (mins.length === 1) {
+    out.push({ s: mins[0], type: mins[0].texN >= 3 ? 'sand' : 'fines', why: WHY.single });
+  } else if (mins.length === 2) {
+    out.push(elapsed === 'short' ? { s: mins[0], type: 'silt', why: WHY.siltTop } : { s: mins[0], type: 'fines', why: WHY.fines });
+    out.push({ s: mins[1], type: 'sand', why: WHY.sand });
+  } else if (mins.length === 3) {
+    out.push({ s: mins[0], type: 'clay', why: WHY.clay });
+    out.push({ s: mins[1], type: 'silt', why: WHY.silt });
+    out.push({ s: mins[2], type: 'sand', why: WHY.sand });
+  }
+  if (gravel) out.push({ s: gravel, type: 'gravel', why: WHY.gravel });
+}
+
+function mergeSameType(P, list) {
+  const res = [];
+  list.forEach(item => {
+    const prev = res[res.length - 1];
+    if (prev && prev.type === item.type) prev.s = segStats(P, prev.s.a, item.s.b);
+    else res.push({ ...item });
+  });
+  return res;
+}
+
+/* =====================================================================
+   4. TURN THE LAYERS INTO A RESULT
+   ===================================================================== */
+function orderLooksOdd(layers) {
+  const rank = { gravel: 0, sand: 1, silt: 2, fines: 2.5, clay: 3 };   // heaviest settles lowest
+  const soilSet = ['gravel', 'sand', 'silt', 'fines', 'clay', 'organic'];
+  const liquidSet = ['air', 'foam', 'floating', 'water', 'tea', 'cloudy'];
+  let prev = Infinity, odd = false, firstSoil = -1;
+  layers.forEach((l, i) => {
+    if (l.type in rank) {
+      if (rank[l.type] > prev) odd = true;
+      prev = rank[l.type];
+    }
+    if (firstSoil < 0 && soilSet.includes(l.type)) firstSoil = i;
+  });
+  if (firstSoil >= 0) layers.forEach((l, i) => { if (i > firstSoil && liquidSet.includes(l.type)) odd = true; });
+  return odd;
+}
+
+function computeResult(layers, lines, scores, edited, elapsed) {
+  const heights = layers.map((l, i) => Math.max(0, lines[i + 1] - lines[i]));
+  const hgt = {};
+  let total = 0;
+  layers.forEach((l, i) => {
+    if (l.type === 'ignore') return;
+    hgt[l.type] = (hgt[l.type] || 0) + heights[i];
+    total += heights[i];
+  });
+  total = Math.max(1, total);
+  const layerPct = layers.map((l, i) => l.type === 'ignore' ? 0 : heights[i] / total * 100);
+  const h = t => hgt[t] || 0;
+
+  // sand / silt / clay shares ("silt + clay" layers are split half and half)
+  const fine = h('sand') + h('silt') + h('clay') + h('fines');
+  let sand = null, silt = null, clay = null, cls = null, props = null;
+  if (fine > 0) {
+    const r = [h('clay') + h('fines') / 2, h('silt') + h('fines') / 2, h('sand')].map(v => Math.round(v / fine * 100));
+    r[r.indexOf(Math.max(...r))] += 100 - (r[0] + r[1] + r[2]);
+    [clay, silt, sand] = r;
+    cls = textureClass(sand, silt, clay);
+    props = PROPERTIES[cls] || { drain: '—', water: '—', note: 'Check the layer labels and try again.' };
+  }
+
+  const organicH = h('organic') + h('floating');
+  const solids = fine + h('gravel') + organicH;
+  const share = v => (solids > 0 && v > 0) ? Math.max(1, Math.round(v / solids * 100)) : 0;
+  const organicPct = share(organicH);
+  const gravelPct = share(h('gravel'));
+  const organicLevel = organicH === 0 ? 'None seen' : organicPct < 3 ? 'Little' : organicPct < 10 ? 'Some' : 'A lot';
+  const stoneLevel = h('gravel') === 0 ? 'None seen' : gravelPct < 5 ? 'Very few' : gravelPct < 15 ? 'Some' : 'Stony';
+
+  const present = new Set(layers.map(l => l.type));
+  const mineralCount = layers.filter(l => MINERAL.includes(l.type)).length;
+
+  // how sure are we? Based on how clearly the soil layers stand apart in the photo.
+  let conf;
+  if (edited) conf = { key: 'adjusted', label: 'Adjusted by you' };
+  else {
+    const soilish = t => MINERAL.includes(t) || t === 'gravel' || t === 'organic';
+    let rel = [];
+    for (let i = 0; i < scores.length && i + 1 < layers.length; i++) {
+      if (soilish(layers[i].type) || soilish(layers[i + 1].type)) rel.push(scores[i]);
+    }
+    if (!rel.length) rel = scores;
+    const m = rel.length ? Math.min(...rel) : 0;
+    conf = m >= 12 ? { key: 'high', label: 'High confidence' }
+         : m >= 6  ? { key: 'medium', label: 'Medium confidence' }
+         :           { key: 'low', label: 'Low confidence' };
+    if (conf.key === 'high' && (present.has('fines') || mineralCount === 1)) conf = { key: 'medium', label: 'Medium confidence' };
+  }
+
+  const warnings = [];
+  if (elapsed === 'short') warnings.push('Clay takes 24–48 hours to settle, so the clay share is probably too low. Wait longer and take a new photo.');
+  if (elapsed === 'mid')   warnings.push('Clay may not be fully settled yet. For the best result, wait 24–48 hours.');
+  if (present.has('cloudy')) warnings.push('Part of the water looks cloudy, which usually means clay is still floating, so the clay share may be too low. If the water looks clear to you, change that layer’s label.');
+  if (fine === 0) warnings.push('No sand, silt or clay layer is labelled yet, so we cannot work out the soil type. Check the layer labels.');
+  if (mineralCount === 1 && !edited) warnings.push('We could only find one soil layer. Most soils show at least two. Look closely at the jar and use Split if you can see lines.');
+  if (orderLooksOdd(layers)) warnings.push('The layers are in an unusual order (for example sand above clay, or water below soil). The jar may have been disturbed, or a label may be wrong. We still show the result, but please check the labels.');
+  if (conf.key === 'low') warnings.push('The soil layers are hard to tell apart in this photo. Try brighter, even light, or drag the lines to where you can see the layers change.');
+
+  return {
+    sand, silt, clay, cls, props, conf, warnings, elapsed, edited,
+    organicPct, organicLevel, gravelPct, stoneLevel,
+    types: TYPE_ORDER.filter(t => present.has(t)),
+    layerList: layers.map((l, i) => ({ type: l.type, heightPct: Math.round(layerPct[i]) }))
+  };
+}
+
+/* =====================================================================
+   5. USER INTERFACE
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+const view = $('view');
+const vctx = view.getContext('2d');
+const base = document.createElement('canvas');
+const bctx = base.getContext('2d', { willReadFrequently: true });
+const el = {
+  empty: $('empty'), output: $('output'), texClass: $('texClass'), badge: $('badge'),
+  stack: $('stack'), pcts: $('pcts'), drain: $('drain'), water: $('water'),
+  organic: $('organic'), stones: $('stones'), note: $('note'), warnings: $('warnings'),
+  notesBox: $('notesBox'), notesList: $('notesList'), triWrap: $('triWrap'), tri: $('tri'),
+  elapsed: $('elapsed'), layersBox: $('layersBox'), rows: $('rows')
+};
+
+const state = {
+  ready: false,
+  xL: 0, xR: 0,
+  lines: [0, 0],        // top of contents, ...layer boundaries..., bottom of contents (canvas y)
+  layers: [],           // one { type, why, rgb } per gap between lines
+  scores: [],           // how different the two layers at each inner line look
+  edited: false,
+  result: null,
+  payload: null
+};
+let drag = null;
+
+/* ---------- loading an image ---------- */
+function setImage(source, w, h, preset) {
+  const s = Math.min(1, 700 / w, 800 / h);
+  base.width = view.width = Math.round(w * s);
+  base.height = view.height = Math.round(h * s);
+  bctx.drawImage(source, 0, 0, base.width, base.height);
+
+  const W = base.width, H = base.height;
+  state.xL = preset ? preset.xL * s : W * 0.35;
+  state.xR = preset ? preset.xR * s : W * 0.65;
+  state.lines = [preset ? preset.top * s : H * 0.15, preset ? preset.bottom * s : H * 0.9];
+  drag = null;
+  analyse();
+}
+
+$('file').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const img = new Image();
+  img.onload = () => { setImage(img, img.naturalWidth, img.naturalHeight); URL.revokeObjectURL(img.src); };
+  img.src = URL.createObjectURL(f);
+});
+
+$('sample').addEventListener('click', () => {
+  const c = makeSample();
+  setImage(c, c.width, c.height, { xL: 160, xR: 320, top: 63, bottom: 577 });
+});
+
+el.elapsed.addEventListener('change', () => {
+  if (state.ready && !state.edited) analyse();   // re-label with the new settling time
+  else update();
+});
+
+/* ---------- find and label the layers ---------- */
+function analyse() {
+  const top = Math.round(state.lines[0]);
+  const bottom = Math.round(state.lines[state.lines.length - 1]);
+  const h = bottom - top;
+  const bw = Math.round((state.xR - state.xL) * 0.5);
+
+  if (bw >= 4 && h >= 40) {
+    const P = buildProfile(top, h);
+    const minLen = Math.max(3, Math.round(P.nb * 0.012));
+    const edges = dpSegment(P, DP_MAX_SEGMENTS, minLen);
+    const segs = cleanSegments(P, edges);
+    const final = classifySegments(P, segs, el.elapsed.value);
+
+    state.lines = [top, ...final.slice(1).map(f => top + f.s.a * P.rowsPerBin), bottom];
+    state.layers = final.map(f => ({ type: f.type, why: f.why, rgb: f.s.rgb }));
+    state.scores = final.slice(1).map((f, i) => segDist(final[i].s, f.s));
+  } else {
+    state.lines = [top, top + h / 3, top + 2 * h / 3, bottom];
+    state.layers = [0, 1, 2].map(() => ({ type: 'other', why: 'The box is too small to analyse. Draw a bigger box.', rgb: '#ccc' }));
+    state.scores = [0, 0];
+  }
+  state.edited = false;
+  state.ready = true;
+  buildRows();
+  update();
+}
+
+function update() {
+  if (state.ready) {
+    state.result = computeResult(state.layers, state.lines, state.scores, state.edited, el.elapsed.value);
+    render(state.result);
+    updateRowText();
+  }
+  draw();
+}
+
+/* ---------- the layer list (change label, split, merge) ---------- */
+function mkButton(text, act, i) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'mini'; b.textContent = text;
+  b.dataset.act = act; b.dataset.i = i;
+  return b;
+}
+
+function buildRows() {
+  el.rows.innerHTML = '';
+  state.layers.forEach((l, i) => {
+    const row = document.createElement('div'); row.className = 'lrow';
+    const seen = document.createElement('span'); seen.className = 'seen'; seen.style.background = l.rgb || '#ccc';
+    seen.title = 'Colour in your photo';
+    const chip = document.createElement('span'); chip.className = 'chip'; chip.style.background = TYPES[l.type].color;
+    const sel = document.createElement('select'); sel.dataset.i = i;
+    TYPE_ORDER.forEach(t => {
+      const o = document.createElement('option');
+      o.value = t; o.textContent = TYPES[t].label; o.selected = (t === l.type);
+      sel.appendChild(o);
+    });
+    const pct = document.createElement('span'); pct.className = 'lpct'; pct.dataset.i = i;
+    row.append(seen, chip, sel, pct, mkButton('Split', 'split', i));
+    if (i > 0) row.appendChild(mkButton('Merge up', 'merge', i));
+    if (l.why) { const w = document.createElement('div'); w.className = 'why'; w.textContent = l.why; row.appendChild(w); }
+    el.rows.appendChild(row);
+  });
+  el.layersBox.hidden = false;
+}
+
+function updateRowText() {
+  let total = 0;
+  state.layers.forEach((l, i) => { if (l.type !== 'ignore') total += state.lines[i + 1] - state.lines[i]; });
+  total = Math.max(1, total);
+  el.rows.querySelectorAll('.lpct').forEach(s => {
+    const i = +s.dataset.i;
+    s.textContent = state.layers[i].type === 'ignore' ? 'left out'
+      : Math.round((state.lines[i + 1] - state.lines[i]) / total * 100) + '% of jar';
+  });
+}
+
+el.rows.addEventListener('change', e => {
+  if (e.target.tagName !== 'SELECT') return;
+  const l = state.layers[+e.target.dataset.i];
+  l.type = e.target.value;
+  l.why = 'Set by you.';
+  state.edited = true;
+  buildRows(); update();
+});
+
+el.rows.addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const i = +b.dataset.i;
+  if (b.dataset.act === 'split') {
+    if (state.layers.length >= MAX_LAYERS) return toast('That is the maximum number of layers.');
+    if (state.lines[i + 1] - state.lines[i] < 8) return toast('That layer is too thin to split.');
+    state.lines.splice(i + 1, 0, (state.lines[i] + state.lines[i + 1]) / 2);
+    state.layers.splice(i + 1, 0, { type: state.layers[i].type, why: 'Split by you. Drag the new line into place and pick a label.', rgb: state.layers[i].rgb });
+  } else if (i > 0) {
+    state.lines.splice(i, 1);
+    state.layers.splice(i, 1);
+  }
+  state.edited = true;
+  buildRows(); update();
+});
+
+/* ---------- drawing the photo + layer overlay ---------- */
+function outlined(drawFn) {
+  vctx.lineWidth = 4; vctx.strokeStyle = 'rgba(0,0,0,.55)'; drawFn();
+  vctx.lineWidth = 2; vctx.strokeStyle = '#fff'; drawFn();
+}
+
+function draw() {
+  vctx.clearRect(0, 0, view.width, view.height);
+  if (!base.width) {
+    vctx.fillStyle = '#ddd5c6'; vctx.fillRect(0, 0, view.width, view.height);
+    vctx.fillStyle = '#6b675d'; vctx.font = '16px system-ui'; vctx.textAlign = 'center';
+    vctx.fillText('No photo yet', view.width / 2, view.height / 2);
+    return;
+  }
+  vctx.drawImage(base, 0, 0);
+
+  if (drag && drag.type === 'box') {
+    const x = Math.min(drag.x0, drag.x1), y = Math.min(drag.y0, drag.y1);
+    vctx.setLineDash([6, 4]);
+    outlined(() => vctx.strokeRect(x, y, Math.abs(drag.x1 - drag.x0), Math.abs(drag.y1 - drag.y0)));
+    vctx.setLineDash([]);
+    return;
+  }
+  if (!state.ready) return;
+
+  const L = state.lines, xL = state.xL, xR = state.xR;
+  vctx.font = 'bold 13px system-ui'; vctx.textAlign = 'left';
+  state.layers.forEach((layer, i) => {
+    const t = TYPES[layer.type];
+    vctx.globalAlpha = layer.type === 'ignore' ? 0.15 : 0.3;
+    vctx.fillStyle = t.color;
+    vctx.fillRect(xL, L[i], xR - xL, L[i + 1] - L[i]);
+    vctx.globalAlpha = 1;
+    if (L[i + 1] - L[i] >= 12) {
+      const y = (L[i] + L[i + 1]) / 2 + 4;
+      vctx.lineWidth = 3; vctx.strokeStyle = 'rgba(0,0,0,.7)'; vctx.strokeText(t.short, xL + 6, y);
+      vctx.fillStyle = '#fff'; vctx.fillText(t.short, xL + 6, y);
+    }
+  });
+  const x0 = Math.max(0, xL - 14), x1 = Math.min(view.width - 10, xR + 14);
+  L.forEach(y => {
+    outlined(() => { vctx.beginPath(); vctx.moveTo(x0, y); vctx.lineTo(x1, y); vctx.stroke(); });
+    vctx.beginPath(); vctx.arc(x1, y, 7, 0, Math.PI * 2);
+    vctx.fillStyle = '#fff'; vctx.fill(); vctx.lineWidth = 2; vctx.strokeStyle = '#2b2a26'; vctx.stroke();
+  });
+}
+
+/* ---------- mouse / touch: draw a box, or drag a line ---------- */
+function pos(e) {
+  const r = view.getBoundingClientRect();
+  const x = (e.clientX - r.left) * view.width / r.width;
+  const y = (e.clientY - r.top) * view.height / r.height;
+  return { x: Math.min(view.width, Math.max(0, x)), y: Math.min(view.height, Math.max(0, y)) };
+}
+
+view.addEventListener('pointerdown', e => {
+  if (!base.width) return;
+  const p = pos(e);
+  view.setPointerCapture(e.pointerId);
+  if (state.ready && p.x > state.xL - 24 && p.x < state.xR + 24) {
+    const tol = 12 * view.width / view.getBoundingClientRect().width;
+    let best = -1, bestDist = tol;
+    state.lines.forEach((y, i) => { const d = Math.abs(p.y - y); if (d < bestDist) { bestDist = d; best = i; } });
+    if (best >= 0) { drag = { type: 'line', i: best }; return; }
+  }
+  drag = { type: 'box', x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+});
+
+view.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const p = pos(e);
+  if (drag.type === 'line') {
+    const L = state.lines, i = drag.i, gap = 3;
+    const lo = i > 0 ? L[i - 1] + gap : 0;
+    const hi = i < L.length - 1 ? L[i + 1] - gap : view.height;
+    L[i] = Math.min(hi, Math.max(lo, p.y));
+    state.edited = true;
+    update();
+  } else {
+    drag.x1 = p.x; drag.y1 = p.y;
+    draw();
+  }
+});
+
+function endDrag() {
+  if (!drag) return;
+  const was = drag; drag = null;
+  if (was.type === 'box') {
+    const w = Math.abs(was.x1 - was.x0), h = Math.abs(was.y1 - was.y0);
+    if (w > 20 && h > 40) {
+      state.xL = Math.min(was.x0, was.x1); state.xR = Math.max(was.x0, was.x1);
+      state.lines = [Math.min(was.y0, was.y1), Math.max(was.y0, was.y1)];
+      analyse();
+      return;
+    }
+  }
+  draw();
+}
+view.addEventListener('pointerup', endDrag);
+view.addEventListener('pointercancel', endDrag);
+
+/* ---------- results panel ---------- */
+function render(res) {
+  el.empty.hidden = true; el.output.hidden = false;
+
+  el.badge.textContent = res.conf.label;
+  el.badge.className = 'badge ' + res.conf.key;
+  el.stack.innerHTML = '';
+
+  if (res.cls) {
+    el.texClass.textContent = res.cls;
+    [['Clay', res.clay, TYPES.clay.color], ['Silt', res.silt, TYPES.silt.color], ['Sand', res.sand, TYPES.sand.color]]
+      .forEach(([name, v, color]) => {
+        const d = document.createElement('div');
+        d.style.width = v + '%'; d.style.background = color;
+        d.textContent = v >= 12 ? name + ' ' + v + '%' : '';
+        el.stack.appendChild(d);
+      });
+    el.pcts.textContent = 'Sand ' + res.sand + '% · Silt ' + res.silt + '% · Clay ' + res.clay + '%';
+    el.drain.textContent = res.props.drain;
+    el.water.textContent = res.props.water;
+    el.note.textContent = res.props.note;
+    el.triWrap.hidden = false;
+    drawTriangle(res.sand, res.silt, res.clay);
+  } else {
+    el.texClass.textContent = 'Soil type not known yet';
+    el.pcts.textContent = 'Label at least one layer as sand, silt or clay.';
+    el.drain.textContent = el.water.textContent = el.note.textContent = '—';
+    el.triWrap.hidden = true;
+  }
+
+  el.organic.textContent = res.organicPct ? res.organicLevel + ' (about ' + res.organicPct + '% of the solids in the jar)' : res.organicLevel;
+  el.stones.textContent = res.gravelPct ? res.stoneLevel + ' (about ' + res.gravelPct + '% of the solids in the jar)' : res.stoneLevel;
+
+  el.warnings.innerHTML = '';
+  res.warnings.forEach(w => { const li = document.createElement('li'); li.textContent = w; el.warnings.appendChild(li); });
+
+  el.notesList.innerHTML = '';
+  res.types.forEach(t => {
+    if (!TYPES[t].note) return;
+    const li = document.createElement('li');
+    const b = document.createElement('b'); b.textContent = TYPES[t].label + ': ';
+    li.append(b, document.createTextNode(TYPES[t].note));
+    el.notesList.appendChild(li);
+  });
+  el.notesBox.hidden = !el.notesList.children.length;
+
+  state.payload = {
+    source: 'jar-photo',
+    sandPct: res.sand, siltPct: res.silt, clayPct: res.clay,
+    textureClass: res.cls,
+    drainage: res.props ? res.props.drain : null,
+    waterHolding: res.props ? res.props.water : null,
+    organicMatterLevel: res.organicLevel, organicMatterPct: res.organicPct,
+    stoneLevel: res.stoneLevel, gravelPct: res.gravelPct,
+    siltClayCombined: res.types.includes('fines'),
+    cloudyWater: res.types.includes('cloudy'),
+    teaColouredWater: res.types.includes('tea'),
+    foam: res.types.includes('foam'),
+    layers: res.layerList,
+    confidence: res.conf.key,
+    adjustedByFarmer: res.edited,
+    photoTakenAfter: res.elapsed
+  };
+}
+
+function drawTriangle(sand, silt, clay) {
+  const c = el.tri, g = c.getContext('2d'), W = c.width, H = c.height, pad = 34;
+  const BL = { x: pad, y: H - pad }, BR = { x: W - pad, y: H - pad };
+  const T = { x: W / 2, y: H - pad - (W - 2 * pad) * 0.866 };
+  g.clearRect(0, 0, W, H);
+  g.beginPath(); g.moveTo(T.x, T.y); g.lineTo(BR.x, BR.y); g.lineTo(BL.x, BL.y); g.closePath();
+  g.fillStyle = '#f4f2ea'; g.fill(); g.lineWidth = 2; g.strokeStyle = '#6b675d'; g.stroke();
+  g.fillStyle = '#2b2a26'; g.font = '12px system-ui';
+  g.textAlign = 'center'; g.fillText('100% clay', T.x, T.y - 8);
+  g.textAlign = 'left';   g.fillText('100% sand', 4, BL.y + 18);
+  g.textAlign = 'right';  g.fillText('100% silt', W - 4, BR.y + 18);
+  const px = (clay * T.x + sand * BL.x + silt * BR.x) / 100;
+  const py = (clay * T.y + sand * BL.y + silt * BR.y) / 100;
+  g.beginPath(); g.arc(px, py, 7, 0, Math.PI * 2);
+  g.fillStyle = '#c0504d'; g.fill(); g.lineWidth = 2; g.strokeStyle = '#fff'; g.stroke();
+}
+
+/* ---------- "send to planner" (mock) ---------- */
+$('send').addEventListener('click', () => {
+  if (!state.payload) return;
+  window.dispatchEvent(new CustomEvent('soilFromJar', { detail: state.payload }));
+  console.log('soilFromJar', state.payload);
+  toast('Saved to your field (demo)');
+});
+
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+/* ---------- a fake jar photo with everything in it, for testing ---------- */
+function makeSample() {
+  const c = document.createElement('canvas'); c.width = 480; c.height = 640;
+  const g = c.getContext('2d');
+  g.fillStyle = '#e9e4d8'; g.fillRect(0, 0, 480, 640);
+  g.fillStyle = '#f7f9f9'; g.fillRect(140, 60, 200, 520);
+
+  const layers = [                                              // top, bottom, colour, grain
+    [62,  92,  '#f9fafa', 2],     // air gap
+    [92,  106, '#3b2f25', 18],    // floating organic matter
+    [106, 190, '#cfe6ee', 3],     // clear water (slightly blue)
+    [190, 250, '#cfc9b8', 3],     // cloudy water
+    [250, 272, '#3e3027', 14],    // settled organic matter
+    [272, 345, '#8a6b52', 12],    // clay
+    [345, 440, '#a58762', 12],    // silt
+    [440, 540, '#d2bb88', 14],    // sand
+    [540, 578, '#8a8780', 0]      // gravel (patches added below)
+  ];
+  layers.forEach(([a, b, col, amp]) => {
+    g.fillStyle = col; g.fillRect(145, a, 190, b - a);
+    if (amp) {
+      const img = g.getImageData(145, a, 190, b - a), d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const n = (Math.random() - 0.5) * 2 * amp;
+        d[i] += n; d[i + 1] += n; d[i + 2] += n;
+      }
+      g.putImageData(img, 145, a);
+    }
+  });
+  for (let i = 0; i < 260; i++) {
+    const v = 70 + Math.random() * 120;
+    g.fillStyle = 'rgb(' + v + ',' + (v - 4) + ',' + (v - 10) + ')';
+    g.fillRect(145 + Math.random() * 180, 541 + Math.random() * 28, 5 + Math.random() * 9, 4 + Math.random() * 6);
+  }
+  g.strokeStyle = '#8fa3ad'; g.lineWidth = 5; g.strokeRect(142, 60, 196, 522);
+  return c;
+}
+
+draw();
+})();
+</script>
+</body>
+</html>
