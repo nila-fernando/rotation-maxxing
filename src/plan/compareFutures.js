@@ -7,6 +7,7 @@
 //   seasonChanges(cmp, 'priority')              [Map id -> 'crop'|'margin'] x 3
 //   coinPlan(cmp).countsFor('mix', choice)      Map id -> coins
 //   reelStops(cmp)                              the walk, in order
+//   frostIds(cmp, 'priority', 1)                Set of ids whose wheat has a spring freeze that season
 //
 // Pure data, no DOM, so node:test runs it on a real planner result. The numbers per field and
 // season are the planner's own deterministic ones (mean weather, mean prices); the farm totals
@@ -14,6 +15,7 @@
 // the whole farm. Only the lazy plan views import this (it pulls in the planner's rule checks).
 import { createChecker, worst } from './builder.js';
 import { APP_CROP } from './farmInput.js';
+import { freezeOf, frostWarning } from './weatherWords.js';
 
 /** The three whole plans, in the order they are shown. A fourth view, 'mix', is the farmer's pick per field. */
 export const KINDS = ['current', 'maxProfit', 'priority'];
@@ -100,13 +102,17 @@ export function compareFutures(data, { startYear } = {}) {
       const seq = slots.map((s) => ({ main: s.main, cover: s.cover || null, key: APP_CROP[s.main] || 'other' }));
       const seasons = SEASONS.map((y) => {
         const yr = years[y];
-        const w = warnings[kind].get(`${id}:${y}`) || [];
+        // the planner's spring freeze on wheat lives in the season's terms, not its rule checks
+        const freeze = freezeOf(yr.terms, yr.yieldPerAcre);
+        const fw = frostWarning(freeze);
+        const w = [...(warnings[kind].get(`${id}:${y}`) || []), ...(fw ? [fw] : [])];
         return {
           crop: seq[y].main, cover: seq[y].cover, key: seq[y].key,
           gmAc: yr.grossMarginPerAcre, cash: yr.grossMarginPerAcre * pd.acres,
           yield: yr.yieldPerAcre, unit: yr.yieldUnit,
           soil: yr.soilHealthIndex, soil100: Math.round(yr.soilHealthIndex * 100),
           ...termsOf(yr),
+          freeze,
           warnings: w, worst: worst(w),
         };
       });
@@ -136,6 +142,10 @@ export function compareFutures(data, { startYear } = {}) {
     raw: Object.fromEntries(KINDS.map((k) => [k, rawOf(plans[k])])),
     gaps: [...(data.gaps || [])],
     weather: weatherOf(data.weather),
+    // whether water is what limits the crops here (the same on every plan), and the farm facts the
+    // weather lines need: the state (the freeze rule is a Kansas one) and whether it is all watered
+    weatherRisk: plans.priority.weatherRisk ?? null,
+    facts: { state: data.farm.state ?? null, irrigated: data.farm.constraints?.irrigation === 'irrigated' },
   };
   // whether the two plans are the same crops (then the pick costs nothing, whatever the rounding),
   // and whether the water numbers are inches (only with real daily weather; else a crop-water index)
@@ -243,11 +253,15 @@ export function mixKind(cmp, mixScore, choice) {
   return mixScore ? null : 'priority';
 }
 
-/** The rule warnings for every season of the mixed plan (a neighbour's crop can change them). */
+/**
+ * The rule warnings for every season of the mixed plan (a neighbour's crop can change them), or
+ * null for a copied comparison (structuredClone in the tests), which has no checker of its own.
+ */
 function mixWarnings(cmp, choice) {
   const key = JSON.stringify(cmp.fields.map((f) => kindFor(choice, f.id)));
   const hit = mixCache.get(cmp);
   if (hit?.key === key) return hit.map;
+  if (!checkers.has(cmp)) return null;
   const { checker, plans } = checkers.get(cmp);
   const map = checker.all(mixedPlan(plans, choice));
   mixCache.set(cmp, { key, map });
@@ -256,7 +270,8 @@ function mixWarnings(cmp, choice) {
 
 /**
  * What to show for a field in a view: { kind, seq, seasons, total }. For the mix it is the picked
- * plan's entry, with the warnings checked again on the mixed plan.
+ * plan's entry, with the warnings checked again on the mixed plan (and the freeze added back: it
+ * comes from the season's own weather, not from the neighbours).
  */
 export function viewField(cmp, id, view, choice) {
   const f = fieldOf(cmp, id);
@@ -264,10 +279,12 @@ export function viewField(cmp, id, view, choice) {
   if (view !== 'mix') return f.byKind[view];
   const base = entryFor(f, view, choice);
   const ws = mixWarnings(cmp, choice);
+  if (!ws) return base;
   return {
     ...base,
     seasons: base.seasons.map((s, y) => {
-      const w = ws.get(`${id}:${y}`) || [];
+      const fw = frostWarning(s.freeze);
+      const w = [...(ws.get(`${id}:${y}`) || []), ...(fw ? [fw] : [])];
       return { ...s, warnings: w, worst: worst(w) };
     }),
   };
@@ -346,7 +363,7 @@ export function tiles(cmp, view, mixScore, choice) {
 }
 
 // when a season has several warnings of its worst severity, the one to lead with
-const LENS_ORDER = ['pest', 'erosion', 'land', 'water', 'market', 'repeat', 'shade', 'nitrogen'];
+const LENS_ORDER = ['pest', 'erosion', 'land', 'water', 'frost', 'market', 'repeat', 'shade', 'nitrogen'];
 
 /** The warning to lead with: the worst, and among those the most telling lens. */
 export function headline(warnings) {
@@ -388,7 +405,42 @@ export function fineprint(cmp, kind, mixScore, choice) {
     'Local review': [...r.localReview],
     'Price of priorities': cmp.price.summary ? [cmp.price.summary] : [],
     'Weather source': cmp.weather.source ? [cmp.weather.source] : [],
+    'Weather risk': cmp.weatherRisk?.message ? [cmp.weatherRisk.message] : [],
   };
+}
+
+// ---- the weather on the farm ----
+
+/** The fields whose shown season grows wheat with a spring freeze: Set of ids. */
+export function frostIds(cmp, view, season, choice) {
+  return new Set(cmp.fields.filter((f) => entryFor(f, view, choice).seasons[season]?.freeze).map((f) => f.id));
+}
+
+/** The first season of Manami's pick with a spring freeze, and the fields it hits: { season, ids } | null. */
+export function frostStop(cmp) {
+  for (const y of SEASONS) {
+    const ids = [...frostIds(cmp, 'priority', y)];
+    if (ids.length) return { season: y, ids };
+  }
+  return null;
+}
+
+/**
+ * The fields left short of water (1 in or more) in the shown season, only where water is what
+ * limits the crops (the planner's weatherRisk): Set of ids, empty on a humid farm.
+ */
+export function dryIds(cmp, view, season, choice) {
+  if (cmp.weatherRisk?.waterLimited !== true) return new Set();
+  return new Set(cmp.fields.filter((f) => (entryFor(f, view, choice).seasons[season]?.waterShort ?? 0) >= 1).map((f) => f.id));
+}
+
+/** The first season of Manami's pick with a field short of water: { season, ids } | null. */
+function dryStop(cmp) {
+  for (const y of SEASONS) {
+    const ids = [...dryIds(cmp, 'priority', y)];
+    if (ids.length) return { season: y, ids };
+  }
+  return null;
 }
 
 // ---- the walk's picks (shared with the lines in futuresVoice.js) ----
@@ -471,11 +523,20 @@ export function isGoodFit(cmp) {
  * Manami's walk through the plans, in order: { id, view, season, fieldId?, camera, marksBase,
  * growStagger }. camera is 'overview', 'field' or 'none' (stay put); marksBase is the plan the
  * change outlines are measured against (null: no outlines); growStagger the grow-in delay per field.
+ * The weather stops add frostLens (outline the frost fields) or dryLens, and noFocus (no gold field).
  */
 export function reelStops(cmp) {
   const stop = (id, o = {}) => ({ id, view: 'priority', season: 0, camera: 'overview', marksBase: 'current', growStagger: 0.06, ...o });
+  const weather = [];
+  const fz = frostStop(cmp);
+  if (fz) {
+    const one = fz.ids.length === 1;
+    weather.push(stop('frost', { season: fz.season, marksBase: null, frostLens: true, growStagger: 0, camera: one ? 'field' : 'overview', ...(one ? { fieldId: fz.ids[0] } : {}), noFocus: true }));
+  }
+  const dry = dryStop(cmp);
+  if (dry) weather.push(stop('dry', { season: dry.season, marksBase: null, dryLens: true, growStagger: 0, camera: 'overview', noFocus: true }));
   const out = [stop('intro', { view: 'current', marksBase: null, growStagger: 0 })];
-  if (isGoodFit(cmp)) return [...out, stop('goodFit'), stop('yourTurn', { view: 'mix' })];
+  if (isGoodFit(cmp)) return [...out, stop('goodFit'), ...weather, stop('yourTurn', { view: 'mix' })];
   out.push(stop('flip', { growStagger: 0.12 }));
   const g = gainField(cmp);
   if (g) out.push(stop('gain', { fieldId: g.id, season: firstCropChange(cmp, g.id), camera: 'field' }));
@@ -485,6 +546,7 @@ export function reelStops(cmp) {
   if (lose) out.push(stop('giveUp', { fieldId: lose.id, season: 2, camera: 'field' }));
   if (!samePlans(cmp, 'maxProfit', 'priority')) out.push(stop('vsProfit', { view: 'maxProfit', marksBase: 'priority' }));
   out.push(stop('why', { camera: 'none', growStagger: 0 }));
+  out.push(...weather);
   out.push(stop('watch', { season: watchSeason(cmp) }));
   out.push(stop('yourTurn', { view: 'mix' }));
   return out;

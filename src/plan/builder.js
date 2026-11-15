@@ -8,7 +8,7 @@ import { checkPlacement } from '../vendor/rotation-maxxing/algorithm/placement.t
 import { prepareFarm } from '../vendor/rotation-maxxing/algorithm/geometry.ts';
 
 export const SEASONS = 3;
-export const LENS_LABEL = { nitrogen: 'Nitrogen', pest: 'Pests', water: 'Water', erosion: 'Erosion', repeat: 'Repeat', shade: 'Shade', market: 'Market', land: 'Land' };
+export const LENS_LABEL = { nitrogen: 'Nitrogen', pest: 'Pests', water: 'Water', erosion: 'Erosion', repeat: 'Repeat', shade: 'Shade', market: 'Market', land: 'Land', frost: 'Frost' };
 export const SEVERITY_LABEL = { 1: 'Note', 2: 'Careful', 3: 'Avoid' };
 
 /** A plan with every season empty. */
