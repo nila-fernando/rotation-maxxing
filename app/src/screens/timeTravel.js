@@ -19,6 +19,8 @@ import { createSeasons } from '../island/seasons.js';
 import { createThemes, THEME_NAMES, THEMES } from '../island/themes/index.js';
 import { createPlayback, frostLook, nowState, occasionOn, occasionState, seasonAt, SEASON_NAMES, SEASONS, seasonState, staticState } from '../island/timeline.js';
 import { SEASON_ICONS } from '../ui/season.js';
+import { blendFor } from '../island/weather.js';
+import { createWeatherRow } from './weatherRow.js';
 
 const ICONS = {
   ...SEASON_ICONS,
@@ -80,7 +82,7 @@ export function createTimeTravel({ hub, onYear } = {}) {
     bar.hidden = true;
   }
 
-  function start(island, { history, today = new Date(), hour = null, liveDate = false }) {
+  function start(island, { history, today = new Date(), hour = null, liveDate = false, weather = null }) {
     const { view } = island;
     const offs = [];
     const years = [...new Set([...history.values()].flatMap((h) => h.map((x) => x.year)))].sort((a, b) => a - b);
@@ -109,6 +111,12 @@ export function createTimeTravel({ hub, onYear } = {}) {
     // the festival themes: the whole farm dressed up (built the first time each is wanted)
     const themes = createThemes(view, { attach: (o) => seasons.attach(o) });
     offs.push(() => themes.dispose());
+    // the farm's weather (src/island/weatherState.js: live, or a look picked to preview), mixed in on
+    // top of the season, festival and time of day
+    if (weather) {
+      seasons.setWeather(blendFor(weather.state), { instant: reduced() });
+      offs.push(weather.subscribe((s) => { seasons.setWeather(blendFor(s), { instant: reduced() }); paintDay(true); }));
+    }
 
     // ---------------------------------------------------------------- the bar
     yearsEl.replaceChildren(...[...years, 'now'].map((y) => {
@@ -404,16 +412,20 @@ export function createTimeTravel({ hub, onYear } = {}) {
     };
     const THEME_LABEL = { auto: 'By date', none: 'None', ...THEME_NAMES };
     dayThemes.innerHTML = ['auto', 'none', ...THEMES].map((k) => `<button type="button" role="radio" class="daypop__theme" data-theme="${k}" aria-checked="false" tabindex="-1">${THEME_ICON[k]}<span>${THEME_LABEL[k]}</span></button>`).join('');
+    // the weather: Live (the default) or a look to preview (src/screens/weatherRow.js)
+    const weatherRow = weather ? createWeatherRow({ el: $('dayWeather'), credit: $('dayWeatherCredit'), weather, onPick: () => paintDay(true) }) : null;
+    offs.push(() => weatherRow?.dispose());
     function paintDay(force = false) {
       const info = dayNight.info;
       const time = formatHour(dayNight.hour);
       const icon = dayIconFor(info);
       const how = dayNight.mode;
       const shownSeason = current?.season || null;
-      const real = how === 'live' && !seasonPick && themePick === 'auto';
+      const real = how === 'live' && !seasonPick && themePick === 'auto' && !weather?.state.picked;
       if (force || dayShown.icon !== icon) { dayShown.icon = icon; dayBtn.innerHTML = DAY_ICONS[icon]; $('dayIcon').innerHTML = DAY_ICONS[icon]; }
       if (force || dayShown.time !== time || dayShown.how !== how || dayShown.part !== info.part || dayShown.season !== shownSeason || dayShown.real !== real || dayShown.theme !== themePick) {
         Object.assign(dayShown, { time, how, part: info.part, season: shownSeason, real, theme: themePick });
+        weatherRow?.paint();
         // the themes: which is picked, and what "By date" means today
         const byDate = occasionOn(today);
         for (const b of dayThemes.children) {
@@ -460,6 +472,7 @@ export function createTimeTravel({ hub, onYear } = {}) {
     const onDayRun = () => { dayNight.setMode(dayNight.mode === 'play' ? 'hold' : 'play'); paintDay(true); };
     const onDayNow = () => {
       dayNight.setMode('live');
+      weather?.pick(null); // (the real weather again too)
       if (seasonPick || themePick !== 'auto') { seasonPick = null; themePick = 'auto'; reshow(); }
       paintDay(true);
       dayRun.focus({ preventScroll: true }); // (this button just turned itself off)
@@ -558,10 +571,10 @@ export function createTimeTravel({ hub, onYear } = {}) {
       themes.update(live ? dt : 0, time, { night: dayNight.info.night });
       seasons.update(live ? dt : 0, time);
       decor.update(live ? dt : 0, time);
-      // the windmill's sails turn in the breeze (a touch faster in the windy months; not at all
-      // when motion is reduced)
+      // the windmill's sails turn in the breeze (a touch faster in the windy months, and with the
+      // weather's wind; not at all when motion is reduced)
       if (live && view.spinners?.length && !reducedNow) {
-        const wind = current?.season === 'winter' || current?.season === 'fall' ? 0.85 : 0.6;
+        const wind = (current?.season === 'winter' || current?.season === 'fall' ? 0.85 : 0.6) * (1 + 2.6 * seasons.wind);
         for (const b of view.spinners) b.rotation.z += dt * wind;
       }
       paintDay();

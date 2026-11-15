@@ -42,6 +42,9 @@ import { warmUpLiveOutlines } from './fields/liveOutlines.js';
 import { createAmbience } from './audio/ambience.js';
 import { sceneOf } from './audio/mix.js';
 import { bindSoundToggle } from './audio/soundToggle.js';
+import { weatherLine, weatherParam } from './island/weather.js';
+import { farmWeather } from './island/weatherState.js';
+import { startWeatherFeed } from './services/weatherFeed.js';
 
 const $ = (id) => document.getElementById(id);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -509,6 +512,54 @@ function noCropsParam() {
   return [...new Set((params.get('nocrops') || '').split(',').map((k) => k.trim().toLowerCase()))].filter((k) => keys.has(k));
 }
 
+// ---------------------------------------------------------------- the farm's weather
+// The real weather at the farm (src/services/weatherFeed.js, every 20 minutes) shows on the island
+// (through farmWeather, src/island/weatherState.js, which the island and anything else can follow).
+// ?weather=rain|snow|storm|fog|clear|cloudy|wind previews a look instead (the popover's Weather row
+// can go back to Live). Offline, the farm just has fair weather.
+let weatherFeed = null;
+let weatherSaid = false; // Manami mentions the live weather once
+let weatherSayAt = 0;
+let weatherRetry = 0;
+if (weatherParam(params.get('weather'))) farmWeather.pick(weatherParam(params.get('weather')));
+
+/** Where the farm is: the place it was found at, or the middle of its fields. */
+function farmPlace() {
+  if (Number.isFinite(app.farm?.lat) && Number.isFinite(app.farm?.lon)) return { lat: app.farm.lat, lon: app.farm.lon };
+  const ring = (g) => (g?.type === 'MultiPolygon' ? g.coordinates?.[0]?.[0] : g?.coordinates?.[0]) || [];
+  const pts = app.fields.flatMap((f) => ring(f.geometry)).filter((p) => Number.isFinite(p?.[0]) && Number.isFinite(p?.[1]));
+  if (!pts.length) return null;
+  return { lat: pts.reduce((a, p) => a + p[1], 0) / pts.length, lon: pts.reduce((a, p) => a + p[0], 0) / pts.length };
+}
+
+function startWeather() {
+  stopWeather();
+  weatherSayAt = Date.now() + 9000; // (after her hello on the island has been read)
+  weatherFeed = startWeatherFeed({ place: farmPlace, onReading: (r) => farmWeather.setLive(r) });
+}
+function stopWeather() {
+  weatherFeed?.stop();
+  weatherFeed = null;
+  farmWeather.setLive(null);
+  clearTimeout(weatherRetry);
+}
+
+/** "It's raining at your farm right now, so it's raining here too." Once, when she's free to say it. */
+function sayWeather() {
+  clearTimeout(weatherRetry);
+  const s = farmWeather.state;
+  const line = s.source === 'live' ? weatherLine(s.look) : null;
+  if (weatherSaid || !line || !app.island || !weatherFeed) return;
+  const busy = Date.now() < weatherSayAt || document.hidden
+    || !manami.el.querySelector('.manami__actions')?.hidden // she's asking something
+    || document.body.classList.contains('plans-open') || document.body.classList.contains('checkup-open')
+    || jarInert.size > 0 || planFutures?.active || islandPlanner.active || timeTravel.session?.mode === 'playing';
+  if (busy) { weatherRetry = setTimeout(sayWeather, 8000); return; }
+  weatherSaid = true;
+  manami.say(line);
+}
+farmWeather.subscribe(sayWeather);
+
 /** Today, or ?today=2026-12-24 to preview a season or holiday (dev and demos). */
 function today() {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(params.get('today') || '');
@@ -524,7 +575,8 @@ const reveal = createReveal({
     hub.show(island); // the farm's home screen from here on
     paintStatuses();
     startJars(island); // each field's soil jar test, by its gate
-    timeTravel.show(island, { history: cropHistories(), today: today(), hour: hourParam(), liveDate: !params.has('today') });
+    startWeather();
+    timeTravel.show(island, { history: cropHistories(), today: today(), hour: hourParam(), liveDate: !params.has('today'), weather: farmWeather });
     // the farm's sounds follow the time of day, the season and the festival (after the first tap)
     ambience.attach({ getScene: () => sceneOf(timeTravel.session), hasWindmill: () => !!island.view.spinners?.length });
     farmSpins?.dispose();
@@ -625,6 +677,7 @@ function handle(event) {
       jarPanel.close({ restore: false });
       stopJars();
       jarSession.clear();
+      stopWeather();
       app.farm = null;
       app.fields = [];
       app.farmProfile = null;
@@ -674,7 +727,7 @@ function testFields(n) {
   return out;
 }
 
-if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, jarPanel, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now(), ambience }; // for poking at in the console
+if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, jarPanel, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now(), ambience, weather: farmWeather }; // for poking at in the console
 
 // ---------------------------------------------------------------- the first five seconds
 (async function intro() {

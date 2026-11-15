@@ -166,7 +166,7 @@
       <button class="timebar__play" id="timePlay" type="button" aria-label="Play the farm through the years"></button>
       <div class="timebar__daywrap">
         <button class="timebar__day" id="timeDay" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="dayPop" aria-label="Time of day"></button>
-        <div class="daypop" id="dayPop" role="dialog" aria-label="Time of day, season and festival theme" hidden>
+        <div class="daypop" id="dayPop" role="dialog" aria-label="Time of day, season, festival theme and weather" hidden>
           <div class="daypop__head">
             <span class="daypop__icon" id="dayIcon" aria-hidden="true"></span>
             <p><b id="dayTime"></b><span id="dayPart"></span></p>
@@ -177,6 +177,9 @@
           <div class="daypop__seasons" id="daySeasons" role="radiogroup" aria-labelledby="daySeasonsLabel"></div>
           <p class="daypop__label" id="dayThemesLabel">Festival theme</p>
           <div class="daypop__themes" id="dayThemes" role="radiogroup" aria-labelledby="dayThemesLabel"></div>
+          <p class="daypop__label" id="dayWeatherLabel">Weather</p>
+          <div class="daypop__themes" id="dayWeather" role="radiogroup" aria-labelledby="dayWeatherLabel"></div>
+          <p class="daypop__credit" id="dayWeatherCredit"></p>
           <div class="daypop__row">
             <button class="btn btn--quiet btn--small" id="dayRun" type="button">Play the day</button>
             <button class="btn btn--quiet btn--small" id="dayNow" type="button">Back to today</button>
