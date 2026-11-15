@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **Plans use your farm's own market data.** The crops to choose from are the ones grown in your
+  county (USDA Census of Agriculture and NASS county surveys), yields are NASS county, state or US
+  averages (dryland or irrigated where NASS splits them), and prices are your state's latest NASS
+  marketing-year prices. "Good to know" lists every source, and says per-acre costs are US
+  figures, not local. Before, every farm was planned with the demo farm's Iowa prices and crop list.
+- **No data, no plans.** If the county or USDA NASS can't be reached, the plans say so plainly
+  instead of planning on stand-in numbers.
+- **NASS through the proxy.** The Cloudflare Worker in `proxy/cropscape/` now also serves
+  `/nass/` with the Quick Stats key as a Worker secret; set `VITE_NASS_PROXY` to turn it on for the
+  live site. Locally, `NASS_API_KEY` in the environment or `app/.env.local`.
+
 ## v0.10.0 (2026-11-15)
 
 The first release on the web: https://nila-fernando.github.io/rotation-maxxing/
