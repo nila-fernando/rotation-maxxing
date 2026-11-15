@@ -313,6 +313,9 @@ export function createReveal({ map, manami, onDone }) {
     const lamps = placeLamps({ terrain, plan, obstacles, addProp, fieldGroups, shore, dockAt, scale: PROP_SCALE });
 
     const swimmers = [];
+    // a whale out at sea (src/island/seaLife.js) sets keepOut(x, z) while it's up: the swimmers pick
+    // their next paddle round it
+    const seaGate = { keepOut: null };
     // the land sheep wander about, never through fields, fences, buildings, trees, rocks or each other
     const flock = createFlock({
       heightAt: terrain.heightAt,
@@ -332,7 +335,7 @@ export function createReveal({ map, manami, onDone }) {
         fisher.rotation.y = seat.ry;
         boat.add(fisher);
       }
-      swimmers.push(...makeSwimmers(island, tpl, terrain, seed, dockAt ? [dockAt, boatAt] : []));
+      swimmers.push(...makeSwimmers(island, tpl, terrain, seed, dockAt ? [dockAt, boatAt] : [], seaGate));
       return placeSheep(island, tpl, plan, terrain, flock);
     }).catch(() => []);
 
@@ -518,6 +521,9 @@ export function createReveal({ map, manami, onDone }) {
         lamps, // [{ glass, halo, pool, light, at }] for the day-night cycle
         spinners, // windmill sails: turn them with .rotation.z
         props, // the placed props, for the festival themes: [{ key, x, z, r, ry, scale, height, y }]
+        // what's out on the water, for the sea animals to keep clear of (src/island/seaLife.js):
+        // the dock (its landward end, and the way it points out to sea), the rowboat, the two swimmers
+        sea: { dockAt, dockOut: shore ? [Math.cos(shore.th), Math.sin(shore.th)] : null, boatAt, swimmers, gate: seaGate },
         seed,
         /** Runs fn(dt) every frame before the island is drawn; returns a remover. */
         onFrame(fn) { frameHooks.add(fn); return () => frameHooks.delete(fn); },
@@ -845,7 +851,7 @@ function placeLamps({ terrain, plan, obstacles, addProp, fieldGroups, shore, doc
  * Two sheep swimming in the sea, like the prototype: each pops up at a spot a little offshore,
  * paddles along, dives with a ripple ring, then turns up somewhere else. update(t) moves them.
  */
-function makeSwimmers(island, template, terrain, seed, avoid = []) {
+function makeSwimmers(island, template, terrain, seed, avoid = [], gate = null) {
   const f = terrain.field;
   if (!f?.shoreR) return [];
   const [cx, cz] = f.center;
@@ -868,6 +874,7 @@ function makeSwimmers(island, template, terrain, seed, avoid = []) {
         const x = st.x + Math.cos(st.dir) * d, z = st.z + Math.sin(st.dir) * d;
         if (terrain.heightAt(x, z) > -0.3) return false;
         if (avoid.some(([ax, az]) => Math.hypot(x - ax, z - az) < 2.2)) return false;
+        if (gate?.keepOut?.(x, z)) return false;
         if (out.some((o) => o !== self && o.near?.(x, z, 1.0))) return false;
       }
       return true;
@@ -891,6 +898,8 @@ function makeSwimmers(island, template, terrain, seed, avoid = []) {
     self = {
       g,
       near: (x, z, r) => g.visible && Math.hypot(g.position.x - x, g.position.z - z) < r,
+      /** The paddle it's on now (or about to come up for), start to end: the fish keep out of its way. */
+      route: () => ({ ax: st.x, az: st.z, bx: st.x + Math.cos(st.dir) * st.dur * 0.13, bz: st.z + Math.sin(st.dir) * st.dur * 0.13 }),
       update(t) {
         let lt = t - st.t0;
         if (lt > st.dur + 1.8) { st.t0 = t; choose(); lt = 0; }

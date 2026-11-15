@@ -25,6 +25,7 @@ import { JAR_LINES } from './plan/jarTest.js';
 import { fieldWeatherNote, weatherKey } from './plan/weatherWords.js';
 import { plannerFarm } from './plan/farmInput.js';
 import { createJars, jarKeepOuts } from './island/jarProps.js';
+import { createSeaLife } from './island/seaLife.js';
 import { createCheckIn, CROPS } from './screens/checkin.js';
 import { createFieldPanel } from './screens/fieldPanel.js';
 import { createJarPanel } from './screens/jarPanel.js';
@@ -581,6 +582,9 @@ const reveal = createReveal({
     ambience.attach({ getScene: () => sceneOf(timeTravel.session), hasWindmill: () => !!island.view.spinners?.length });
     farmSpins?.dispose();
     farmSpins = createFarmSpins(island.view); // now and then Manami turns on the spot: "When they see me rotate…"
+    seaLife?.dispose();
+    // an orca, dolphins and fish round the island, and now and then a whale (dev: ?whale=1 brings it)
+    seaLife = createSeaLife(island.view, { manami, date: today(), whaleNow: import.meta.env.DEV && params.has('whale') });
     // dev shortcut: ?hub=5&futures=1 opens the plans on the island with Manami's walk, &futures=explore without
     if (import.meta.env.DEV && params.has('futures') && !app.futuresShown) {
       app.futuresShown = true;
@@ -590,6 +594,7 @@ const reveal = createReveal({
 });
 
 let farmSpins = null;
+let seaLife = null;
 // the island's ambient sound, and its switch on the top bar (src/audio/)
 const ambience = createAmbience();
 bindSoundToggle($('hubSound'), ambience);
@@ -597,6 +602,8 @@ bindSoundToggle($('hubSound'), ambience);
 function startReveal({ instant = false } = {}) {
   farmSpins?.dispose();
   farmSpins = null;
+  seaLife?.dispose();
+  seaLife = null;
   jarPanel.close({ restore: false });
   stopJars();
   jarSession.clear();
@@ -674,6 +681,8 @@ function handle(event) {
     case 'returned':
       farmSpins?.dispose();
       farmSpins = null;
+      seaLife?.dispose();
+      seaLife = null;
       jarPanel.close({ restore: false });
       stopJars();
       jarSession.clear();
@@ -727,7 +736,7 @@ function testFields(n) {
   return out;
 }
 
-if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, jarPanel, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now(), ambience, weather: farmWeather }; // for poking at in the console
+if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, jarPanel, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now(), ambience, weather: farmWeather, whale: () => seaLife?.whale(), seaLife: () => seaLife }; // for poking at in the console
 
 // ---------------------------------------------------------------- the first five seconds
 (async function intro() {
