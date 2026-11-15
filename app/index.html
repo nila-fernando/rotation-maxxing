@@ -167,6 +167,11 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Show the whole farm
       </button>
+      <!-- how the last season went (src/screens/seasonCheckin.js): shown once a season's harvest is in -->
+      <button class="btn btn--quiet btn--small hub-panel__jar hub-panel__season" id="hubSeason" type="button" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 20h16"/><path d="M8 20v-6M12 20V9M16 20v-9"/><path d="M8 14c-2.2 0-3.4-1.4-3.4-3.4 2.2 0 3.4 1.4 3.4 3.4zM12 9c0-2.4 1.5-4 3.8-4 0 2.4-1.5 4-3.8 4zM16 11c2.2 0 3.4-1.4 3.4-3.4-2.2 0-3.4 1.4-3.4 3.4z" fill="currentColor" fill-opacity=".2"/></svg>
+        <span id="hubSeasonText">How did the season go?</span>
+      </button>
       <button class="btn btn--quiet btn--small hub-panel__jar" id="hubJar" type="button">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8.5 3h7v3h-7z"/><path d="M7 6h10a1 1 0 0 1 1 1v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7a1 1 0 0 1 1-1z"/><path d="M6.5 13.5h11M6.5 17h11"/><path d="M6.5 17h11v2a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2z" fill="currentColor" fill-opacity=".2" stroke="none"/></svg>
         <span>Test your soil</span>
@@ -284,6 +289,18 @@
   </section>
 
   <!-- the soil jar test: a photo of a settled jar -> sand, silt and clay for a field (src/screens/jarPanel.js) -->
+  <section class="season" id="season" role="dialog" aria-labelledby="seasonTitle" hidden>
+    <header class="season__head">
+      <div class="season__heading"><p class="season__kicker">Season check-in</p><h2 class="season__title" id="seasonTitle" tabindex="-1">How did the season go?</h2></div>
+      <div class="season__years" id="seasonYears" role="radiogroup" aria-label="Season"></div>
+      <button class="checkup__close" id="seasonClose" type="button" aria-label="Close the season check-in">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg>
+      </button>
+    </header>
+    <div class="season__body" id="seasonBody"></div>
+    <footer class="season__foot" id="seasonFoot"></footer>
+    <p class="sr-only" id="seasonLive" aria-live="polite"></p>
+  </section>
   <section class="jar" id="jar" role="dialog" aria-labelledby="jarTitle" hidden>
     <header class="jar__head">
       <div class="jar__heading"><p class="jar__kicker">Jar test</p><h2 class="jar__title" id="jarTitle" tabindex="-1">Test your soil</h2></div>
