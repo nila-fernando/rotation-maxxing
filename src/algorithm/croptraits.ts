@@ -1023,6 +1023,18 @@ export const WHEAT_FREEZE_INJURY: Record<WheatStage, { injuriousF: number; sympt
 };
 
 /**
+ * Freeze events are counted from spring green-up only. C646 Table 1 covers
+ * SPRING growth stages; C646 (p. 5): "Spring tillering of wheat in Kansas
+ * usually begins during late February and continues through March." The
+ * 1 March start is DERIVED from that wording (the first full spring date it
+ * supports). Applying Table 1 to dormant winter wheat was outside the source's
+ * scope; this was found during validation (Nov 2026), and fixed as a scope
+ * correction, not tuning: thresholds and damage ranges were not changed.
+ * Growing degrees still accumulate from 1 January for staging.
+ */
+export const FREEZE_COUNT_FROM_MMDD = { value: '03-01', source: 'ksuC646' as SourceId, basis: 'derived' } as const;
+
+/**
  * UNSOURCED DESIGN VALUES: yield factor ranges for C646's qualitative yield
  * effects, chosen before the backtest was re-run. Midpoints are used in the
  * deterministic search; Monte Carlo samples uniformly within the range.

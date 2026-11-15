@@ -9,16 +9,19 @@ import { meanScenario } from '../yieldModel';
 import type { DailyWeather, Farm } from '../types';
 import { gridFarm, land, NEUTRAL } from './fixtures';
 
-/** Synthetic spring: 15 C days (27 F growing degrees each), with one cold night on `coldDay` (0-based from 1 Jan). */
-function spring(coldDay: number, tminC: number): DailyWeather {
+/**
+ * Synthetic year from 1 Jan: daily max/min of 10/0 C (41 F mean -> 9 growing degrees/day),
+ * with cold nights at the given day indexes (0 = 1 Jan).
+ */
+function spring(cold: Record<number, number>): DailyWeather {
   const dates: string[] = [];
   const d0 = Date.UTC(2007, 0, 1);
   for (let i = 0; i < 212; i++) dates.push(new Date(d0 + i * 86_400_000).toISOString().slice(0, 10));
   const n = dates.length;
   return {
     dates,
-    tmaxC: Array(n).fill(20),
-    tminC: dates.map((_, i) => (i === coldDay ? tminC : 10)),
+    tmaxC: Array(n).fill(10),
+    tminC: dates.map((_, i) => cold[i] ?? 0),
     rainMm: Array(n).fill(1), solarMJ: Array(n).fill(18), rhPct: Array(n).fill(60), wind2m: Array(n).fill(2),
     latitude: 38.78, elevationM: 400, source: 'test',
   };
@@ -35,13 +38,20 @@ describe('wheat freeze injury (K-State C646 + Mesonet GDD)', () => {
     expect(WHEAT_FREEZE_INJURY.jointing.injuriousF).toBe(24);
   });
 
-  it('flags a night below the stage threshold, and not one above it', () => {
-    // 59 F mean -> 27 growing degrees/day; day 35 has ~945 GDD -> jointing (24 F).
-    const hit = springFreeze(spring(35, -8.3), 2007)!; // 17 F
-    expect(hit.worst).toMatchObject({ stage: 'jointing', effect: 'moderate to severe' });
-    expect(springFreeze(spring(35, -3), 2007)!.worst).toBeNull(); // 27 F > 24 F
-    // Same cold at tillering (day 10, ~270 GDD; threshold 12 F) does no damage.
-    expect(springFreeze(spring(10, -8.3), 2007)!.worst).toBeNull();
+  it('flags a spring night below the stage threshold, and not one above it', () => {
+    // ~9 GDD/day: day 96 (7 Apr) has ~860 GDD -> jointing (24 F).
+    const hit = springFreeze(spring({ 96: -8.3 }), 2007)!; // 17 F
+    expect(hit.worst).toMatchObject({ stage: 'jointing', effect: 'moderate to severe', date: '2007-04-07' });
+    expect(springFreeze(spring({ 96: -3 }), 2007)!.worst).toBeNull(); // 27 F > 24 F
+    // The same 17 F during spring tillering (6 Mar, ~580 GDD; threshold 12 F) does no damage.
+    expect(springFreeze(spring({ 64: -8.3 }), 2007)!.worst).toBeNull();
+  });
+
+  it('ignores dormant-season cold before spring green-up (C646 covers spring stages; counted from 1 March)', () => {
+    // -4 F in January and February: below the 12 F tillering threshold, but the wheat is dormant.
+    expect(springFreeze(spring({ 10: -20, 40: -20 }), 2007)!.worst).toBeNull();
+    // The same cold on 5 March counts (spring tillering).
+    expect(springFreeze(spring({ 63: -20 }), 2007)!.worst).toMatchObject({ stage: 'tillering', date: '2007-03-05' });
   });
 
   it('uses the design ranges: midpoint for the search, draws within the range', () => {

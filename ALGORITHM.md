@@ -461,7 +461,7 @@ Without a key it lists the model's worst years. 2012 is the worst for every coun
 growing degrees (F) = max(0, (Tmax + Tmin)/2 − 32), summed from 1 January       Kansas Mesonet formula
 stage               = < 800 tillering | 800–1200 jointing | 1200–1400 boot | 1400–1600 heading |
                       1600–2000 flowering | 2000–2400 milk | 2400–2800 dough | ≥ 2800 mature
-freeze event        = a night with NASA POWER Tmin ≤ the C646 injurious temperature for the stage:
+freeze event        = a night ON OR AFTER 1 MARCH with NASA POWER Tmin ≤ the C646 injurious temperature for the stage:
                       tillering 12 F, jointing 24, boot 28, heading 30, flowering 30, milk 28, dough 28
 season damage       = the worst event's C646 yield effect → design range:
                       slight-to-moderate U(0.80, 1.00), moderate-to-severe U(0.50, 0.85), severe U(0.20, 0.60)
@@ -473,6 +473,10 @@ season damage       = the worst event's C646 yield effect → design range:
 - The damage ranges are **unsourced design values**, chosen before validation. Midpoints are used in the search; Monte Carlo draws within the range with common random numbers.
 - Assigning each overlapping Mesonet stage band to one C646 stage is a design choice.
 - The 1 January start is an **assumption**. The Mesonet page doesn't state it, but it's corroborated: Tribune KS 2026 has a Mesonet season total of 4,346 F, and NASA POWER from 1 January to 30 June gives 4,443 F.
+
+**Scope fix: freezes count from spring green-up (1 March).** C646 Table 1 covers *spring* growth stages. C646 (p. 5) says: "Spring tillering of wheat in Kansas usually begins during late February and continues through March." The first version counted freezes from 1 January, so it applied spring thresholds to dormant, cold-hardened winter wheat. That was outside the source's scope.
+
+The flaw was found during validation: 20 false alarms per county, nearly all January–February nights below 12 F. It was fixed by counting events from 1 March, a date derived from C646's wording. This is a scope correction, not tuning: the thresholds and damage ranges were not changed. Growing degrees still accumulate from 1 January for staging.
 
 **Limits:**
 - the daily minimum temperature is for a ~50 km grid cell

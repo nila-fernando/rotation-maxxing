@@ -4,7 +4,8 @@
  *   growing degrees (F) = max(0, (Tmax + Tmin)/2 - 32), summed from 1 January
  *                                                  (Kansas Mesonet formula; start date: assumption)
  *   stage               = WHEAT_GDD_STAGES band (design mapping of the Mesonet legend)
- *   freeze event        = a day with NASA POWER Tmin <= the C646 injurious temperature for that stage
+ *   freeze event        = a day ON OR AFTER 1 MARCH (spring green-up, derived from C646's wording)
+ *                         with NASA POWER Tmin <= the C646 injurious temperature for that stage
  *   season damage       = the worst event's C646 yield effect -> FREEZE_DAMAGE_FACTORS range
  *                         (unsourced design values: midpoint in the search, sampled in Monte Carlo)
  *
@@ -13,6 +14,7 @@
  * of exposure, which daily data can't resolve; snow cover isn't modelled.
  */
 import {
+  FREEZE_COUNT_FROM_MMDD,
   FREEZE_DAMAGE_FACTORS,
   WHEAT_FREEZE_INJURY,
   WHEAT_GDD_STAGES,
@@ -55,7 +57,8 @@ export function springFreeze(w: DailyWeather, harvestYear: number): { events: Fr
     if (stage === 'mature') break;
     const tminF = toF(w.tminC[i]!);
     const t = WHEAT_FREEZE_INJURY[stage];
-    if (tminF <= t.injuriousF) {
+    // C646 thresholds apply to spring growth stages only (after green-up).
+    if (tminF <= t.injuriousF && w.dates[i]!.slice(5) >= FREEZE_COUNT_FROM_MMDD.value) {
       events.push({ date: w.dates[i]!, stage, tminF, thresholdF: t.injuriousF, gddF: gdd, effect: t.yieldEffect });
     }
     gdd += Math.max(0, (toF(w.tmaxC[i]!) + tminF) / 2 - 32);
