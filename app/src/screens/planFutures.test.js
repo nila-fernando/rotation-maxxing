@@ -9,7 +9,10 @@ import { LENS_ICONS } from '../ui/futureIcons.js';
 // planFutures.js touches the DOM only inside createPlanFutures; these are plain functions
 globalThis.document ??= { getElementById: () => null };
 globalThis.matchMedia ??= () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
-const { keysFor, cellsFor, changedIds, overlaps, declutter, focusHome, chipHtml, seasonYearHtml, frostRowWords, dryRowWords, VIEWS } = await import('./planFutures.js');
+const { keysFor, cellsFor, changedIds, overlaps, declutter, focusHome, chipHtml, seasonYearHtml, frostRowWords, dryRowWords, tilesFor, VIEWS, ROTATION_TILES, MONEY_TILES } = await import('./planFutures.js');
+const { tiles } = await import('../plan/compareFutures.js');
+const { rotationOf, rotationTiles } = await import('../plan/rotationStory.js');
+const { LINK_ICONS } = await import('../ui/rotationIcons.js');
 
 describe('the plans on the island (demo farm)', () => {
   let cmp;
@@ -167,10 +170,72 @@ describe('spring freezes on the chips, the season radios and the card (wheat dem
   it('keeps the chip as it was where there is no freeze or drop', () => {
     const s = { crop: 'corn', cover: null, worst: 1 };
     const html = chipHtml({ s, total: 81234, diff: -2400, showDiff: true });
-    assert.ok(html.startsWith('<span class="fut-chip__crop plan-crop">'));
+    assert.ok(html.startsWith('<span class="fut-chip__crop plan-crop fut-chip__crop--sm" aria-hidden="true" data-crop-tip="Corn">'));
     assert.ok(html.includes('<span class="fut-chip__diff is-down">−'));
     assert.ok(html.endsWith('<span class="fut-chip__dot sev-1"></span>'));
     assert.ok(!/fut-chip__(frost|dry)/.test(html));
     assert.ok(!/fut-chip__diff/.test(chipHtml({ s, total: 81234, diff: 0 })));
+  });
+});
+
+describe('rotation first on the farm: chips and tiles with the money off', () => {
+  let cmp;
+  before(() => { cmp = compareFutures(demoData(['profit']), { startYear: START_YEAR }); });
+
+  it('a rotation chip shows the crop, the link sign and what it follows, and no cash', () => {
+    const s = { crop: 'corn', cover: null, worst: 2 };
+    const html = chipHtml({ s, total: 81234, diff: 2400, showDiff: true, mode: 'rotation', link: { kind: 'nitrogen', prev: 'soybeans', nLb: 35 } });
+    assert.ok(html.startsWith('<span class="fut-chip__crop plan-crop fut-chip__crop--sm" aria-hidden="true" data-crop-tip="Corn">'));
+    assert.ok(html.includes(`<span class="fut-chip__link fut-chip__link--nitrogen" aria-hidden="true">${LINK_ICONS.nitrogen}</span>`));
+    assert.ok(html.includes('<span class="fut-chip__after">after beans</span>'));
+    assert.ok(html.endsWith('<span class="fut-chip__dot sev-2"></span>'));
+    assert.ok(!/\$|fut-chip__cash|fut-chip__diff/.test(html), 'no money');
+    const again = chipHtml({ s, total: 1, diff: 0, mode: 'rotation', link: { kind: 'repeat', prev: 'corn' } });
+    assert.ok(again.includes(LINK_ICONS.repeat));
+    assert.ok(again.includes('>corn again<'));
+    // no link known: just the crop
+    assert.equal(chipHtml({ s: { crop: 'soybeans' }, total: 1, diff: 0, mode: 'rotation' }), chipHtml({ s: { crop: 'soybeans' }, total: 1, diff: 0, mode: 'rotation', link: null }));
+    assert.ok(!/fut-chip__link|fut-chip__after/.test(chipHtml({ s: { crop: 'soybeans' }, total: 1, diff: 0, mode: 'rotation' })));
+  });
+
+  it('keeps the frost and the drop on a rotation chip', () => {
+    const s = { crop: 'winter-wheat', cover: null, worst: 0, freeze: { sev: 2 } };
+    const html = chipHtml({ s, total: 1, diff: 0, dry: true, mode: 'rotation', link: { kind: 'break', prev: 'soybeans' } });
+    assert.ok(html.includes(`<span class="fut-chip__frost" aria-hidden="true">${LENS_ICONS.frost}</span>`));
+    assert.ok(html.includes('fut-chip__dry'));
+  });
+
+  it('the money chip is as it was, inside the new badge', () => {
+    const s = { crop: 'corn', cover: 'cereal-rye', worst: 0 };
+    const html = chipHtml({ s, total: 81234, diff: 2400, showDiff: true });
+    assert.ok(html.includes('data-crop-tip="Corn + cereal rye cover"'));
+    assert.ok(html.includes('<span class="plan-crop__cover" aria-hidden="true"></span></span><span class="fut-chip__cash">$81k</span><span class="fut-chip__diff is-up">+$2k</span>'), html);
+    assert.equal(chipHtml({ s, total: 81234, diff: 2400, showDiff: true, mode: 'money', link: { kind: 'repeat', prev: 'corn' } }), html, 'the link is the rotation chip’s only');
+  });
+
+  it('the demo’s chips follow each field’s link (Manami’s pick, 2028: corn after beans on Home place)', () => {
+    const rot = rotationOf(cmp, 'priority');
+    const f1 = rot.fields.find((f) => f.id === 'f1');
+    const e = viewField(cmp, 'f1', 'priority', {});
+    const html = chipHtml({ s: e.seasons[1], total: e.total, diff: 0, mode: 'rotation', link: f1.seasons[1].link });
+    assert.ok(html.includes(LINK_ICONS.nitrogen));
+    assert.ok(html.includes('after beans'));
+  });
+
+  it('uses the rotation tiles while the money is off, and the money tiles while it is on', () => {
+    for (const view of ['current', 'maxProfit', 'priority']) {
+      const off = tilesFor(cmp, view, null, {}, false);
+      assert.deepEqual(off.map((t) => t.key), ROTATION_TILES);
+      assert.deepEqual(off, rotationTiles(cmp, view, null, {}));
+      const on = tilesFor(cmp, view, null, {}, true);
+      assert.deepEqual(on.map((t) => t.key), MONEY_TILES);
+      assert.deepEqual(on, tiles(cmp, view, null, {}));
+    }
+    assert.deepEqual(tilesFor(cmp, 'priority', null, {}).map((t) => t.key), ROTATION_TILES, 'off by default');
+    // the pick: 2 repeats against keeping going's 9, 6 nitrogen handoffs against 3
+    const [rep, hand, soil, cash] = tilesFor(cmp, 'priority', null, {}, false);
+    assert.deepEqual([rep.value, rep.base, hand.value, hand.base], [2, 9, 6, 3]);
+    assert.equal(soil.value, cmp.totals.priority.endSoil100);
+    assert.equal(cash.value, cmp.totals.priority.expectedGM);
   });
 });

@@ -5,10 +5,13 @@
 //             season (2027, 2028, 2029, with the farm's cash in each), 4 score tiles, what a coin is
 //             worth, and Fields, Why and watch out, Back to the plans, Use …
 //   island    the plan's crops for the season; fields that change get green outlines and grow back in;
-//             a coin stack over each field is its 3-season cash (bright gold: more than keeping going);
-//             a chip over each field says the money and has a dot for anything to watch, and a
-//             snowflake where a spring freeze can hurt the wheat (the walk's frost stop and the card's
-//             peek outline those fields ice blue, under a light rime: src/plan/futureMarks.js)
+//             a chip over each field shows its crop and what it follows ("after beans", with the
+//             link's sign), a dot for anything to watch, and a snowflake where a spring freeze can
+//             hurt the wheat (the walk's frost stop and the card's peek outline those fields ice
+//             blue, under a light rime: src/plan/futureMarks.js)
+//   money     rotation first: "Show the money" (#futMoney, aria-pressed) brings in a coin stack over
+//             each field (its 3-season cash; bright gold: more than keeping going), the cash on the
+//             chips and the money tiles. The walk's money stops show it while they're on.
 //   Manami    walks a short reel of lines first (skippable at any stop), then the farmer looks round
 //   card      a field's whole story, and the place to pick its plan (the mix is scored like the panel's)
 //   notes     "Why and watch out": her reasons, the risks, the gaps, and the planner's own words
@@ -33,6 +36,10 @@ import * as voice from '../plan/futuresVoice.js';
 import { SEVERITY_LABEL, LENS_LABEL } from '../plan/builder.js';
 import { PLANS, CROP_NAME } from '../plan/planNames.js';
 import { PLAN_ICONS, TILE_ICONS, LENS_ICONS, ACTION_ICONS, cropIconFor } from '../ui/futureIcons.js';
+import { LINK_ICONS } from '../ui/rotationIcons.js';
+import { hideCropTip } from '../ui/cropTip.js';
+import { rotationOf, rotationTiles } from '../plan/rotationStory.js';
+import { chipAfterWords } from '../plan/rotationVoice.js';
 import { SEASON_ICONS } from '../ui/season.js';
 import { money, moneyAbout, perAcre } from '../ui/money.js';
 import { createCoinStacks, sailSpheres, themeKeepOuts } from '../island/coinStacks.js';
@@ -51,7 +58,14 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 export const VIEWS = ['current', 'maxProfit', 'priority', 'mix'];
 const NAME = { ...Object.fromEntries(PLANS.map((p) => [p.kind, p.name])), mix: 'Your plan' };
 const BLURB = { ...Object.fromEntries(PLANS.map((p) => [p.kind, p.blurb])), mix: 'Your pick of plan for each field' };
-const TILE_LABEL = { cash: 'Cash margin, 3 seasons', badYear: 'In a bad year (1 in 10)', soil: 'Soil health at the end', beats: 'Beats keeping going' };
+// the tiles: rotation first (money off), or the money's four (money on); the soil tile names its
+// last year once the plans are in ("Soil score in 2029")
+const TILE_LABEL = {
+  repeats: 'Same crop again', handoffs: 'Corn after beans',
+  cash: 'Cash margin, 3 seasons', badYear: 'In a bad year (1 in 10)', soil: 'Soil score at the end', beats: 'Beats keeping going',
+};
+export const ROTATION_TILES = ['repeats', 'handoffs', 'soil', 'cash'];
+export const MONEY_TILES = ['cash', 'badYear', 'soil', 'beats'];
 const CHIP_LIFT = 0.30; // a chip floats this far over its coins
 const NO_STACK_LIFT = 1.3; // and over the soil where a field has no stack
 const ENTRY_RISE = 0.35; // the camera's first move (it only rises)
@@ -100,17 +114,35 @@ export function focusHome(els) {
 }
 
 /**
- * A chip's inside: the crop, the field's 3-season cash, its difference from keeping going (when
- * showDiff), a snowflake when this season's wheat has a spring freeze, a drop when the field runs
- * short of water where water is the weather worry (dry), and the warning dot. s is the season shown.
+ * A chip's inside. mode 'rotation' (the money off): the crop, the link's sign and what it follows
+ * ("after beans", "corn again"; link from rotationStory.rotationOf). mode 'money': the crop, the
+ * field's 3-season cash and its difference from keeping going (when showDiff). Then, either way, a
+ * snowflake when this season's wheat has a spring freeze, a drop when the field runs short of water
+ * where water is the weather worry (dry), and the warning dot. s is the season shown.
  */
-export function chipHtml({ s, total, diff, showDiff = false, dry = false }) {
-  return `<span class="fut-chip__crop plan-crop">${cropIconFor(s.crop, s.cover)}</span>`
-    + `<span class="fut-chip__cash">${esc(moneyAbout(total))}</span>`
-    + (showDiff ? `<span class="fut-chip__diff ${diff >= 0 ? 'is-up' : 'is-down'}">${esc(diff >= 0 ? '+' : '−')}${esc(moneyAbout(Math.abs(diff)))}</span>` : '')
+export function chipHtml({ s, total, diff, showDiff = false, dry = false, mode = 'money', link = null }) {
+  const crop = cropIconFor(s.crop, s.cover, { cls: 'fut-chip__crop plan-crop', size: 'sm' });
+  let mid;
+  if (mode === 'rotation') {
+    const after = link ? chipAfterWords(link) : '';
+    mid = (link && LINK_ICONS[link.kind] ? `<span class="fut-chip__link fut-chip__link--${esc(link.kind)}" aria-hidden="true">${LINK_ICONS[link.kind]}</span>` : '')
+      + (after ? `<span class="fut-chip__after">${esc(after)}</span>` : '');
+  } else {
+    mid = `<span class="fut-chip__cash">${esc(moneyAbout(total))}</span>`
+      + (showDiff ? `<span class="fut-chip__diff ${diff >= 0 ? 'is-up' : 'is-down'}">${esc(diff >= 0 ? '+' : '−')}${esc(moneyAbout(Math.abs(diff)))}</span>` : '');
+  }
+  return crop + mid
     + (s.freeze ? `<span class="fut-chip__frost" aria-hidden="true">${LENS_ICONS.frost}</span>` : '')
     + (dry ? `<span class="fut-chip__dry" aria-hidden="true">${LENS_ICONS.water}</span>` : '')
     + (s.worst ? `<span class="fut-chip__dot sev-${s.worst}"></span>` : '');
+}
+
+/**
+ * The dock's 4 tiles: rotation first while the money is off (same crop again, corn after beans, the
+ * soil score at the end, the cash), the money's four while it's on (cash, a bad year, soil, beats).
+ */
+export function tilesFor(cmp, view, mixScore, choice, moneyShown = false) {
+  return moneyShown ? tileValues(cmp, view, mixScore, choice) : rotationTiles(cmp, view, mixScore, choice);
 }
 
 /** A season radio's year line: the season icon, the year, and a snowflake (hidden unless `frost`; paintDock flips it). */
@@ -170,6 +202,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
   const seasonsEl = $('futSeasons');
   const scoreEl = $('futScore');
   const moreBtn = $('futMore');
+  const moneyBtn = $('futMoney');
   const captionEl = $('futCaption');
   const mixEl = $('futMix');
   const fieldsBtn = $('futFields');
@@ -212,6 +245,8 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
   let said = ''; // Manami's last pick line, also in the card (phones hide her while it's open)
   let notesOpen = false;
   let coins = null;
+  let showMoney = false; // "Show the money": the coins, the cash chips and the money tiles (off: rotation first)
+  let rotCache = null; // { key, rot }: the view's rotation (its link signs), for the chips
   let spotsPlaced = false;
   let coinsReady = false;
   let chips = [];
@@ -230,6 +265,19 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
   const xOf = (id) => hubField(id)?.center[0] ?? 0;
   const years = () => cmp.years;
   const kindOf = (id) => (view === 'mix' ? kindFor(choice, id) : view);
+  /** The money on show: the toggle, or a walk stop about cash (it shows the coins while it's on). */
+  const moneyOn = () => showMoney || !!(reel && reel.stops[reel.i]?.money);
+  const tileLabel = (k) => (k === 'soil' && cmp ? `Soil score in ${years()[2]}` : TILE_LABEL[k]);
+  /** The view's rotation (rotationStory.rotationOf), worked out again only when the view or the picks change. */
+  function rotNow() {
+    const key = view === 'mix' ? `mix:${cmp.fields.map((f) => kindFor(choice, f.id)).join(',')}` : view;
+    if (rotCache?.key !== key || rotCache.cmp !== cmp) {
+      let rot = null;
+      try { rot = rotationOf(cmp, view, choice, mixScore); } catch (e) { console.error('planFutures: rotation', e); }
+      rotCache = { key, cmp, rot };
+    }
+    return rotCache.rot;
+  }
   const sayExplore = (line, o) => { manami.say(line, o); if (compact.matches && !o?.focus) manami.collapse(); };
   /** Where focus goes back to in the dock: its title, or (where the title is hidden) the plan on show. */
   const homeEl = () => focusHome([titleEl, plansEl.querySelector('[aria-checked="true"]'), seasonsEl.querySelector('[aria-checked="true"]'), fieldsBtn, moreBtn]) || titleEl;
@@ -331,6 +379,9 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
 
   function reset() {
     data = cmp = coinsPlan = gaps = null;
+    rotCache = null;
+    showMoney = false; // each look starts rotation first
+    paintMoneyBtn();
     reel = null;
     marksBase = 'current';
     focusId = null;
@@ -383,6 +434,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     mixRun++;
     const hadFocus = [dock, card, notes].some((el) => el.contains(document.activeElement));
     const steps = [
+      () => hideCropTip(),
       () => { clearTimeout(mixTimer); clearTimeout(statusTimer); timers.forEach(clearTimeout); timers = []; },
       // the key listener, the ResizeObserver, the frame hooks
       () => { const fns = offs; offs = []; fns.forEach((fn) => fn()); },
@@ -468,11 +520,11 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     const on = text != null;
     dock.classList.toggle('is-loading', on);
     scoreEl.setAttribute('aria-busy', String(!!text));
-    for (const b of [fieldsBtn, notesBtn, saveBtn, moreBtn]) b.disabled = on;
+    for (const b of [fieldsBtn, notesBtn, saveBtn, moreBtn, moneyBtn]) if (b) b.disabled = on;
     if (!on) return;
     plansEl.replaceChildren();
     seasonsEl.replaceChildren();
-    scoreEl.innerHTML = Object.entries(TILE_LABEL).map(([k, label]) => `<div class="fut-tile fut-tile--${k}" role="group" aria-label="${esc(label)}"><p class="fut-tile__label">${TILE_ICONS[k]}${esc(label)}</p><p class="fut-tile__num">–</p></div>`).join('');
+    scoreEl.innerHTML = (showMoney ? MONEY_TILES : ROTATION_TILES).map((k) => `<div class="fut-tile fut-tile--${k}" role="group" aria-label="${esc(TILE_LABEL[k])}"><p class="fut-tile__label">${TILE_ICONS[k]}${esc(TILE_LABEL[k])}</p><p class="fut-tile__num">–</p></div>`).join('');
     captionEl.innerHTML = text ? `<span class="plans__spinner" aria-hidden="true"></span>${esc(text)}` : '';
     captionEl.setAttribute('role', 'status');
     mixEl.textContent = '';
@@ -570,7 +622,25 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
   function paintCoins() {
     if (!coinsReady || !coins) return;
     coins.set(coinsPlan.countsFor(view, choice), coinsPlan.counts.current);
+    // (built, placed and prewarmed either way, and the camera's floor counts their columns either
+    // way, so turning the money on or off never moves the camera's limits)
+    coins.setVisible(moneyOn());
     chipsDirty = true;
+  }
+
+  /** "Show the money": on or off (the walk's money stops show it anyway while they're on). */
+  function setMoney(on) {
+    if (!active || !cmp) return;
+    showMoney = !!on;
+    paintMoneyBtn();
+    paintCoins();
+    paintChips();
+    paintScore();
+    queueStatus();
+  }
+
+  function paintMoneyBtn() {
+    if (moneyBtn) moneyBtn.setAttribute('aria-pressed', String(showMoney));
   }
 
   // ---------------------------------------------------------------- painting the view
@@ -679,8 +749,10 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
 
   /** The 4 tiles for the view (the mix's once it's scored; greyed while it's being worked out). */
   function paintScore() {
-    const ts = tileValues(cmp, view, mixScore, choice);
-    const busy = ts[0].value == null;
+    const ts = tilesFor(cmp, view, mixScore, choice, moneyOn());
+    // with the money off, the dock drops its cash too (the season sub-lines and the coin caption)
+    dock.classList.toggle('is-money', moneyOn());
+    const busy = ts.some((t) => t.value == null && (t.key === 'cash' || t.key === 'soil'));
     scoreEl.setAttribute('aria-busy', String(busy));
     scoreEl.classList.toggle('is-busy', busy);
     const html = ts.map((t) => tileHtml(t, busy)).join('');
@@ -696,10 +768,15 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
   }
 
   function tileHtml(t, busy) {
-    const label = TILE_LABEL[t.key];
+    const label = tileLabel(t.key);
     let num;
     let diff = '';
-    if (busy) num = '<span class="fut-tile__busy">Working it out…</span>';
+    if (busy && t.value == null) num = '<span class="fut-tile__busy">Working it out…</span>';
+    else if (t.key === 'repeats' || t.key === 'handoffs') {
+      const n = Number(t.value) || 0;
+      num = `<span>${n ? `${n} ${n === 1 ? 'season' : 'seasons'}` : 'none'}</span>`;
+      if (view !== 'current' && t.base != null) diff = `<span class="fut-tile__base">keeping going: ${Number(t.base) || 0}</span>`;
+    }
     else if (t.key === 'soil') {
       const v = Math.max(0, Math.min(100, t.value));
       num = `<span class="meter" aria-hidden="true"><span style="width:${v}%"></span></span><span aria-hidden="true">${t.value}/100</span><span class="sr-only">${t.value} out of 100</span>`;
@@ -743,6 +820,8 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     const changes = marksBase && marksBase !== view ? seasonChanges(cmp, view, choice, marksBase)[season] : new Map();
     const dry = dryIds(cmp, view, season, choice);
     const dryStop = !!reel?.stops[reel.i]?.dryLens; // the walk's dry stop: the drops' chips win a place
+    const mode = moneyOn() ? 'money' : 'rotation';
+    const rot = mode === 'rotation' ? rotNow() : null;
     const written = [];
     for (const c of chips) {
       const f = fieldOf(cmp, c.id);
@@ -755,8 +834,9 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
       // stop, the dry fields')
       c.changed = changes.has(c.id) || c.id === focusId || c.id === cardId || (frostLens && !!s.freeze) || (dryStop && dry.has(c.id));
       c.weight = Math.abs(d);
-      const html = chipHtml({ s, total: e.total, diff: d, showDiff, dry: dry.has(c.id) });
-      const cls = `fut-chip${showDiff ? ' has-diff' : ''}${e.total <= 0 ? ' is-loss' : ''}${c.id === focusId || c.id === cardId ? ' is-focus' : ''}`;
+      const link = rot?.fields.find((x) => x.id === c.id)?.seasons[season]?.link ?? null;
+      const html = chipHtml({ s, total: e.total, diff: d, showDiff, dry: dry.has(c.id), mode, link });
+      const cls = `fut-chip fut-chip--${mode}${mode === 'money' && showDiff ? ' has-diff' : ''}${mode === 'money' && e.total <= 0 ? ' is-loss' : ''}${c.id === focusId || c.id === cardId ? ' is-focus' : ''}`;
       if (html !== c.html || c.el.className !== cls) {
         c.html = html;
         c.el.innerHTML = html;
@@ -782,9 +862,9 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     return parts;
   }
 
-  /** Where a field's chip floats: over its coins, or over the soil when it has no stack. */
+  /** Where a field's chip floats: over its coins, or over the soil when it has no stack (or the money is off). */
   function chipAnchor(id) {
-    const spot = coins?.spotOf(id);
+    const spot = moneyOn() ? coins?.spotOf(id) : null; // (with the money off, the coins aren't there to sit on)
     if (spot) return v3.set(spot.x, spot.baseY + coins.countOf(id) * COIN_PITCH + CHIP_LIFT, spot.z);
     const f = hubField(id);
     return v3.set(f.center[0], f.topY + NO_STACK_LIFT, f.center[1]);
@@ -848,6 +928,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
 
   /** Shows the stop at reel.i (or the next one with something to say) with Manami's line and buttons. */
   function runStop() {
+    hideCropTip(); // the farm and the dock move on under any crop name left showing
     const token = reel;
     let i = reel.i;
     let line = null;
@@ -875,9 +956,11 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     else actions = [next, look];
     manami.say(line, { actions, focus: actions.length > 0 });
     if (st.id === 'yourTurn') {
-      reel = null; // the walk is over: over to the farmer
+      reel = null; // the walk is over: over to the farmer (the money follows the toggle again)
       focusId = null;
       paintMarks();
+      paintCoins();
+      paintScore();
       paintChips();
       queueStatus();
       if (!dock.contains(document.activeElement)) homeEl().focus({ preventScroll: true });
@@ -886,7 +969,9 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
 
   /** The walk ends (or never ran): the farmer looks round. hint: "Start there" on the biggest-gain field. */
   function toExplore({ hint = false, quiet = false, focusTitle = false } = {}) {
+    const wasMoney = moneyOn();
     reel = null;
+    if (wasMoney !== moneyOn()) { paintCoins(); paintScore(); } // (a walk left at a money stop)
     marksBase = 'current';
     focusId = null;
     hintOn = false;
@@ -1125,7 +1210,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     const e = f.byKind[kind];
     const on = kind === picked;
     const cells = e.seasons.map((s, y) => `<span class="fut-cell">
-        <span class="plan-crop">${cropIconFor(s.crop, s.cover)}</span>
+        ${cropIconFor(s.crop, s.cover, { year: years()[y] })}
         <span class="fut-cell__year">${years()[y]}${s.freeze ? `<span class="fut-cell__frost" aria-hidden="true">${LENS_ICONS.frost}</span>` : ''}</span>
         <span class="fut-cell__cash">${esc(perAcre(s.gmAc))}/ac</span>
         <span class="fut-cell__soil">${TILE_ICONS.soil}${s.soil100}</span>
@@ -1255,7 +1340,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
 
   /** Esc: the notes first, then the card, then back to the plans. Ours alone while the mode is on. */
   function onKey(e) {
-    if (e.key !== 'Escape' || !active) return;
+    if (e.key !== 'Escape' || !active || e.defaultPrevented) return; // (the crop tip took this one)
     if (document.body.classList.contains('plans-open') || document.body.classList.contains('jar-open')) return;
     if (e.target.closest?.('input, textarea, select')) return;
     e.preventDefault();
@@ -1291,6 +1376,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     moreBtn.textContent = on ? 'Less' : 'More';
   }
   moreBtn.addEventListener('click', () => setMore(!dock.classList.contains('is-more')));
+  moneyBtn?.addEventListener('click', () => setMoney(!showMoney));
   plansEl.addEventListener('click', (e) => {
     const b = e.target.closest('.fut-plan');
     if (b && active && cmp) setView(b.dataset.view);
