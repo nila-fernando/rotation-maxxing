@@ -70,8 +70,37 @@ export function outerRing(geometry) {
   return ring;
 }
 
-/** The planner's Land for a field from the demo data's soil and slope, or the stand-in. */
-export function landFor(demo) {
+/** The planner's texture bucket for a USDA texture name ("Silty clay loam" -> 'silt'), or null. */
+export const textureBucket = (name) => { const p = TEXTURE_PCT[String(name || '').toLowerCase()]; return p ? mapTexture(p[0], p[1]) : null; };
+
+const JAR_MINERAL = ['sand', 'silt', 'clay', 'fines'];
+
+/**
+ * Is a saved jar test (src/plan/jarTest.js toRecord) fit to plan with? A second check after the jar
+ * test's own gate, so a record is never trusted blindly: not taken too early, not low confidence,
+ * a texture class to name, sand, silt and clay real percentages adding up to 100, and at least 2
+ * different soil layers.
+ */
+export function usableJar(j) {
+  return !!j && j.v === 1 && j.elapsed !== 'short' && j.confidence !== 'low' && typeof j.textureClass === 'string' && !!j.textureClass
+    && [j.sandPct, j.siltPct, j.clayPct].every((v) => Number.isFinite(v) && v >= 0 && v <= 100)
+    && Math.abs(j.sandPct + j.siltPct + j.clayPct - 100) <= 1
+    && new Set((Array.isArray(j.layers) ? j.layers : []).map((l) => l?.type).filter((t) => JAR_MINERAL.includes(t))).size >= 2;
+}
+
+/**
+ * The planner's Land for a field from the demo data's soil and slope, or the stand-in. A usable jar
+ * test sets the texture and nothing else: drainage, water holding, organic matter, pH and slope stay
+ * with the soil survey (the jar's own guesses at those are by volume and only shown, never planned
+ * with). On a field with no survey the rest is the stand-in.
+ */
+export function landFor(demo, jar = null) {
+  const base = surveyLandFor(demo);
+  if (!usableJar(jar)) return base;
+  return { land: { ...base.land, texture: mapTexture(jar.sandPct, jar.clayPct) }, known: base.known, jar: true };
+}
+
+function surveyLandFor(demo) {
   if (!demo?.soil) return { land: { ...DEFAULT_LAND }, known: false };
   const s = demo.soil;
   const [sand, clay] = TEXTURE_PCT[String(s.texture || '').toLowerCase()] || [null, null];
@@ -86,6 +115,13 @@ export function landFor(demo) {
   // the demo data gives available water in the top 60 in of soil; the planner wants in/in
   if (Number.isFinite(s.waterHoldingIn)) land.awcInPerIn = Math.round((s.waterHoldingIn / 60) * 1000) / 1000;
   return { land, known: true };
+}
+
+/** The gap line for a field planned with its jar test (the plans panel and the field card show it). */
+export function jarGapLine(name, demo, jar) {
+  const cls = String(jar.textureClass || '').toLowerCase();
+  if (!demo?.soil) return `${name}: no soil survey yet, but soil texture from your jar test (${cls}), with typical drainage and water holding (0.17 in per inch) on a gentle slope.`;
+  return `${name}: soil texture from your jar test (${cls}${jar.adjusted ? ', adjusted by you' : ''}${jar.sample ? ', a sample jar' : ''}) instead of the soil survey (${demo.soil.texture}).`;
 }
 
 /**
@@ -142,7 +178,8 @@ const STATE_NAMES = { IA: 'Iowa', IL: 'Illinois', IN: 'Indiana', NE: 'Nebraska',
 
 /**
  * @param {object} o
- * @param {object[]} o.fields   app fields: { id, name, acres, geometry, crops?, sourceIds?, demoId? }
+ * @param {object[]} o.fields   app fields: { id, name, acres, geometry, crops?, sourceIds?, demoId?, jar? }
+ *                              (jar: a saved jar test, src/plan/jarTest.js toRecord)
  * @param {object} [o.place]    the farm's search place ({ lat, lon, label, detail, demo })
  * @param {object} [o.profile]  farmProfile ({ irrigatedFieldIds, excludedCrops })
  */
@@ -153,8 +190,9 @@ export function plannerFarm({ fields, place = null, profile = null, firstSeason 
   gaps.push('Crops to choose from: the usual Corn Belt crops (corn, soybeans, oats, wheat, alfalfa) until county seed data is in.');
   const paddocks = fields.map((f) => {
     const demo = demoRecordFor(f);
-    const { land, known } = landFor(demo);
-    if (!known) gaps.push(`${f.name}: no soil survey yet, so a typical loam on a gentle slope (holding 0.17 in of water per inch) is assumed.`);
+    const { land, known, jar } = landFor(demo, f.jar);
+    if (jar) gaps.push(jarGapLine(f.name, demo, f.jar));
+    else if (!known) gaps.push(`${f.name}: no soil survey yet, so a typical loam on a gentle slope (holding 0.17 in of water per inch) is assumed.`);
     const run = historyRunFor(f, demo);
     if (run.history.length < 3) gaps.push(`${f.name}: only ${run.history.length} of the last 3 years' crops are on record.`);
     const { history, filled } = historyUpTo(run.history, run.lastYear, firstSeason, f.name);

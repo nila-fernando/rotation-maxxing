@@ -1,7 +1,11 @@
 // One field's check-up: what the field panel (Part 3.5) shows and what colours its status dot.
 //
-//   fieldReportFor(field, { profile, farmIsDemo })   field = an app field (from the field step)
-//   buildFieldReport(field, { demo, weather, profile })   the same, with the data passed in (tests)
+//   fieldReportFor(field, { profile, farmIsDemo, planWeather })   field = an app field (from the field step)
+//   buildFieldReport(field, { demo, weather, profile, planWeather })   the same, with the data passed in (tests)
+//
+// A field with a jar test (field.jar, src/plan/jarTest.js toRecord) gets report.jar: the record, the
+// soil map's texture beside it, and whether the two fall in the same planner texture bucket.
+// planWeather ({ water, frost } lines from the latest plans) is passed through for the captions.
 //
 // Crop history comes from the field's own outline (USDA CSB years) or the demo data. Soil, slope,
 // rain and greenness come from the demo data for now (realistic placeholders for Story County;
@@ -10,6 +14,8 @@
 import { CROP_STYLE, cropKeyFor } from '../island/crops.js';
 import { findFieldBySourceId, getField, getMeta, getWeather } from './farmData.js';
 import { FLAG_CONFIG, erosionRisk, flagsFor, shownFlags, statusFor } from './flags.js';
+import { mapTexture } from '../vendor/rotation-maxxing/data/ssurgo.ts';
+import { textureBucket } from '../plan/farmInput.js';
 
 /** The 8 CSB years shown in the crop history. */
 export const HISTORY_YEARS = [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025];
@@ -53,8 +59,9 @@ const titleCase = (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1);
  * @param {object|null} [o.weather] { growingSeasonRainMm: [{year, value}], avg30yrRainMm }
  * @param {object|null} [o.profile] farmProfile ({ irrigatedFieldIds })
  * @param {object} [o.placeholder]  which sections are demo stand-ins
+ * @param {object|null} [o.planWeather] { water, frost } lines from the latest plans, passed through
  */
-export function buildFieldReport(field, { demo = null, weather = null, profile = null, placeholder = {}, cfg = FLAG_CONFIG } = {}) {
+export function buildFieldReport(field, { demo = null, weather = null, profile = null, placeholder = {}, cfg = FLAG_CONFIG, planWeather = null } = {}) {
   // crop history: the outline's own years first, the demo record's for any it lacks
   const byYear = new Map();
   for (const c of demo?.cropHistory || []) if (c?.crop != null) byYear.set(Number(c.year), c.crop);
@@ -89,6 +96,10 @@ export function buildFieldReport(field, { demo = null, weather = null, profile =
   const ndvi = Array.isArray(demo?.ndvi) && demo.ndvi.length ? demo.ndvi : null;
   const flags = flagsFor({ cropHistory: known, slopePct, rain: rain && { years: [...series], avg30: rain.avg30 } }, cfg);
   const irrigated = !!profile?.irrigatedFieldIds?.includes(field.id);
+  const jar = field.jar
+    ? { ...field.jar, mapTexture: demo?.soil?.texture ?? null,
+        sameAsMap: textureBucket(demo?.soil?.texture) === mapTexture(field.jar.sandPct, field.jar.clayPct) }
+    : null;
   return {
     id: field.id,
     name: field.name,
@@ -104,6 +115,8 @@ export function buildFieldReport(field, { demo = null, weather = null, profile =
     // nothing known about it (no crop years, soil, slope or rain): grey, not a green "all clear"
     status: known.length || soil || slope || rain ? statusFor(flags, cfg) : 'unknown',
     placeholder: { ...placeholder, history: false },
+    jar,
+    planWeather: planWeather ?? null,
   };
 }
 
@@ -111,8 +124,8 @@ export function buildFieldReport(field, { demo = null, weather = null, profile =
  * The report for an app field, resolving its demo data. farmIsDemo: the farm is the demo farm, so
  * the demo farm's rain applies even to fields that aren't one of the five demo records.
  */
-export function fieldReportFor(field, { profile = null, farmIsDemo = false } = {}) {
+export function fieldReportFor(field, { profile = null, farmIsDemo = false, planWeather = null } = {}) {
   const demo = demoRecordFor(field);
   const weather = demo || farmIsDemo ? getWeather() : null;
-  return buildFieldReport(field, { demo, weather, profile, placeholder: placeholders() });
+  return buildFieldReport(field, { demo, weather, profile, placeholder: placeholders(), planWeather });
 }
