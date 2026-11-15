@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import * as THREE from 'three';
 import { createCameraRig, fitDistance, clampToDisc, solidTop } from './cameraRig.js';
-import { easeInOut, lerpPose, poseToPos, safeMinDistance } from './cameraSafety.js';
+import { easeInOut, lerpPose, poseToPos, safeMinDistance, makeTents, clearOfTents } from './cameraSafety.js';
 
 const RADIUS = 10.33; // the demo island
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
@@ -272,6 +272,99 @@ describe('a relayout with no flight after it', () => {
       assert.ok(camera.position.y >= LIMITS.floor - 1e-9 && rig.polar <= LIMITS.maxPolar + 1e-9);
       assert.ok(rig.pose.dist >= controls.minDistance - 1e-9);
     }
+  });
+});
+
+describe("the hub's own floor", () => {
+  // a tall thing (a windmill, say: 2 × 2, 5 high) just behind a field the camera looks at
+  const MILL = { min: [-1, 0, 3], max: [1, 5, 5] };
+  const tents = () => makeTents({ boxes: [MILL], heightAt: () => 0 });
+  const LOW = { target: [0, 0.73, 0], dist: 8, polar: 1.2, azimuth: 0 }; // low, looking from the far side
+  const INSIDE = { target: [0, 0.73, 0], dist: 4, polar: 1.25, azimuth: 0 }; // (0, 1.98, 3.80): in the mill
+  const inMill = (p) => p.x >= -1.3 && p.x <= 1.3 && p.z >= 2.7 && p.z <= 5.3 && p.y <= 5.3;
+
+  it('tips a camera that would be inside up over it, keeping the look-at point, the zoom and the turn', () => {
+    const { rig, camera, controls } = makeRig();
+    rig.setClearance(tents());
+    putAt(camera, controls, INSIDE);
+    assert.ok(inMill(camera.position), 'starts inside');
+    rig.update(1 / 60);
+    assert.ok(!inMill(camera.position), `now at ${camera.position.toArray().map((v) => v.toFixed(2))}`);
+    assert.ok(clearOfTents(rig.pose, rig.clearance));
+    assert.deepEqual(rig.pose.target, INSIDE.target);
+    assert.ok(near(rig.pose.dist, INSIDE.dist) && near(rig.azimuth, 0) && rig.polar < INSIDE.polar);
+  });
+
+  it('leaves a camera that is clear of everything just where it was', () => {
+    const { rig, camera, controls } = makeRig();
+    rig.setClearance(tents());
+    for (const pose of [{ ...LOW, azimuth: Math.PI }, { ...LOW, azimuth: 1.8 }, { target: [0, 0.33, 0], dist: 30, polar: 0.84, azimuth: -0.2 }]) {
+      putAt(camera, controls, pose);
+      const before = camera.position.clone();
+      rig.update(1 / 60);
+      assert.ok(camera.position.distanceTo(before) < 1e-9, `moved from ${pose.azimuth}`);
+    }
+    assert.equal(controls.maxPolarAngle, 1.25, "the hub's lower angle stays");
+  });
+
+  it("puts it back over the floor straight after OrbitControls moves it, and looks at the target again", () => {
+    const { rig, camera, controls, listeners } = makeRig();
+    rig.setClearance(tents());
+    putAt(camera, controls, INSIDE); // (as a drag inside controls.update() would leave it)
+    camera.lookAt(new THREE.Vector3(5, 0, 5)); // (looking somewhere else, to see it turned back)
+    listeners.change();
+    assert.ok(!inMill(camera.position));
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+    const want = controls.target.clone().sub(camera.position).normalize();
+    assert.ok(fwd.distanceTo(want) < 1e-6, 'aims at the target from where it is now');
+    rig.dispose();
+    assert.equal(listeners.change, undefined, 'lets go of OrbitControls when the hub goes');
+  });
+
+  it('holds all through a flight to a field', () => {
+    const { rig, camera, controls } = makeRig();
+    rig.setClearance(tents());
+    putAt(camera, controls, { target: [0, 0.33, 0], dist: 30, polar: 1.2, azimuth: 0 });
+    rig.focus({ center: [0, 0], radius: 0.5, y: 0.73 }, 0.75);
+    for (let i = 0; i < 60; i++) {
+      rig.update(1 / 60);
+      assert.ok(!inMill(camera.position) && clearOfTents(rig.pose, rig.clearance), `frame ${i}`);
+    }
+  });
+
+  it('is handed to the plan tour and back: both hold while it runs, the floor stays after', () => {
+    const { rig, camera, controls } = makeRig();
+    const t = tents();
+    rig.setClearance(t);
+    rig.setExtraLimits(LIMITS);
+    assert.equal(rig.clearance, t);
+    assert.ok(near(controls.maxPolarAngle, LIMITS.maxPolar));
+    putAt(camera, controls, INSIDE);
+    rig.update(1 / 60);
+    assert.ok(camera.position.y >= LIMITS.floor - 1e-9 && rig.polar <= LIMITS.maxPolar + 1e-9 && !inMill(camera.position));
+    // the tour ends: its limits come off, the hub's lower angle and zoom come back, its floor stays
+    rig.setExtraLimits(null);
+    assert.equal(controls.maxPolarAngle, 1.25);
+    assert.ok(near(controls.minDistance, rig.baseMinDistance));
+    assert.equal(rig.clearance, t);
+    putAt(camera, controls, INSIDE);
+    rig.update(1 / 60);
+    assert.ok(!inMill(camera.position), 'still kept out after the tour');
+    // and the hub can drop it (when it goes)
+    rig.setClearance(null);
+    putAt(camera, controls, INSIDE);
+    rig.update(1 / 60);
+    assert.ok(inMill(camera.position));
+  });
+
+  it('a relayout keeps to it', () => {
+    const insets = { left: 0, right: 0, top: 0, bottom: 0 };
+    const { rig, camera, controls } = makeRig({ insets });
+    rig.setClearance(tents());
+    putAt(camera, controls, INSIDE);
+    insets.bottom = 400; // a phone's sheet comes up
+    rig.layout();
+    assert.ok(!inMill(camera.position));
   });
 });
 

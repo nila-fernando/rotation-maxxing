@@ -222,6 +222,8 @@ const hub = createHub({
   onPlan: () => plansPanel.open(),
   // (not over the plans: on a wide screen the island shows beside them, but they keep the keys)
   onJarTap: (id) => { if (!plansPanel.isOpen) jarPanel.open({ fieldId: id, step: 'result', from: 'island' }); },
+  // the camera's floor is measured over the festival's things at full size (they pop in)
+  atFullTheme: (fn) => { const tt = timeTravel.session; return tt?.atFullTheme ? tt.atFullTheme(fn) : fn(); },
 });
 
 // "Plan my next seasons": the planner's three plans, a pick per field, and a preview on the island

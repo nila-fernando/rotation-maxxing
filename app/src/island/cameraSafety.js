@@ -27,7 +27,7 @@
 // src/island/clearance.js), or plain boxes { min, max } (arrays or {x, y, z}); "sails" are balls
 // { x, y, z, r } round the windmill sails, already padded by whoever made them.
 
-import { pointInPropBox } from './clearance.js';
+import { pointInPropBox, propTop } from './clearance.js';
 
 /** The tour's limits and its one camera angle (spec: the measured overview angle is 0.84). */
 export const TOUR = {
@@ -295,4 +295,124 @@ export function entryRise(pose, { maxPolar, floor, polar = TOUR.polar }) {
     polar: Math.min(pose.polar, polar),
     azimuth: pose.azimuth,
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The hub's own no-clip rule
+//
+// The plain hub lets the farmer tip the camera much lower (1.25 from straight down) and zoom much
+// closer than the tour. A flat floor over everything would push the closest zoom from about 7.5
+// to about 18 at that angle (it has to clear the windmill from anywhere), so the hub uses a floor
+// shaped to the farm instead: a "tent" over each solid thing (its top plus `pad` over its own
+// footprint grown by `pad`, falling away at `slope` outside it) and the ground plus `ground`. The
+// camera never goes under that floor:
+//
+//   camY ≥ clearanceAt(camX, camZ) ≥ top + pad    wherever the camera is within `pad` of a footprint
+//
+// so it is never inside a thing padded by `pad`, and never nearer the ground than `ground`. Away
+// from the farm's tall things the floor is just the ground, so the zoom and the angles there are
+// the hub's own, as before. When the camera would go under it, liftClear tips it up round what it
+// looks at (the same look-at point, distance and turn, a smaller polar angle): over a tent's slope
+// it rides up smoothly rather than jumping onto the roof. The tent's top is never higher than the
+// flat floor (floorY with a margin ≥ pad), so tipping up always finds a clear spot by then.
+
+/** The hub's no-clip numbers: how much room round each thing, over the ground, and the tents' slope. */
+export const HUB = { pad: 0.3, ground: TOUR.margin, slope: 1 };
+
+/**
+ * The tents over the farm's solid things, for clearanceAt and liftClear.
+ * @param {object} o
+ * @param {object[]} [o.props]   the reveal's placed props (their own rotated boxes)
+ * @param {{x: number, y: number, z: number, r: number}[]} [o.sails]   balls round the windmill sails
+ * @param {{min: object, max: object}[]} [o.boxes]   plain boxes in island space (a festival's things)
+ * @param {(x: number, z: number) => number} [o.heightAt]   the ground
+ * @param {number} [o.minY]   tents that can't reach this high (top + pad below it) are left out:
+ *   the lowest the camera can ever be
+ */
+export function makeTents({ props = [], sails = [], boxes = [], heightAt = null, minY = -Infinity, pad = HUB.pad, ground = HUB.ground, slope = HUB.slope } = {}) {
+  const list = [];
+  const keep = (t) => { if (Number.isFinite(t.top) && t.top + pad >= minY) list.push(t); };
+  for (const p of props) {
+    if (!p.box) continue;
+    const s = p.scale || 1;
+    keep({
+      kind: 'rect', x: p.x, z: p.z, c: Math.cos(p.ry || 0), s: Math.sin(p.ry || 0),
+      lo: [p.box.min[0] * s, p.box.min[2] * s], hi: [p.box.max[0] * s, p.box.max[2] * s], top: propTop(p),
+    });
+  }
+  for (const b of sails) keep({ kind: 'disc', x: b.x, z: b.z, r: b.r, top: b.y + b.r });
+  for (const b of boxes) {
+    const lo = xyz(b.min), hi = xyz(b.max);
+    if (!(hi[0] >= lo[0] && hi[1] >= lo[1] && hi[2] >= lo[2])) continue;
+    keep({ kind: 'rect', x: 0, z: 0, c: 1, s: 0, lo: [lo[0], lo[2]], hi: [hi[0], hi[2]], top: hi[1] });
+  }
+  return { list, heightAt, pad, ground, slope };
+}
+
+/**
+ * How far (x, z) is from a tent's footprint, across the ground (0 on it). For a box, the larger of
+ * the two ways out (not straight across a corner): a box padded by `pad` has square corners, so
+ * its whole padded footprint is within `pad` by this measure.
+ */
+function footDistance(t, x, z) {
+  if (t.kind === 'disc') return Math.max(0, Math.hypot(x - t.x, z - t.z) - t.r);
+  // in the thing's own frame (as clearance.js turns it)
+  const dx = x - t.x, dz = z - t.z;
+  const lx = dx * t.c - dz * t.s, lz = dx * t.s + dz * t.c;
+  const ox = Math.max(t.lo[0] - lx, 0, lx - t.hi[0]);
+  const oz = Math.max(t.lo[1] - lz, 0, lz - t.hi[1]);
+  return Math.max(ox, oz);
+}
+
+/** The lowest the camera may be at (x, z): over the ground, and over every tent there. */
+export function clearanceAt(tents, x, z) {
+  const { list, heightAt, pad, ground, slope } = tents;
+  let y = heightAt ? heightAt(x, z) + ground : -Infinity;
+  if (!Number.isFinite(y)) y = -Infinity;
+  for (const t of list) {
+    const roof = t.top + pad;
+    if (roof <= y) continue;
+    const h = roof - slope * Math.max(0, footDistance(t, x, z) - pad);
+    if (h > y) y = h;
+  }
+  return y;
+}
+
+/** Is the camera at this pose on or over the hub's floor? */
+export function clearOfTents(pose, tents) {
+  const [x, y, z] = poseToPos(pose);
+  return y >= clearanceAt(tents, x, z) + 1e-7; // (a hair over: on the padded box's top counts as in it)
+}
+
+/**
+ * A pose kept over the hub's floor: the same pose if it already is (the very same object), else
+ * tipped up round its look-at point just as far as it needs (the largest clear polar angle under
+ * its own, found to `tol`), and, only if it would have to tip up past minPolar, pulled back at
+ * minPolar instead (with a flat floor above every tent, that always clears).
+ */
+export function liftClear(pose, tents, { minPolar = 0.3, step = 0.01, tol = 1e-4 } = {}) {
+  if (!tents || clearOfTents(pose, tents)) return pose;
+  // (a broken pose can't be fixed by tipping it: leave it to whoever broke it, never loop on it)
+  if (!Number.isFinite(pose.dist) || !Number.isFinite(pose.polar) || !Number.isFinite(pose.azimuth) || !xyz(pose.target).every(Number.isFinite)) return pose;
+  minPolar = Math.min(minPolar, pose.polar); // (never tip it lower than it is)
+  const at = (polar, dist = pose.dist) => ({ target: [...xyz(pose.target)], dist, polar, azimuth: pose.azimuth });
+  let under = pose.polar;
+  for (let phi = pose.polar - step; ; phi -= step) {
+    const p = at(Math.max(minPolar, phi));
+    if (clearOfTents(p, tents)) {
+      // the boundary between the last step under the floor and this clear one
+      let lo = p.polar, hi = under;
+      while (hi - lo > tol) {
+        const mid = (lo + hi) / 2;
+        if (clearOfTents(at(mid), tents)) lo = mid; else hi = mid;
+      }
+      return at(lo);
+    }
+    under = p.polar;
+    if (p.polar <= minPolar) break;
+  }
+  // too close even looking almost straight down: back off along that line until it clears
+  let p = at(minPolar);
+  for (let i = 0; i < 400 && !clearOfTents(p, tents); i++) p = at(minPolar, p.dist + 0.25);
+  return p;
 }

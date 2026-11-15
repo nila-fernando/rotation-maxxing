@@ -1,7 +1,8 @@
 // Step 5 · The island hub: the farm's home screen from here on (Part 3.4).
 //
 //   centre        the 3D island (built by the reveal; drag to turn, scroll or pinch to zoom, clamped
-//                 so the island can't be lost off screen)
+//                 so the island can't be lost off screen, and kept over the windmill, the barn and
+//                 everything else solid: the camera never goes inside them)
 //   left          "Your fields": name, acres, last crop icon and a status dot per field
 //   top           the current season and year; "Plan my next seasons" on the right
 //   bottom right  Manami
@@ -25,7 +26,9 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { formatAcres } from '../fields/geometry.js';
 import { CROP_STYLE, cropKeyFor } from '../island/crops.js';
-import { createCameraRig } from '../island/cameraRig.js';
+import { createCameraRig, MAX_POLAR } from '../island/cameraRig.js';
+import { makeTents } from '../island/cameraSafety.js';
+import { sailSpheres, themeKeepOuts } from '../island/coinStacks.js';
 import { footprint, pickField } from '../island/picking.js';
 import { cropIcon } from '../ui/cropIcons.js';
 
@@ -58,8 +61,10 @@ const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').match
  * @param {() => {right?: number, bottom?: number}} [o.getPanelInsets]  how much of the screen the panel covers
  * @param {() => void} [o.onPlan]   "Plan my next seasons" (Part 4)
  * @param {(fieldId: string) => void} [o.onJarTap]   a field's soil jar was tapped on the island
+ * @param {(fn: () => any) => any} [o.atFullTheme]   fn() with the festival's things at full size
+ *   (src/screens/timeTravel.js), so the camera's floor is measured over what they grow to
  */
-export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets = () => ({}), panelEl = null, onPlan, onJarTap } = {}) {
+export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets = () => ({}), panelEl = null, onPlan, onJarTap, atFullTheme = (fn) => fn() } = {}) {
   const $ = (id) => document.getElementById(id);
   const root = $('hub');
   const panel = $('hubPanel');
@@ -560,6 +565,24 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
     const rig = createCameraRig({ camera, controls, center: view.center, radius: view.radius, getInsets, reducedMotion });
     offs.push(() => rig.dispose());
 
+    // Nothing solid may come between the camera and the farm: a floor shaped over the windmill (and
+    // its sails), the barn, the silo, the trees, the festival's things and the ground, which the rig
+    // keeps the camera over from now on (src/island/cameraSafety.js makeTents; the plan tour adds its
+    // own flat floor on top and hands back to this one). The festival comes and goes and pops in, so
+    // its things are measured again every second, at the size they grow to. Anything that can't
+    // reach the lowest the camera can ever be (looking at the lowest field from the closest zoom any
+    // layout allows, at the lowest angle) is left out.
+    const lowestLook = Math.min(view.center.y, ...fields.map((f) => f.topY));
+    const minCamY = lowestLook + view.radius * 0.3 * Math.cos(MAX_POLAR) - 0.25;
+    const measureTents = () => {
+      const theme = view.island?.getObjectByName('Festival themes');
+      const boxes = theme ? atFullTheme(() => themeKeepOuts(theme, { pad: 0.15, split: 1, points: false, floorY: minCamY - 0.3 })) : [];
+      return makeTents({ props: view.props || [], sails: sailSpheres(view.spinners), boxes, heightAt: view.heightAt, minY: minCamY });
+    };
+    let tentsAge = 0;
+    rig.setClearance(measureTents());
+    offs.push(() => rig.setClearance(null));
+
     const onResize = () => {
       rig.layout();
       setResolution();
@@ -657,6 +680,8 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
     offs.push(() => { const fog = view.scene?.fog; if (fog && fogBase) { fog.near = fogBase.near; fog.far = fogBase.far; } });
     const frame = (dt) => {
       fitFog(dt);
+      tentsAge += dt;
+      if (tentsAge >= 1) { tentsAge = 0; rig.setClearance(measureTents()); }
       rig.update(dt);
       if (pointerDirty && pointer && !pressed && !dialogUp()) {
         pointerDirty = false;

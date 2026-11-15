@@ -374,3 +374,160 @@ describe('the tour camera', () => {
     assert.equal(S.riseIsClear(from, to, [], [], null, 32, { pad, ground: 0 }), true);
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// The plain hub: its own lower angle (1.25) and closer zoom, with a floor shaped over the farm
+
+/** The hub's floor for a farm, as the hub measures it (src/screens/hub.js). */
+function hubTents(farm) {
+  const minY = Math.min(farm.center.y, ...farm.fields.map((f) => f.topY)) + farm.radius * 0.3 * Math.cos(1.25) - 0.25;
+  return S.makeTents({ props: farm.props, sails: farm.sails, heightAt: farm.heightAt, minY });
+}
+const HUB_TENTS = Object.fromEntries(Object.entries(FARMS).map(([name, farm]) => [name, hubTents(farm)]));
+
+/** Why a hub camera pose clips, or null: inside a prop (padded 0.3), the windmill's sails or near the ground. */
+function clips(pose, farm) {
+  const [x, y, z] = S.poseToPos(pose);
+  for (const p of farm.props) if (pointInPropBox([x, y, z], p, 0.3)) return `camera inside the ${p.key} at (${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)})`;
+  for (const s of farm.sails) if (Math.hypot(x - s.x, y - s.y, z - s.z) < s.r) return 'camera inside the windmill sails';
+  if (y < farm.heightAt(x, z) + 0.6 - 1e-9) return 'camera too near the ground';
+  return null;
+}
+
+/** A pose anywhere the hub's own limits allow: a look-at point on the island, any zoom, polar 0.3 to 1.25, any turn. */
+function hubPose(farm, rnd) {
+  const maxTop = Math.max(...farm.fields.map((f) => f.topY));
+  const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd()) * farm.radius * 0.85;
+  const target = [farm.center.x + Math.cos(a) * r, farm.center.y + rnd() * (maxTop - farm.center.y), farm.center.z + Math.sin(a) * r];
+  // (mostly zoomed in: that's where the camera meets things)
+  return { target, dist: farm.baseMin + rnd() * rnd() * (farm.maxDist - farm.baseMin), polar: 0.3 + rnd() * 0.95, azimuth: (rnd() * 2 - 1) * Math.PI };
+}
+
+describe('the hub camera', () => {
+  it('the hub limits alone let the camera into the props; with its floor on, never', (t) => {
+    // the exploration report's poses (each field's middle and 36 points round the 0.85 r disc, polar
+    // 0.9, 1.1 and 1.25, 36 turns, at the closest zoom), and 2,000 anywhere on each farm
+    let poses = 0, before = 0, after = 0;
+    const worst = [];
+    const check = (pose, farm, tents) => {
+      poses++;
+      if (clips(pose, farm)) before++;
+      const out = S.liftClear(pose, tents);
+      const why = clips(out, farm);
+      if (why) { after++; worst.push(why); }
+      assert.ok(S.clearOfTents(out, tents), 'lands on or over the floor');
+    };
+    const farm = DEMO, tents = HUB_TENTS['the demo farm'];
+    const targets = [
+      ...farm.fields.map((f) => [f.center[0], f.topY, f.center[1]]),
+      ...Array.from({ length: 36 }, (_, k) => [farm.center.x + Math.cos((k / 36) * 2 * Math.PI) * farm.radius * 0.85, farm.center.y, farm.center.z + Math.sin((k / 36) * 2 * Math.PI) * farm.radius * 0.85]),
+    ];
+    for (const target of targets) for (const polar of [0.9, 1.1, 1.25]) for (let k = 0; k < 36; k++) {
+      check({ target, dist: farm.baseMin, polar, azimuth: (k / 36) * 2 * Math.PI - Math.PI }, farm, tents);
+    }
+    const grid = { poses, before };
+    for (const [name, f] of Object.entries(FARMS)) {
+      const rnd = mulberry32(7);
+      for (let i = 0; i < 2000; i++) check(hubPose(f, rnd), f, HUB_TENTS[name]);
+    }
+    assert.ok(grid.before > 0, 'the hub limits alone do let the camera into a prop (else this test proves nothing)');
+    assert.ok(poses > 10000 && before > grid.before, `${before} of ${poses} clip with the hub limits alone`);
+    assert.equal(after, 0, `${after} of ${poses} poses still clip (${before} did before): ${worst.slice(0, 3).join('; ')}`);
+    t.diagnostic(`${before} of ${poses} poses clipped with the hub limits alone (${grid.before} of ${grid.poses} on the grid); ${after} with its floor`);
+  });
+
+  it('keeps a drag on the windmill side out of it all the way round', () => {
+    // a low look past the windmill, turned right round in small steps (the farmer's drag)
+    const farm = DEMO, tents = HUB_TENTS['the demo farm'];
+    const mill = farm.props.find((p) => p.key === 'windmill');
+    for (const target of [[mill.x, farm.center.y, mill.z - 3], [mill.x + 2, farm.center.y, mill.z - 4], [farm.center.x, farm.center.y, farm.center.z]]) {
+      for (const dist of [farm.baseMin, farm.baseMin + 2, farm.baseMin + 5]) {
+        for (let k = 0; k <= 720; k++) {
+          const out = S.liftClear({ target, dist, polar: 1.25, azimuth: (k / 720) * 2 * Math.PI - Math.PI }, tents);
+          assert.equal(clips(out, farm), null, `turn ${k}, dist ${dist}`);
+        }
+      }
+    }
+  });
+
+  for (const [name, farm] of Object.entries(FARMS)) {
+    it(`leaves the camera as it was wherever nothing is in the way (${name})`, () => {
+      const tents = HUB_TENTS[name];
+      // the whole farm from the home view, and a look at every field from the hub's usual angles
+      const ov = { target: [farm.center.x, farm.center.y, farm.center.z], dist: farm.overviewDist, polar: 0.84, azimuth: farm.home };
+      assert.equal(S.liftClear(ov, tents), ov, 'the overview');
+      let looks = 0, moved = 0;
+      for (const f of farm.fields) {
+        for (const azimuth of [-1.2, -0.8, -0.4, farm.home, 0, 0.4, 0.8]) {
+          const look = { target: [f.center[0], f.topY, f.center[1]], dist: Math.max(farm.baseMin, farm.focusDistance(f.radius)), polar: 0.84, azimuth };
+          looks++;
+          const out = S.liftClear(look, tents);
+          if (out !== look) { moved++; assert.ok(look.polar - out.polar < 0.02, `${f.id}: tipped up only a hair (${look.polar - out.polar})`); }
+        }
+      }
+      assert.ok(moved <= Math.max(1, looks * 0.02), `${moved} of ${looks} field looks moved`);
+      // and anywhere: a pose that is moved only tips up (same look-at point, distance and turn), by
+      // as little as it can, and only a few poses are moved at all
+      const rnd = mulberry32(31);
+      let n = 0, changed = 0;
+      for (let i = 0; i < 2000; i++) {
+        const pose = hubPose(farm, rnd);
+        n++;
+        const out = S.liftClear(pose, tents);
+        if (out === pose) { assert.ok(S.clearOfTents(pose, tents)); continue; }
+        changed++;
+        assert.deepEqual(out.target, pose.target);
+        assert.equal(out.azimuth, pose.azimuth);
+        assert.equal(out.dist, pose.dist);
+        assert.ok(out.polar < pose.polar && out.polar >= 0.3 - 1e-12, 'only tips up');
+        assert.ok(!S.clearOfTents({ ...out, polar: out.polar + 2e-4 }, tents), 'no further than it needs');
+      }
+      assert.ok(changed < n * 0.03, `${changed} of ${n} poses moved`);
+    });
+
+    it(`its floor is never higher than the tour's flat one (${name})`, () => {
+      // so tipping up always finds a clear spot by the angle where the flat floor would hold it
+      const tents = HUB_TENTS[name];
+      let top = -Infinity;
+      for (let x = -farm.radius * 1.3; x <= farm.radius * 1.3; x += 0.1) {
+        for (let z = -farm.radius * 1.3; z <= farm.radius * 1.3; z += 0.1) top = Math.max(top, S.clearanceAt(tents, farm.center.x + x, farm.center.z + z));
+      }
+      assert.ok(top <= farm.floor + 1e-9, `${top.toFixed(2)} vs ${farm.floor.toFixed(2)}`);
+      // and over the windmill's sails it is at least their top plus the pad
+      const s = farm.sails[0];
+      assert.ok(S.clearanceAt(tents, s.x, s.z) >= s.y + s.r + 0.3 - 1e-9);
+    });
+  }
+
+  it('tents: a rotated box, its slope, the sails and the ground', () => {
+    const barn = { key: 'barn', x: 2, z: -1, ry: Math.PI / 2, scale: 1, y: 0.5, box: { min: [-1, 0, -0.5], max: [1, 2, 0.5] } };
+    const tents = S.makeTents({ props: [barn], sails: [{ x: 10, y: 4, z: 0, r: 1 }], heightAt: () => 0.2 });
+    assert.equal(tents.list.length, 2);
+    // turned a quarter: its long side runs along z
+    assert.ok(near(S.clearanceAt(tents, 2, -1.9), 2.5 + 0.3), 'on the roof (along z, inside)');
+    assert.ok(near(S.clearanceAt(tents, 2.6, -1), 2.5 + 0.3), 'within the pad of its short side');
+    assert.ok(near(S.clearanceAt(tents, 3.3, -1), 2.8 - 0.5), 'down the slope: 0.8 out, 0.5 past the pad');
+    assert.ok(near(S.clearanceAt(tents, 20, 20), 0.8), 'far off: the ground plus 0.6');
+    assert.ok(near(S.clearanceAt(tents, 10, 0), 5.3), 'over the sails');
+    // left out when it can't reach as high as the camera ever comes
+    assert.equal(S.makeTents({ props: [barn], minY: 3 }).list.length, 0);
+    assert.equal(S.makeTents({ boxes: [{ min: { x: 0, y: 0, z: 0 }, max: { x: 1, y: 1, z: 1 } }] }).list.length, 1);
+    // with no tents at all a pose is left alone
+    const pose = { target: [0, 0, 0], dist: 1, polar: 1.2, azimuth: 0 };
+    assert.equal(S.liftClear(pose, null), pose);
+    // and a broken one (NaN from somewhere else) comes straight back rather than looping
+    const tall = S.makeTents({ boxes: [{ min: [-1, 0, -1], max: [1, 9, 1] }] });
+    for (const bad of [{ ...pose, dist: NaN }, { ...pose, polar: NaN }, { ...pose, target: [NaN, 0, 0] }, { ...pose, dist: Infinity, polar: 0.5 }]) assert.equal(S.liftClear(bad, tall), bad);
+  });
+
+  it('backs off when even looking straight down is too close', () => {
+    const tents = S.makeTents({ boxes: [{ min: [-1, 0, -1], max: [1, 9, 1] }] });
+    const out = S.liftClear({ target: [0, 0, 0], dist: 4, polar: 1.0, azimuth: 0 }, tents, { minPolar: 0.3 });
+    assert.ok(near(out.polar, 0.3));
+    assert.ok(S.clearOfTents(out, tents) && out.dist > 4);
+    const [x, y, z] = S.poseToPos(out);
+    assert.ok(y > 9.3 || Math.abs(x) > 1.3 || Math.abs(z) > 1.3, 'out of the box and its pad');
+  });
+});
+
+function near(a, b, eps = 1e-6) { return Math.abs(a - b) <= eps; }

@@ -10,6 +10,11 @@
 // - Extra limits (the plan tour, src/screens/planFutures.js) keep the camera above a floor over
 //   everything solid: no lower than maxPolar, and far enough back for the floor (cameraSafety.js
 //   has the maths and why a shot between two safe poses stays safe all the way).
+// - The hub's own no-clip floor (setClearance: a tent over each solid thing, cameraSafety.js
+//   makeTents) holds all the time, under the extra limits too and after they come off: whenever the
+//   camera would dip under it (a drag, a zoom, a flight) it is tipped up round what it looks at,
+//   both in update() and straight after OrbitControls moves it (its 'change'), so no frame is drawn
+//   from inside the windmill, the barn or the silo.
 //
 //   const rig = createCameraRig({ camera, controls, center, radius, getInsets })
 //   rig.layout()               after a resize or when the UI around the island changes
@@ -17,14 +22,16 @@
 //   rig.focus({ center, radius, y })   ease to a field
 //   rig.shot({ target, dist, polar, azimuth })   ease to a pose, turning round the island too
 //   rig.setExtraLimits({ maxPolar, floor })      keep the camera above the floor (null: back to normal)
+//   rig.setClearance(tents)    the hub's no-clip floor (null: none); stays on under the extra limits
 //   rig.update(dt)             every frame, before controls.update()
 import * as THREE from 'three';
-import { clampToDisc, easeInOut, safeMinDistance, wrapAngle } from './cameraSafety.js';
+import { clampToDisc, easeInOut, liftClear, safeMinDistance, wrapAngle } from './cameraSafety.js';
 
 export { clampToDisc };
 
 const smoothstep = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-const MAX_POLAR = 1.25; // never down to the horizon
+export const MAX_POLAR = 1.25; // never down to the horizon
+export const MIN_POLAR = 0.3; // never quite straight down
 
 /**
  * How far back the camera sits so a circle of `radius` fits the free part of the screen.
@@ -92,17 +99,21 @@ export function createCameraRig({ camera, controls, center, radius, getInsets, r
   let baseMin = 0; // the zoom limit layout() works out (the extra limits may ask for more)
   let maxDist = Infinity; // the zoom-out limit layout() works out (controls.maxDistance eases down to it)
   let limits = null; // { maxPolar, floor } while the tour keeps the camera above the farm
+  let tents = null; // the hub's no-clip floor (cameraSafety.makeTents), or null
   let homeAzimuth = null; // which way round the camera looked at the first layout()
   let anim = null;
   const tmp = new THREE.Vector3();
   const dir = new THREE.Vector3();
 
   controls.enablePan = false;
-  controls.minPolarAngle = 0.3;
+  controls.minPolarAngle = MIN_POLAR;
   controls.maxPolarAngle = MAX_POLAR;
   // a grab or a scroll takes over from an eased flight
   const onStart = () => { if (anim) { finishOffset(); endAnim(true); } };
   controls.addEventListener('start', onStart);
+  // OrbitControls has just turned or zoomed the camera (and is about to draw): over the floor first
+  const onChange = () => { if (tents && lift()) camera.lookAt(controls.target); };
+  controls.addEventListener('change', onChange);
 
   /** Stops the flight; a shot's onDone hears whether it was cut short. */
   function endAnim(cancelled) {
@@ -176,6 +187,26 @@ export function createCameraRig({ camera, controls, center, radius, getInsets, r
   }
 
   /**
+   * Keeps the camera over the hub's floor (nothing to do without it, or when it already is): tipped
+   * up round the look-at point just as far as it needs (cameraSafety.liftClear). Whether it moved.
+   */
+  function lift() {
+    if (!tents) return false;
+    const { d, polar, azimuth } = spherical();
+    const pose = { target: controls.target.toArray(), dist: d, polar, azimuth };
+    const out = liftClear(pose, tents, { minPolar: controls.minPolarAngle });
+    if (out === pose) return false;
+    placeAt(controls.target, out.dist, out.polar, out.azimuth);
+    return true;
+  }
+
+  /** The hub's no-clip floor (cameraSafety.makeTents), or null for none. Kept under the extra limits. */
+  function setClearance(t) {
+    tents = t && Array.isArray(t.list) ? t : null;
+    lift();
+  }
+
+  /**
    * Extra limits on top of the normal ones: { maxPolar, floor } keeps the camera above the floor
    * (cameraSafety.js); null goes back to the normal polar limit and zoom.
    */
@@ -186,9 +217,10 @@ export function createCameraRig({ camera, controls, center, radius, getInsets, r
       l = { ...l, floor: -Infinity };
     }
     limits = l ? { maxPolar: Number.isFinite(l.maxPolar) ? l.maxPolar : MAX_POLAR, floor: l.floor } : null;
-    if (limits) { enforce(); return; }
+    if (limits) { enforce(); lift(); return; }
     controls.maxPolarAngle = MAX_POLAR;
     controls.minDistance = baseMin;
+    lift(); // (the hub's own floor stays: the tour hands the camera back to it)
   }
 
   /**
@@ -221,6 +253,7 @@ export function createCameraRig({ camera, controls, center, radius, getInsets, r
       controls.maxDistance = Math.max(maxDist, currentDistance());
     }
     enforce(); // the zoom limit just changed: the extra limits go back on top
+    lift();
     camera.updateProjectionMatrix();
     return overviewDist;
   }
@@ -364,12 +397,15 @@ export function createCameraRig({ camera, controls, center, radius, getInsets, r
       }
       easeToLayout(dt);
     }
-    // then the extra limits, if any (this runs before controls.update(), which clamps the same way)
+    // then the extra limits, if any (this runs before controls.update(), which clamps the same way),
+    // and the hub's floor (which OrbitControls can't clamp to: onChange keeps to it after it moves)
     enforce();
+    lift();
   }
 
   function dispose() {
     controls.removeEventListener('start', onStart);
+    controls.removeEventListener('change', onChange);
     camera.clearViewOffset();
   }
 
@@ -380,7 +416,9 @@ export function createCameraRig({ camera, controls, center, radius, getInsets, r
     flyTo,
     shot,
     setExtraLimits,
+    setClearance,
     enforce,
+    lift,
     focusDistance,
     minDistanceAt,
     update,
@@ -398,6 +436,8 @@ export function createCameraRig({ camera, controls, center, radius, getInsets, r
     get homeAzimuth() { return homeAzimuth; },
     /** The zoom limit layout() worked out, before any extra limits. */
     get baseMinDistance() { return baseMin; },
+    /** The hub's no-clip floor in force (cameraSafety.makeTents), or null. */
+    get clearance() { return tents; },
     /** The extra limits in force, or null. */
     get extraLimits() { return limits ? { ...limits } : null; },
   };

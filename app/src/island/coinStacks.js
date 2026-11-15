@@ -72,11 +72,13 @@ export function sailSpheres(spinners) {
  * fills a box as big as the whole field, which would keep everything off the grass round it. With
  * split, a geometry wider than that is measured in pieces about that size instead (its triangles
  * by where they are), so only where it really runs is kept clear.
+ * points (true: on): whether sparkles and firework bursts (THREE.Points) count. The camera's
+ * floor leaves them out: they are light in the air, not something solid to keep out of.
  * @param {THREE.Object3D|null} root
- * @param {{floorY?: number, pad?: number, split?: number}} [o]
+ * @param {{floorY?: number, pad?: number, split?: number, points?: boolean}} [o]
  * @returns {THREE.Box3[]}
  */
-export function themeKeepOuts(root, { floorY = -Infinity, pad = THEME_PAD, split = 0 } = {}) {
+export function themeKeepOuts(root, { floorY = -Infinity, pad = THEME_PAD, split = 0, points = true } = {}) {
   const out = [];
   if (!root?.isObject3D) return out;
   root.updateWorldMatrix(true, true);
@@ -92,7 +94,7 @@ export function themeKeepOuts(root, { floorY = -Infinity, pad = THEME_PAD, split
   const walk = (o) => {
     if (!o.visible) return;
     const g = o.geometry;
-    if (g && (o.isMesh || o.isPoints)) {
+    if (g && (o.isMesh || (points && o.isPoints))) {
       if (!g.boundingBox) g.computeBoundingBox();
       const parts = split > 0 ? piecesOf(g, split, !!o.isPoints) : [g.boundingBox];
       if (o.isInstancedMesh) {
