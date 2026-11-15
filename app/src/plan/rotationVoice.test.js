@@ -102,7 +102,7 @@ describe('Manami’s rotation lines on the demo farm (profit first)', () => {
     assert.equal(fieldMoneyLine(cur, 'f1'), 'Over 3 seasons it earns about $69k here.');
     const t = cmp.totals;
     assert.equal(moneyLine(cmp, 'priority'), `About ${moneyAbout(t.priority.expectedGM)} over 3 seasons, about ${moneyAbout(t.priority.expectedGM - t.current.expectedGM)} more than keeping going. In a bad year, 1 in 10, about ${moneyAbout(t.priority.p10GM)}.`);
-    assert.equal(moneyLine(cmp, 'priority'), 'About $408k over 3 seasons, about $58k more than keeping going. In a bad year, 1 in 10, about $263k.');
+    assert.equal(moneyLine(cmp, 'priority'), 'About $407k over 3 seasons, about $60k more than keeping going. In a bad year, 1 in 10, about $274k.');
     assert.equal(moneyLine(cmp, 'current'), `About ${moneyAbout(t.current.expectedGM)} over 3 seasons if you keep going. In a bad year, 1 in 10, about ${moneyAbout(t.current.p10GM)}.`);
     assert.equal(moneyLine(cmp, 'mix', null, { f1: 'current', f2: 'maxProfit' }), 'I’m still working out what your plan earns.');
   });

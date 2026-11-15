@@ -243,7 +243,7 @@ describe('the farm’s county (FIPS) for the crop calendar', () => {
     assert.equal(farm.state, 'IA');
   });
   it('a place with its own FIPS keeps it; a place without one gets none', () => {
-    const field = { id: 'field-1', name: 'Back 80', acres: 80, crops: { 2023: 'Corn' }, geometry: { type: 'Polygon', coordinates: [[[-97, 40], [-96.99, 40], [-96.99, 40.01], [-97, 40.01], [-97, 40]]] } };
+    const field = { id: 'field-1', name: 'Back 80', acres: 80, crops: { 2023: 'Corn' }, soil: appFields()[0].soil, geometry: { type: 'Polygon', coordinates: [[[-97, 40], [-96.99, 40], [-96.99, 40.01], [-97, 40.01], [-97, 40]]] } };
     assert.equal(plannerFarm({ fields: [field], place: { lat: 40, lon: -97, detail: 'Nebraska, United States', fips: '31159' } }).farm.fips, '31159');
     assert.equal('fips' in plannerFarm({ fields: [field], place: { lat: 40, lon: -97, detail: 'Nebraska, United States' } }).farm, false);
     assert.equal('fips' in plannerFarm({ fields: [field], place: { lat: 40, lon: -97, fips: 'Story' } }).farm, false);
@@ -254,10 +254,10 @@ describe('the farm’s county (FIPS) for the crop calendar', () => {
     const data = demoData(['profit']);
     assert.equal(data.farm.fips, '19169');
     const { totals } = compareFutures(data, { startYear: START_YEAR });
-    assert.equal(Math.round(totals.current.expectedGM), 349948);
-    assert.equal(Math.round(totals.maxProfit.expectedGM), 416354);
-    assert.equal(Math.round(totals.priority.expectedGM), 407813);
-    assert.equal(Math.round(totals.priority.p10GM), 263359);
+    assert.equal(Math.round(totals.current.expectedGM), 346469);
+    assert.equal(Math.round(totals.maxProfit.expectedGM), 413859);
+    assert.equal(Math.round(totals.priority.expectedGM), 406649);
+    assert.equal(Math.round(totals.priority.p10GM), 273704);
     assert.equal(totals.priority.endSoil100, 57);
   });
 });

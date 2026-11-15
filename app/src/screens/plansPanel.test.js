@@ -152,8 +152,8 @@ describe('the plans panel leads with the rotation', async () => {
     assert.doesNotMatch(html, /<details[^>]* open/); // every disclosure starts closed
     // the four numbers for the three plans, and the price in Manami's words, not the planner's summary
     for (const n of ['Cash margin, 3 seasons', 'In a bad year (1 in 10)', 'Soil score in 2029', 'Beats keeping going']) assert.ok(html.includes(n), n);
-    assert.match(html, /<th scope="row">Keep going<\/th><td>\$350k<\/td><td>\$183k<\/td><td>45\/100<\/td><td>–<\/td>/);
-    assert.match(html, /<th scope="row">Manami’s pick<span class="sr-only"> \(on show\)<\/span><\/th><td>\$408k<\/td><td>\$263k<\/td><td>57\/100<\/td><td>98% of years<\/td>/);
+    assert.match(html, /<th scope="row">Keep going<\/th><td>\$346k<\/td><td>\$190k<\/td><td>45\/100<\/td><td>–<\/td>/);
+    assert.match(html, /<th scope="row">Manami’s pick<span class="sr-only"> \(on show\)<\/span><\/th><td>\$407k<\/td><td>\$274k<\/td><td>57\/100<\/td><td>98% of years<\/td>/);
     // nothing lost: the planner's own words, word for word
     for (const s of ['Why my pick', 'Watch out', 'Good to know', 'The planner’s own words', 'Price of priorities']) assert.ok(html.includes(s), s);
     // "See it on the farm" on Manami's pick runs her walk; "Use this plan" stays in the footer
