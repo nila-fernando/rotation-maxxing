@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@mapbox/vector-tile": "3.0.0",
+    "@supabase/supabase-js": "2.118.0",
     "@turf/turf": "7.4.0",
     "flatbush": "4.7.0",
     "leaflet": "1.9.4",
