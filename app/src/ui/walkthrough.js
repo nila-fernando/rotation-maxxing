@@ -644,10 +644,17 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
   /** Scrolls the step's first target into view inside its panel (the check-up's sections). */
   function reveal(step) {
     const el = targets(step)[0] || (step.target?.[0] ? document.querySelector(step.target[0]) : null);
-    if (!el || !el.closest('.checkup__body, .plans__body')) return;
-    // a check-up section goes to the top of the panel; the rest just into view
-    const block = el.closest('.checkup__body') && !el.matches('.says') ? 'start' : 'nearest';
-    el.scrollIntoView({ block, inline: 'nearest', behavior: 'instant' });
+    const box = el?.closest('.checkup__body, .plans__body');
+    if (!box) return;
+    // a check-up section goes to the top of the panel; the rest just into view. Only the panel's own
+    // list scrolls: scrollIntoView would also scroll the panel itself when the list can't go far
+    // enough (the last section), hiding its header for good.
+    const toTop = box.matches('.checkup__body') && !el.matches('.says');
+    const er = el.getBoundingClientRect();
+    const br = box.getBoundingClientRect();
+    const pad = 8;
+    if (toTop || er.top < br.top) box.scrollTop += er.top - br.top - pad;
+    else if (er.bottom > br.bottom) box.scrollTop += er.bottom - br.bottom + pad;
   }
 
   function watch(step) {
