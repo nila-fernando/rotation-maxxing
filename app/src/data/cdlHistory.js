@@ -13,9 +13,11 @@
 // own proxy; the GitHub Pages build gets '' (off) unless VITE_CDL_PROXY is set, since a static host
 // can't proxy. With no proxy, fillCropHistory asks nothing and the check-up says those years are
 // out of reach (cdlAvailable). Answers are cached in localStorage by point and year, so a reload or
-// the same field picked again costs nothing. A year CropScape doesn't answer is left missing.
+// the same field picked again costs nothing. A year CropScape doesn't answer is left missing, and
+// the field is reported 'failed' (onField) so the check-up can offer to ask again.
 import { booleanPointInPolygon, pointOnFeature } from '@turf/turf';
 import { parseCdlValue, samplePoints, toAlbers5070 } from '../vendor/rotation-maxxing/data/cdl.ts';
+import { Unreachable, assertAnswered, fetchRetry, pool } from './net.js';
 
 const envProxy = import.meta.env?.VITE_CDL_PROXY; // undefined under node:test
 /** The CropScape proxy path or origin; '' when this build has none. */
@@ -25,7 +27,9 @@ export const cdlAvailable = (base = CDL_PROXY) => !!base;
 const CONCURRENCY = 10;
 const POINTS = 3;
 const ATTEMPTS = 3;
-const TIMEOUT_MS = 15000;
+const TIMEOUT_MS = 12000; // per try; most answers take well under a second
+const BACKOFF_MS = 500;
+const BREAKER = 12;
 const CACHE_PREFIX = 'cdl:v1:';
 
 /** The outer ring of the field's biggest part (by vertex count; good enough to pick sample points). */
@@ -55,43 +59,19 @@ const cache = {
   set(k, v) { try { localStorage.setItem(CACHE_PREFIX + k, v); } catch { /* full or blocked: fine */ } },
 };
 
-/** A small pool: at most `n` lookups in flight, so CropScape isn't flooded. */
-function limiter(n) {
-  let active = 0;
-  const queue = [];
-  const next = () => {
-    if (active >= n || !queue.length) return;
-    active++;
-    const { fn, resolve } = queue.shift();
-    fn().then(resolve, () => resolve(null)).finally(() => { active--; next(); });
-  };
-  return (fn) => new Promise((resolve) => { queue.push({ fn, resolve }); next(); });
-}
-
-/** One CropScape lookup; null if it doesn't answer (it has intermittent 5xx errors: retried). */
-async function lookup(fetchFn, base, year, [x, y]) {
+/** One CropScape lookup: the category, or null when CropScape has none there. Throws Unreachable
+ * when it doesn't answer (it has intermittent 5xx errors and slow spells: each try times out, and
+ * is tried again with backoff). */
+async function lookup(fetchFn, base, year, [x, y], { signal, clock } = {}) {
   const key = `${year}:${Math.round(x)},${Math.round(y)}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const url = `${base}/axis2/services/CDLService/GetCDLValue?year=${year}&x=${x.toFixed(1)}&y=${y.toFixed(1)}`;
-  for (let a = 0; a < ATTEMPTS; a++) {
-    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = ctrl && setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-    try {
-      const res = await fetchFn(url, ctrl ? { signal: ctrl.signal } : undefined);
-      if (res.ok) {
-        const cat = parseCdlValue(await res.text());
-        if (cat) cache.set(key, cat);
-        return cat;
-      }
-      if (res.status < 500) return null;
-    } catch {
-      // network error or timeout: try again
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  }
-  return null;
+  const res = assertAnswered(await fetchRetry(fetchFn, url, {}, { timeoutMs: TIMEOUT_MS, attempts: ATTEMPTS, backoffMs: BACKOFF_MS, signal, clock }), 'CropScape');
+  if (!res.ok) return null;
+  const cat = parseCdlValue(await res.text());
+  if (cat) cache.set(key, cat);
+  return cat;
 }
 
 /**
@@ -101,25 +81,51 @@ async function lookup(fetchFn, base, year, [x, y]) {
  * @param {(field) => object} [o.known] years already known per field from elsewhere (demo data)
  * @param {Function} [o.fetchFn]        fetch (tests pass a fake)
  * @param {string} [o.base]             CropScape origin or proxy path ('': no proxy, nothing is asked)
+ * @param {(id, state, found, reason) => void} [o.onField]  as each field settles: 'done' (it has
+ *        crop years), 'none' (CropScape has none for it) or 'failed' (some years couldn't be asked)
+ * @param {AbortSignal} [o.signal]      stops every lookup still waiting (the source's budget ran out)
  * @returns {Promise<Record<string, Record<string, string>>>} new years per field id
  */
-export async function fillCropHistory(fields, { years, known = () => ({}), fetchFn = globalThis.fetch, base = CDL_PROXY }) {
-  if (!cdlAvailable(base)) return {}; // no proxy on this site (GitHub Pages): no lookups that can only fail
-  const run = limiter(CONCURRENCY);
+export async function fillCropHistory(fields, { years, known = () => ({}), fetchFn = globalThis.fetch, base = CDL_PROXY, onField = () => {}, signal = null, clock } = {}) {
+  const run = pool(CONCURRENCY);
   const out = {};
+  // CropScape down altogether: after BREAKER failures with no answer at all, stop asking
+  let answered = 0, failures = 0;
+  const ask = (year, p) => run(async () => {
+    if (!answered && failures >= BREAKER) throw new Unreachable('CropScape is not answering');
+    try {
+      const cat = await lookup(fetchFn, base, year, p, { signal, clock });
+      answered++;
+      return cat;
+    } catch (e) {
+      failures++;
+      throw e;
+    }
+  });
   await Promise.all(fields.map(async (f) => {
-    if (!f?.geometry) return;
+    if (!f?.geometry) { onField(f?.id, 'none', null, null); return; }
     const have = { ...known(f), ...(f.crops || {}) };
     const missing = years.filter((y) => have[y] == null);
-    if (!missing.length) return;
+    const any = () => Object.values(have).some((c) => c != null);
+    if (!missing.length) { onField(f.id, 'done', null, null); return; }
+    if (!cdlAvailable(base)) { // no proxy on this site (GitHub Pages): no lookups that can only fail
+      onField(f.id, 'failed', null, 'CropScape can’t be reached from this site');
+      return;
+    }
     const pts = fieldPoints(f.geometry).map(toAlbers5070);
     const found = {};
+    let failed = false;
     await Promise.all(missing.map(async (year) => {
-      const cats = await Promise.all(pts.map((p) => run(() => lookup(fetchFn, base, year, p))));
+      const got = await Promise.allSettled(pts.map((p) => ask(year, p)));
+      const cats = got.map((g) => (g.status === 'fulfilled' ? g.value : null));
+      // a year counts as failed only when no point answered (one answer is enough to vote on)
+      if (got.every((g) => g.status === 'rejected')) failed = true;
       const cat = majority(cats);
       if (cat) found[year] = cat;
     }));
     if (Object.keys(found).length) out[f.id] = found;
+    Object.assign(have, found);
+    onField(f.id, failed ? 'failed' : any() ? 'done' : 'none', Object.keys(found).length ? found : null, failed ? 'CropScape did not answer for some years' : null);
   }));
   return out;
 }

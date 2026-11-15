@@ -6,15 +6,17 @@
 //   const markets = createMarkets()
 //   const market = await markets.forFarm([lng, lat], { practice: 'non-irrigated' })
 //   market: { ok: true, county, crops, prices, baseYields, gaps }  (see marketFor)
-//        or { ok: false, reason }
+//        or { ok: false, reason, failed }   failed: couldn't be reached (asking again may work)
+//   await markets.status([lng, lat])  ->  { state: 'done' | 'none' | 'failed', reason }  (the loading checklist)
 //
 // The NASS answers are kept per county for the session (a failed try isn't, so it's asked again).
 import { CROP_BY_ID, SOURCES } from '../vendor/rotation-maxxing/algorithm/croptraits.ts';
 import { CROP_WORD } from '../plan/planNames.js';
 import { countyAt } from './countyLookup.js';
+import { Unreachable, fetchRetry } from './net.js';
 import { NASS_PROXY, baseYieldsFrom, cropsGrown, marketQueries, nassAvailable, pickPrice, proxiedFetch, stateCensusQuery } from './nass.js';
 
-const TIMEOUT_MS = 45000; // Quick Stats is often slow (5-10 s per request is normal)
+const TIMEOUT_MS = 30000; // per try: Quick Stats is often slow (5-10 s per request is normal)
 const RETRIES = 2;
 
 const word = (id) => CROP_WORD[id]?.word ?? id;
@@ -28,25 +30,20 @@ export function priceText(price, unit) {
 }
 
 /** One Quick Stats request through the proxy: its rows ([] when NASS has none: it answers 400 then). */
-async function nassRows(url, fetchFn) {
-  for (let attempt = 0; ; attempt++) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-    let res;
-    try {
-      res = await fetchFn(url, { signal: ctrl.signal });
-    } catch (e) {
-      if (attempt < RETRIES && !ctrl.signal.aborted) continue;
-      throw new Error(ctrl.signal.aborted ? 'USDA NASS took too long to answer' : 'USDA NASS could not be reached');
-    } finally {
-      clearTimeout(timer);
-    }
-    if (res.status === 400) return [];
-    if (res.status >= 500 && attempt < RETRIES) continue;
-    if (!res.ok) throw new Error(res.status === 503 ? 'the USDA NASS connection isn’t set up on this server' : `USDA NASS answered HTTP ${res.status}`);
-    const body = await res.json();
-    return Array.isArray(body?.data) ? body.data : [];
+async function nassRows(url, fetchFn, { signal = null, clock } = {}) {
+  let res;
+  try {
+    res = await fetchRetry(fetchFn, url, {}, { timeoutMs: TIMEOUT_MS, attempts: RETRIES + 1, backoffMs: 700, signal, clock });
+  } catch (e) {
+    throw new Unreachable(e?.timedOut ? 'USDA NASS took too long to answer' : 'USDA NASS could not be reached', { timedOut: e?.timedOut });
   }
+  if (res.status === 400) return [];
+  if (res.status === 503) throw new Unreachable('the USDA NASS connection isn’t set up on this server', { status: 503 });
+  if (res.status >= 500) throw new Unreachable(`USDA NASS answered HTTP ${res.status}`, { status: res.status });
+  if (!res.ok) throw new Error(`USDA NASS answered HTTP ${res.status}`);
+  let body;
+  try { body = await res.json(); } catch { throw new Unreachable('USDA NASS sent an unreadable answer'); }
+  return Array.isArray(body?.data) ? body.data : [];
 }
 
 /**
@@ -59,7 +56,11 @@ export async function loadMarketRows(point, { fetchFn = globalThis.fetch, base =
   const ask = proxiedFetch(base, fetchFn);
   const q = marketQueries(county, thisYear);
   const names = Object.keys(q);
-  const got = await Promise.all(names.map((k) => nassRows(q[k], ask)));
+  // (all six settle before a failure is reported, so none is left running behind it)
+  const settled = await Promise.allSettled(names.map((k) => nassRows(q[k], ask)));
+  const bad = settled.find((r) => r.status === 'rejected');
+  if (bad) throw bad.reason;
+  const got = settled.map((r) => r.value);
   const rows = Object.fromEntries(names.map((k, i) => [k, got[i]]));
   rows.censusLevel = 'county';
   if (!rows.census.length) { // a county with nothing on record: the state's Census instead
@@ -180,12 +181,28 @@ export function createMarkets({ fetchFn = (...a) => globalThis.fetch(...a), base
   return {
     /** Starts the look-ups early (when the fields are picked), so the plans needn't wait. */
     warm(point) { if (point) rowsFor(point).catch(() => {}); },
+    /**
+     * The market data for the loading checklist: 'done' (crops, prices and yields to plan with),
+     * 'none' (NASS answered: nothing to plan with here) or 'failed' (the county lookup or NASS
+     * couldn't be reached; failed is { retryable } unless this site has no NASS connection at all).
+     */
+    async status(point) {
+      if (!point) return { state: 'none', reason: 'the farm has no fields to locate it by' };
+      if (!nassAvailable(base)) return { state: 'failed', reason: 'this site has no connection to USDA NASS set up', retryable: false };
+      try {
+        const m = marketFor(await rowsFor(point));
+        return m.ok ? { state: 'done', county: m.county } : { state: 'none', reason: m.reason };
+      } catch (e) {
+        return e?.code === 'unreachable' ? { state: 'failed', reason: e.message, retryable: true } : { state: 'none', reason: e.message };
+      }
+    },
     async forFarm(point, { practice = 'non-irrigated' } = {}) {
       if (!point) return { ok: false, reason: 'the farm has no fields to locate it by' };
       try {
         return marketFor(await rowsFor(point), { practice });
       } catch (e) {
-        return { ok: false, reason: e.message };
+        // failed: it couldn't be reached (asking again may work), as opposed to NASS having nothing
+        return { ok: false, reason: e.message, failed: e?.code === 'unreachable' };
       }
     },
   };

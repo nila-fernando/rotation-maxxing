@@ -15,11 +15,12 @@
 // the one at that point. Answers are cached in localStorage by point.
 import { booleanPointInPolygon, centroid, pointOnFeature } from '@turf/turf';
 import { parseSsurgo, ssurgoPointQuery } from '../vendor/rotation-maxxing/data/ssurgo.ts';
+import { Unreachable, assertAnswered, fetchRetry } from './net.js';
 
 export const SDA_URL = 'https://SDMDataAccess.sc.egov.usda.gov/Tabular/post.rest';
 const CONCURRENCY = 4;
-const ATTEMPTS = 2;
-const TIMEOUT_MS = 20000;
+const ATTEMPTS = 3;
+const TIMEOUT_MS = 15000;
 const CACHE_PREFIX = 'soil:v1:';
 const TOP_60_IN_CM = 152.4;
 
@@ -79,45 +80,45 @@ const cache = {
   set(k, v) { try { localStorage.setItem(CACHE_PREFIX + k, JSON.stringify(v)); } catch { /* full or blocked: fine */ } },
 };
 
-/** The soil at one point, or null (outside the survey, or Soil Data Access didn't answer). */
-export async function soilAt([lng, lat], fetchFn = globalThis.fetch) {
+/**
+ * The soil at one point, or null when it isn't surveyed there (water, a town, outside the US).
+ * Throws Unreachable when Soil Data Access doesn't answer (each try times out; tried again with backoff).
+ */
+export async function soilAt([lng, lat], fetchFn = globalThis.fetch, { signal = null, clock } = {}) {
   const key = `${lng.toFixed(5)},${lat.toFixed(5)}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const body = JSON.stringify({ query: ssurgoPointQuery(lng, lat), format: 'JSON+COLUMNNAME' });
-  for (let a = 0; a < ATTEMPTS; a++) {
-    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
-    const timer = ctrl && setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-    try {
-      const res = await fetchFn(SDA_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, ...(ctrl ? { signal: ctrl.signal } : {}) });
-      if (res.ok) {
-        const json = await res.json();
-        if (!json?.Table || json.Table.length < 2) return null; // not surveyed here (water, town, outside the US)
-        const { land, mapUnit, component, gaps } = parseSsurgo(json);
-        const soil = { display: displaySoil(json), land, mapUnit, component, gaps };
-        cache.set(key, soil);
-        return soil;
-      }
-      if (res.status < 500) return null;
-    } catch {
-      // network error or timeout: try again
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  }
-  return null;
+  const res = assertAnswered(await fetchRetry(fetchFn, SDA_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, { timeoutMs: TIMEOUT_MS, attempts: ATTEMPTS, backoffMs: 600, signal, clock }), 'Soil Data Access');
+  if (!res.ok) return null;
+  let json;
+  try { json = await res.json(); } catch { throw new Unreachable('Soil Data Access sent an unreadable answer'); }
+  if (!json?.Table || json.Table.length < 2) return null; // not surveyed here
+  const { land, mapUnit, component, gaps } = parseSsurgo(json);
+  const soil = { display: displaySoil(json), land, mapUnit, component, gaps };
+  cache.set(key, soil);
+  return soil;
 }
 
-/** Soil for every field that doesn't have it yet, a few at a time. */
-export async function fillSoil(fields, { fetchFn = globalThis.fetch } = {}) {
+/**
+ * Soil for every field that doesn't have it yet, a few at a time. onField(id, state, soil, reason)
+ * as each settles: 'done', 'none' (not surveyed) or 'failed' (Soil Data Access didn't answer).
+ */
+export async function fillSoil(fields, { fetchFn = globalThis.fetch, onField = () => {}, signal = null, clock } = {}) {
   const todo = fields.filter((f) => f?.geometry && !f.soil);
+  for (const f of fields) if (f && !todo.includes(f)) onField(f.id, f.soil ? 'done' : 'none', null, null);
   const out = {};
   let i = 0;
   const worker = async () => {
     while (i < todo.length) {
       const f = todo[i++];
-      const soil = await soilAt(soilPoint(f.geometry), fetchFn);
-      if (soil) out[f.id] = soil;
+      try {
+        const soil = await soilAt(soilPoint(f.geometry), fetchFn, { signal, clock });
+        if (soil) out[f.id] = soil;
+        onField(f.id, soil ? 'done' : 'none', soil, soil ? null : 'no soil survey here');
+      } catch (e) {
+        onField(f.id, 'failed', null, e?.message || 'Soil Data Access did not answer');
+      }
     }
   };
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, todo.length) }, worker));

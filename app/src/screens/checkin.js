@@ -1,14 +1,19 @@
 // Step 3 · Manami's check-in, shown while the farm's data loads.
 //
 // The satellite map stays visible but dimmed. Manami asks three tap-only questions, one at a time,
-// each with Skip, while a checklist on the right ticks off the data sources. The data is local, so
-// the timing is faked (about 1.5 s a row).
+// each with Skip, while a checklist on the right shows each data source's real progress (from the
+// farm's load, src/data/farmLoad.js): checking, done, no data here, or couldn't reach.
 //
-// Rules: the screen never moves on while a question is open (if the checklist finishes first it
-// waits); if the answers finish first, Manami shares a fun fact until the checklist is done.
-// The answers become farmProfile { priorities[], irrigatedFieldIds[], excludedCrops[] }.
+// Rules: the screen never moves on while a question is open (if the data is in first it waits); if
+// the answers finish first, Manami says what she's still waiting on until every source has settled
+// (each has its own time limit, so this ends). Then the island. The answers become
+// farmProfile { priorities[], irrigatedFieldIds[], excludedCrops[] }.
+//
+//   checkIn.start({ fields, load })   the check-in: questions, then the island once the data is in
+//   checkIn.wait({ load })            just the checklist and Manami waiting (the dev shortcuts)
 
 import { createTurntable } from '../ui/rotateManami.js';
+import { settledShare, statusText } from '../data/loadStatus.js';
 
 // Line icons (24×24, drawn with currentColor) in the same style as the toolbar. No emoji in the UI.
 const ICON = {
@@ -34,25 +39,46 @@ export const CROPS = [
 ];
 export const DEFAULT_PROFILE = Object.freeze({ priorities: ['profit'], irrigatedFieldIds: [], excludedCrops: [] });
 
-const CHECKLIST = [
-  { label: 'Crop history, 8 years', source: 'USDA CSB' },
-  { label: 'Soil', source: 'USDA SSURGO' },
-  { label: 'Terrain and slope', source: 'USGS 3DEP' },
-  { label: 'Weather 1981–present', source: 'NASA POWER' },
-  { label: 'Yields and prices', source: 'USDA NASS, AMS' },
-  { label: 'Costs per acre', source: 'USDA ERS' },
-];
-const ROW_MS = 1500;
+// how Manami names each source while she's waiting on it
+const WAITING_NAME = {
+  crops: 'crop history',
+  soil: 'the soil survey',
+  slope: 'the slope',
+  rain: 'rain records',
+  greenness: 'satellite greenness',
+  market: 'local yields and prices',
+};
 
-// True facts only: the data here is still partly placeholder, so no "your farm" numbers yet.
+// True facts only (no "your farm" numbers here).
 const FUN_FACTS = [
-  'Landsat satellites have photographed every farm in Iowa since 1972. That’s how we can look back at your fields.',
-  'In 2000, the Space Shuttle Endeavour mapped the height of almost all of Earth’s land in just 11 days. Your slope numbers come from that mission.',
+  'Landsat satellites have photographed every farm in the US since 1972. That’s how we can look back at your fields.',
+  'In 2000, the Space Shuttle Endeavour mapped the height of almost all of Earth’s land in just 11 days.',
   'Every year, USDA maps the crop in every field of the lower 48 states from satellite images. That’s where your crop history comes from.',
   'NASA’s POWER project turns satellite and weather-model data into daily weather for any spot on Earth, back to 1981.',
 ];
 
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+/** "crop history and satellite greenness", "crop history, the soil survey and the slope". */
+export function listNames(keys) {
+  const names = keys.map((k) => WAITING_NAME[k] || k);
+  return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+}
+
+/** Manami's line while the farmer waits on the data (sources still loading, from the tracker). */
+export function waitingLine(rows) {
+  const left = rows.filter((r) => r.state === 'loading').map((r) => r.key);
+  if (!left.length) return 'That’s everything in.';
+  const slow = left.includes('crops') ? ' Crop history is checked year by year for every field, so it’s the slow one.' : '';
+  return `I’m still waiting on ${listNames(left)}. I’ll show you your farm the moment it’s all in.${slow}`;
+}
+
+/** What Manami says about the sources that didn't come in, or ''. */
+export function missingLine(rows) {
+  const failed = rows.filter((r) => r.failed > 0).map((r) => r.key);
+  if (!failed.length) return '';
+  return `I couldn’t reach everything: ${listNames(failed)} didn’t all come in. I’ll say where it’s missing, and you can try again from there.`;
+}
+
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 const acres = (n) => `${Math.round(n).toLocaleString('en-US')} ac`;
 
 /**
@@ -71,36 +97,58 @@ export function createCheckIn({ manami, onDone }) {
   let run = 0; // bumped by start/stop so a stale run's timers do nothing
 
   /**
-   * @param {{fields: {id: string, name: string, acres: number}[]}} o
-   * @returns {Promise<object>} the farmProfile, once both the answers and the checklist are done
+   * @param {{fields: {id: string, name: string, acres: number}[], load: object}} o
+   *   load: the farm's data load (src/data/farmLoad.js): its tracker and whenSettled()
+   * @returns {Promise<object>} the farmProfile, once both the answers and the data are in
    */
-  async function start({ fields }) {
+  async function start({ fields, load }) {
     const id = ++run;
     const alive = () => id === run;
+    open();
+    bindChecklist(load.tracker);
+
+    const profile = await askAll(fields, alive); // the screen never moves on mid-question
+    if (!alive()) return null;
+
+    // the answers came first: Manami says what she's still waiting on, until it's all in
+    const waited = !load.settled;
+    if (waited) showWaiting(load.tracker, alive, { step: 'Thanks! Nearly there…' });
+    await load.whenSettled();
+    if (!alive()) return null;
+    await showDone(profile, waited, load.tracker);
+    if (!alive()) return null;
+    unbind();
+    onDone(profile);
+    return profile;
+  }
+
+  /**
+   * Just the checklist and Manami waiting, until every source has settled (the dev shortcuts
+   * ?hub=N and ?reveal=N). Resolves true then, or false if stopped first.
+   */
+  async function wait({ load }) {
+    const id = ++run;
+    const alive = () => id === run;
+    open();
+    bindChecklist(load.tracker);
+    showWaiting(load.tracker, alive, { step: 'One moment' });
+    await load.whenSettled();
+    if (!alive()) return false;
+    unbind();
+    return true;
+  }
+
+  function open() {
     manami.hide();
     root.hidden = false;
     document.body.classList.add('checkin-on');
     requestAnimationFrame(() => root.classList.add('is-in'));
     turntable.start();
-
-    let dataIn = false;
-    const checklistDone = runChecklist(alive).then(() => { dataIn = true; });
-    const profile = await askAll(fields, alive); // the screen never moves on mid-question
-    if (!alive()) return null;
-
-    // the answers came first: one fun fact until the data is in
-    const factShown = !dataIn;
-    if (factShown) showFact();
-    await checklistDone;
-    if (!alive()) return null;
-    await showDone(profile, factShown);
-    if (!alive()) return null;
-    onDone(profile);
-    return profile;
   }
 
   function stop() {
     run++;
+    unbind();
     turntable.stop();
     root.classList.remove('is-in');
     root.hidden = true;
@@ -108,32 +156,45 @@ export function createCheckIn({ manami, onDone }) {
   }
 
   // ---------------------------------------------------------------- the checklist
-  async function runChecklist(alive) {
-    listEl.replaceChildren(...CHECKLIST.map((row, i) => {
-      const li = document.createElement('li');
-      li.className = 'check-row';
-      li.dataset.state = i === 0 ? 'loading' : 'waiting';
-      li.innerHTML = `<span class="check-row__mark" aria-hidden="true"></span>
-        <span class="check-row__label"></span><span class="check-row__source"></span>`;
-      li.querySelector('.check-row__label').textContent = row.label;
-      li.querySelector('.check-row__source').textContent = row.source;
-      return li;
-    }));
-    setProgress(0);
-    const rows = [...listEl.children];
-    for (let i = 0; i < rows.length; i++) {
-      rows[i].dataset.state = 'loading';
-      await wait(ROW_MS);
-      if (!alive()) return;
-      rows[i].dataset.state = 'done';
-      setProgress(i + 1);
-    }
+  // one row per data source, kept in step with the load's tracker
+  let unbindFn = null;
+  function unbind() {
+    unbindFn?.();
+    unbindFn = null;
   }
 
-  function setProgress(n) {
-    const total = CHECKLIST.length;
-    progressEl.textContent = n < total ? `${n} of ${total} loaded` : 'All your farm data is in';
-    $('checklistBar').style.setProperty('--done', String(n / total));
+  function bindChecklist(tracker) {
+    unbind();
+    const rows = tracker.all();
+    listEl.replaceChildren(...rows.map((r) => {
+      const li = document.createElement('li');
+      li.className = 'check-row';
+      li.dataset.key = r.key;
+      li.innerHTML = `<span class="check-row__mark" aria-hidden="true"></span>
+        <span class="check-row__label"></span><span class="check-row__source"></span><span class="check-row__detail"></span>`;
+      li.querySelector('.check-row__label').textContent = r.label;
+      li.querySelector('.check-row__source').textContent = r.source;
+      return li;
+    }));
+    const paint = () => paintChecklist(tracker.all());
+    paint();
+    unbindFn = tracker.subscribe(paint);
+  }
+
+  function paintChecklist(rows) {
+    for (const r of rows) {
+      const li = listEl.querySelector(`[data-key="${r.key}"]`);
+      if (!li) continue;
+      li.dataset.state = r.state;
+      li.classList.toggle('is-partial', r.state === 'done' && r.failed > 0);
+      li.querySelector('.check-row__detail').textContent = statusText(r);
+      li.title = r.reason && r.state !== 'loading' ? r.reason : '';
+    }
+    const total = rows.length;
+    const n = rows.filter((r) => r.state !== 'loading').length;
+    const missing = rows.some((r) => r.failed > 0);
+    progressEl.textContent = n < total ? `${n} of ${total} checked` : missing ? 'Everything’s checked' : 'All your farm data is in';
+    $('checklistBar').style.setProperty('--done', String(settledShare(rows)));
     $('checklist').classList.toggle('is-complete', n === total);
   }
 
@@ -270,27 +331,38 @@ export function createCheckIn({ manami, onDone }) {
     card.querySelector('.checkin-q__title').focus({ preventScroll: true });
   }
 
-  function showFact() {
+  /** "Still getting your farm's data…": what Manami is waiting on, kept up to date, and a fun fact. */
+  function showWaiting(tracker, alive, { step }) {
     const fact = FUN_FACTS[Math.floor(Math.random() * FUN_FACTS.length)];
     card.innerHTML = `
-      <p class="checkin-q__step">Thanks! Nearly there…</p>
-      <h2 class="checkin-q__title" tabindex="-1">Fun fact</h2>
-      <p class="checkin-fact"></p>`;
-    card.querySelector('.checkin-fact').textContent = fact;
+      <p class="checkin-q__step"></p>
+      <h2 class="checkin-q__title" tabindex="-1">Still getting your farm’s data…</h2>
+      <p class="checkin-fact checkin-wait"></p>
+      <p class="checkin-aside"><b>Fun fact:</b> <span></span></p>`;
+    card.querySelector('.checkin-q__step').textContent = step;
+    card.querySelector('.checkin-aside span').textContent = fact;
+    const line = card.querySelector('.checkin-wait');
+    const say = () => {
+      const text = waitingLine(tracker.all());
+      if (line.textContent !== text) line.textContent = text; // (read out only when it changes)
+    };
+    say();
+    const off = tracker.subscribe(() => { if (alive() && line.isConnected) say(); else off(); });
     bump();
     card.querySelector('.checkin-q__title').focus({ preventScroll: true });
   }
 
-  async function showDone(profile, afterFact) {
+  async function showDone(profile, afterWait, tracker) {
     card.innerHTML = `
       <p class="checkin-q__step">All set</p>
       <h2 class="checkin-q__title" tabindex="-1">Your farm is ready!</h2>
       <p class="checkin-fact"></p>`;
     const main = PRIORITIES.find((p) => p.key === profile.priorities[0]);
-    card.querySelector('.checkin-fact').textContent = `I’ll plan with ${main ? main.label.toLowerCase() : 'profit'} first in mind.`;
+    const missing = missingLine(tracker.all());
+    card.querySelector('.checkin-fact').textContent = `I’ll plan with ${main ? main.label.toLowerCase() : 'profit'} first in mind.${missing ? ` ${missing}` : ''}`;
     bump();
     card.querySelector('.checkin-q__title').focus({ preventScroll: true });
-    await wait(afterFact ? 1600 : 1200);
+    await pause(missing ? 3200 : afterWait ? 1600 : 1200);
   }
 
   function bump() {
@@ -299,5 +371,5 @@ export function createCheckIn({ manami, onDone }) {
     card.classList.add('is-new');
   }
 
-  return { start, stop };
+  return { start, wait, stop };
 }

@@ -37,10 +37,11 @@ export const ALWAYS_CROPS = ['cereal-rye', 'fallow'];
 
 /** Thrown when there's no market data for the farm: the plans panel says so plainly. */
 export class NoMarketData extends Error {
-  constructor(reason) {
+  constructor(reason, { retryable = false } = {}) {
     super(`No price or yield data is available for this farm: ${reason}.`);
     this.code = 'no-market';
     this.reason = reason;
+    this.retryable = retryable; // it couldn't be reached: asking again may work
   }
 }
 
@@ -179,7 +180,7 @@ const STATE_NAMES = { IA: 'Iowa', IL: 'Illinois', IN: 'Indiana', NE: 'Nebraska',
  * @param {object} [o.profile]  farmProfile ({ irrigatedFieldIds, excludedCrops })
  */
 export function plannerFarm({ fields, place = null, profile = null, firstSeason = null, market = null }) {
-  if (!market?.ok) throw new NoMarketData(market?.reason || 'the farm’s market data hasn’t been looked up');
+  if (!market?.ok) throw new NoMarketData(market?.reason || 'the farm’s market data hasn’t been looked up', { retryable: !!market?.failed });
   const gaps = [...(market.gaps || [])];
   const excluded = new Set((profile?.excludedCrops || []).flatMap((k) => EXCLUDE[k] || []));
   const available = [...market.crops, ...ALWAYS_CROPS].filter((c, i, all) => !excluded.has(c) && all.indexOf(c) === i);

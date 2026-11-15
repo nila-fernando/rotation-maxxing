@@ -441,6 +441,16 @@ body.checkin-on .leaflet-control-zoom { display: none; }
   padding: 2px 8px; border-radius: 999px; background: var(--tile); border: 2px solid var(--tile-line);
   font-size: 11px; font-weight: 700; letter-spacing: .02em; color: var(--ink); white-space: nowrap;
 }
+/* the real state under each source: "3 of 5 fields", "No data here", "Couldn't reach USDA NASS" */
+.check-row__detail { grid-column: 2 / -1; margin-top: -4px; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+.check-row[data-state="none"] { background: #f4efe6; border-color: #e0d4c0; }
+.check-row[data-state="none"] .check-row__mark { border-color: #b9a88f; background: #f4efe6; }
+.check-row[data-state="none"] .check-row__mark::after { content: ""; position: absolute; left: 4px; right: 4px; top: 50%; height: 3px; margin-top: -1.5px; border-radius: 2px; background: #9d8b72; }
+.check-row[data-state="failed"], .check-row.is-partial { background: #fff4e3; border-color: #f0cf98; }
+.check-row[data-state="failed"] .check-row__mark { border-color: #c9822b; background: #c9822b; }
+.check-row[data-state="failed"] .check-row__mark::after { content: "!"; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 13px; font-weight: 800; line-height: 1; }
+.check-row[data-state="failed"] .check-row__detail, .check-row.is-partial .check-row__detail { color: #9a5a12; }
+.checkin-aside { margin-top: 10px; padding-top: 8px; border-top: 2px dashed #e1ccb0; font-size: 14px; line-height: 1.4; color: var(--ink-soft); }
 
 /* phones and tablets: the checklist on top, Manami's questions at the bottom */
 @media (max-width: 900px) {
@@ -453,6 +463,9 @@ body.checkin-on .leaflet-control-zoom { display: none; }
   .check-row__mark { width: 18px; height: 18px; border-width: 2px; }
   .check-row[data-state="done"] .check-row__mark::after { left: 4px; top: 0; width: 5px; height: 10px; border-width: 0 2px 2px 0; }
   .check-row__source { grid-column: 2; justify-self: start; font-size: 10px; padding: 1px 6px; }
+  .check-row__detail { grid-column: 2; margin-top: 0; font-size: 11px; }
+  .check-row[data-state="failed"] .check-row__mark::after { font-size: 11px; }
+  .checkin-aside { display: none; } /* (the checklist and the card share a small screen) */
   .checkin__manami { bottom: 14px; gap: 8px; }
   .checkin__face { width: 60px; height: 60px; padding: 8px 6px 6px; }
   .checkin__card { margin-bottom: 20px; padding: 12px 14px; }
@@ -868,6 +881,10 @@ body { --ck-w: 348px; } /* the check-up's width (the season chip centres between
 .ck-caption { margin-top: 8px; font-size: 13.5px; line-height: 1.4; color: var(--ink-soft); }
 .ck-caption b { color: var(--ink); }
 .ck-empty { font-size: 14px; color: var(--ink-soft); }
+.ck-empty--wait { display: flex; align-items: center; gap: 8px; }
+.ck-spin { width: 14px; height: 14px; flex: none; border-radius: 50%; border: 2px solid var(--tile-line); border-top-color: var(--green-dark); animation: spin .8s linear infinite; }
+.ck-empty--failed { color: #9a5a12; }
+.ck-retry { margin-top: 8px; }
 .ck-legend { display: flex; align-items: center; gap: 8px; margin-top: 18px; padding-top: 12px; border-top: 2px solid #ead8c0; font-size: 12px; line-height: 1.35; color: var(--ink-soft); }
 
 /* source chips: a dotted edge marks a demo stand-in */

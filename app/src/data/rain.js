@@ -5,6 +5,8 @@
 //
 // POWER's grid is about 50 km, so one call covers the whole farm. A year counts only when all six
 // months are in the record (the current year appears once September is).
+import { assertAnswered, fetchRetry } from './net.js';
+
 export const POWER_MONTHLY = 'https://power.larc.nasa.gov/api/temporal/monthly/point';
 const FIRST_YEAR = 1991;
 const NORMAL = [1991, 2020];
@@ -29,13 +31,17 @@ export function seasonTotals(json) {
   return { growingSeasonRainMm: series, avg30yrRainMm: Math.round(normal.reduce((a, r) => a + r.value, 0) / normal.length) };
 }
 
-export async function farmRain(point, { fetchFn = globalThis.fetch, now = new Date() } = {}) {
+/**
+ * The farm's rain, or null when POWER has no full record there. Throws Unreachable when POWER
+ * doesn't answer (each try times out; tried again with backoff).
+ */
+export async function farmRain(point, { fetchFn = globalThis.fetch, now = new Date(), signal = null, clock } = {}) {
+  const res = assertAnswered(await fetchRetry(fetchFn, rainUrl(point, now.getFullYear()), {}, { timeoutMs: 20000, attempts: 3, backoffMs: 800, signal, clock }), 'NASA POWER');
+  if (!res.ok) return null;
   try {
-    const res = await fetchFn(rainUrl(point, now.getFullYear()));
-    if (!res.ok) return null;
     return seasonTotals(await res.json());
   } catch {
-    return null;
+    return null; // not a readable answer
   }
 }
 
