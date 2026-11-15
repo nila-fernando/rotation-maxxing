@@ -5,17 +5,23 @@
  *   NASA POWER  -> daily weather -> water balance + erosivity -> weather pool
  *   SSURGO      -> soil per field (AWC, K, T, pH, EC, OM, texture, drainage, slope)
  *   CDL         -> last 3 years of crops per field (the current rotation)
+ *   NASS        -> county base yields (precomputed file, or Quick Stats with a key)
  *
  * The farmer still supplies what satellites can't know: seed availability,
  * buyers, equipment, tillage, tile drainage, irrigation. Any field value the
  * caller passes wins over fetched data.
  */
-import { scenariosFromDailyWeather } from '../algorithm/climate';
+import { buildWeather, type ClimateTrendsFile } from '../algorithm/climateAdjust';
+import type { WeatherSource } from '../algorithm/update';
 import { lngLatToLocal, polygonArea, SQ_M_PER_ACRE } from '../algorithm/geometry';
-import type { CropId, DailyWeather, Farm, FarmConstraints, Land, LngLat, Paddock, StateCode, Tillage, WeatherScenario } from '../algorithm/types';
+import { CROP_BY_ID } from '../algorithm/croptraits';
+import { isEnsemble } from '../algorithm/types';
+import type { CropId, DailyWeather, Farm, FarmConstraints, Land, LngLat, Paddock, StateCode, Tillage, WeatherInput, WeatherScenario } from '../algorithm/types';
 import { fetchCdlHistory } from './cdl';
 import { fetchPowerDaily, type FetchFn } from './power';
 import { fetchSoilAtPoint } from './ssurgo';
+import { fetchCountyAtPoint } from './countySample';
+import { fetchBaseYields, type BaseYieldsFile } from './nassYields';
 
 export interface FieldInput {
   id: string;
@@ -42,12 +48,38 @@ export interface BuildFarmInput {
   weatherYears: [number, number];
   /** CDL years for history (default: the 3 years before the last weather year + 1). */
   historyYears?: number[];
+  /**
+   * The season being planned (the frontend passes the current planning season).
+   * The weather is adjusted to this year. If missing: last weather year + 1, with a gap.
+   */
+  targetYear?: number;
+  /** Precomputed NEX-GDDP-CMIP6 trends for this location (src/data/cmip6/<site>.json). */
+  climateTrends?: ClimateTrendsFile;
+  /** Default 'present' when climateTrends are given, otherwise 'none'. */
+  weatherAdjustment?: 'none' | 'present';
+  /**
+   * Precomputed NASS base yields for this county (src/data/baseYields/<site>.json).
+   * The non-irrigated or irrigated set is picked from constraints.irrigation.
+   */
+  baseYields?: BaseYieldsFile;
+  /**
+   * USDA NASS Quick Stats API key, to fetch county base yields live (server or
+   * script use only: never ship a key to the browser). Ignored when baseYields is given.
+   */
+  nassApiKey?: string;
 }
 
 export interface BuiltFarm {
   farm: Farm;
+  /** Pass this to generatePlans / evaluatePlan (a raw pool, or a present-climate ensemble). */
+  weather: WeatherInput;
+  /** The deterministic (mean) pool, for callers that only want WeatherScenario[]. */
   scenarios: WeatherScenario[];
-  weather: DailyWeather;
+  /** Pass to createFarmState so replan() re-adjusts the weather to each new season. */
+  weatherSource: WeatherSource;
+  targetYear: number;
+  /** The raw NASA POWER daily record. */
+  daily: DailyWeather;
   /** Where each field's data came from, for the evidence panel. */
   provenance: Record<string, { soil: string; history: string[] }>;
   gaps: string[];
@@ -111,14 +143,49 @@ export async function buildFarm(input: BuildFarmInput, fetchFn: FetchFn = fetch 
     provenance[f.id] = { soil: soilNote, history: historyNote };
   }
 
+  const practice = input.constraints?.irrigation === 'irrigated' ? 'irrigated' : 'non-irrigated';
+  const crops = [...new Set(input.fields.flatMap((f) => f.availableCrops))];
+  let baseYields: Farm['baseYields'];
+  if (input.baseYields) {
+    const set = input.baseYields[practice];
+    baseYields = Object.fromEntries(crops.filter((c) => set.baseYields[c]).map((c) => [c, set.baseYields[c]!]));
+    gaps.push(...set.gaps.filter((g) => crops.some((c) => g.startsWith(`${CROP_BY_ID[c]?.name ?? c}:`))));
+  } else if (input.nassApiKey) {
+    try {
+      const county = await fetchCountyAtPoint(lng0, lat0, fetchFn);
+      const r = await fetchBaseYields({ key: input.nassApiKey, stateFips: county.stateFips, countyFips: county.countyFips, crops, practice }, fetchFn);
+      baseYields = r.baseYields;
+      gaps.push(...r.gaps);
+    } catch (e) {
+      gaps.push(`County yields unavailable (${(e as Error).message}); base yields are US averages, which include irrigated land.`);
+    }
+  } else {
+    gaps.push('No county yields (precomputed file or NASS API key): base yields are US averages, which include irrigated land and are usually well above dryland yields.');
+  }
+
   const farm: Farm = {
     latitude: lat0,
     paddocks,
     ...(input.state ? { state: input.state } : {}),
     ...(input.confirmedBuyers ? { confirmedBuyers: input.confirmedBuyers } : {}),
     ...(input.constraints ? { constraints: input.constraints } : {}),
+    ...(baseYields && Object.keys(baseYields).length ? { baseYields } : {}),
   };
-  const climate = scenariosFromDailyWeather(farm, power.weather);
-  gaps.push(...climate.gaps);
-  return { farm, scenarios: climate.scenarios, weather: power.weather, provenance, gaps: [...new Set(gaps)] };
+  const mode = input.weatherAdjustment ?? (input.climateTrends ? 'present' : 'none');
+  const built = buildWeather(farm, power.weather, {
+    ...(input.climateTrends ? { trends: input.climateTrends } : {}),
+    ...(input.targetYear !== undefined ? { targetYear: input.targetYear } : {}),
+    weatherAdjustment: mode,
+  });
+  gaps.push(...built.gaps);
+  return {
+    farm,
+    weather: built.weather,
+    scenarios: isEnsemble(built.weather) ? built.weather.mean : built.weather,
+    weatherSource: { daily: power.weather, ...(input.climateTrends ? { trends: input.climateTrends } : {}), weatherAdjustment: mode },
+    targetYear: built.targetYear,
+    daily: power.weather,
+    provenance,
+    gaps: [...new Set(gaps)],
+  };
 }

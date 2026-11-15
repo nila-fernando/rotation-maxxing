@@ -1,0 +1,438 @@
+{
+ "site": "story-ia",
+ "geoid": "19169",
+ "place": "Story County, IA",
+ "retrieved": "2026-11-15",
+ "non-irrigated": {
+  "baseYields": {
+   "corn": {
+    "value": 207.84,
+    "level": "county",
+    "place": "Story County, IA",
+    "practice": "all",
+    "years": [
+     2025,
+     2024,
+     2023,
+     2022,
+     2021
+    ],
+    "allPracticeMean": 207.84,
+    "basis": "sourced",
+    "sources": [
+     "nassQuickStats"
+    ],
+    "note": "NASS 2021-2025 all-practice mean."
+   },
+   "soybeans": {
+    "value": 62.9,
+    "level": "county",
+    "place": "Story County, IA",
+    "practice": "all",
+    "years": [
+     2025,
+     2024,
+     2023,
+     2022,
+     2021
+    ],
+    "allPracticeMean": 62.9,
+    "basis": "sourced",
+    "sources": [
+     "nassQuickStats"
+    ],
+    "note": "NASS 2021-2025 all-practice mean."
+   },
+   "winter-wheat": {
+    "value": 58,
+    "level": "state",
+    "place": "IA",
+    "practice": "all",
+    "years": [
+     2018,
+     2017,
+     2016,
+     2015,
+     2014
+    ],
+    "allPracticeMean": 58,
+    "basis": "sourced",
+    "sources": [
+     "nassQuickStats"
+    ],
+    "note": "NASS 2014-2018 all-practice mean."
+   },
+   "oats": {
+    "value": 87.2,
+    "level": "state",
+    "place": "IA",
+    "practice": "all",
+    "years": [
+     2026,
+     2025,
+     2024,
+     2023,
+     2022
+    ],
+    "allPracticeMean": 87.2,
+    "basis": "sourced",
+    "sources": [
+     "nassQuickStats"
+    ],
+    "note": "NASS 2022-2026 all-practice mean."
+   }
+  },
+  "gaps": [
+   "Corn (grain): NASS publishes no non-irrigated yield split here (3+ paired years), so the all-practice yield is used; it mixes irrigated and dryland acres.",
+   "Soybeans: NASS publishes no non-irrigated yield split here (3+ paired years), so the all-practice yield is used; it mixes irrigated and dryland acres.",
+   "Winter wheat: no county yield series with 3+ years since 2009; using the IA state yield.",
+   "Winter wheat: NASS publishes no non-irrigated yield split here (3+ paired years), so the all-practice yield is used; it mixes irrigated and dryland acres.",
+   "Spring wheat (other spring): no county or state NASS yield series with 3+ years since -9; using the US average yield.",
+   "Grain sorghum: no county or state NASS yield series with 3+ years since -9; using the US average yield.",
+   "Oats: no county yield series with 3+ years since 2017; using the IA state yield.",
+   "Oats: NASS publishes no non-irrigated yield split here (3+ paired years), so the all-practice yield is used; it mixes irrigated and dryland acres.",
+   "Barley: no county or state NASS yield series with 3+ years since -9; using the US average yield."
+  ]
+ },
+ "irrigated": {
+  "baseYields": {
+   "corn": {
+    "value": 207.84,
+    "level": "county",
+    "place": "Story County, IA",
+    "practice": "all",
+    "years": [
+     2025,
+     2024,
+     2023,
+     2022,
+     2021
+    ],
+    "allPracticeMean": 207.84,
+    "basis": "sourced",
+    "sources": [
+     "nassQuickStats"
+    ],
+    "note": "NASS 2021-2025 all-practice mean."
+   },
+   "soybeans": {
+    "value": 62.9,
+    "level": "county",
+    "place": "Story County, IA",
+    "practice": "all",
+    "years": [
+     2025,
+     2024,
+     2023,
+     2022,
+     2021
+    ],
+    "allPracticeMean": 62.9,
+    "basis": "sourced",
+    "sources": [
+     "nassQuickStats"
+    ],
+    "note": "NASS 2021-2025 all-practice mean."
+   },
+   "winter-wheat": {
+    "value": 58,
+    "level": "state",
+    "place": "IA",
+    "practice": "all",
+    "years": [
+     2018,
+     2017,
+     2016,
+     2015,
+     2014
+    ],
+    "allPracticeMean": 58,
+    "basis": "sourced",
+    "sources": [
+     "nassQuickStats"
+    ],
+    "note": "NASS 2014-2018 all-practice mean."
+   },
+   "oats": {
+    "value": 87.2,
+    "level": "state",
+    "place": "IA",
+    "practice": "all",
+    "years": [
+     2026,
+     2025,
+     2024,
+     2023,
+     2022
+    ],
+    "allPracticeMean": 87.2,
+    "basis": "sourced",
+    "sources": [
+     "nassQuickStats"
+    ],
+    "note": "NASS 2022-2026 all-practice mean."
+   }
+  },
+  "gaps": [
+   "Corn (grain): NASS publishes no irrigated yield split here (3+ paired years), so the all-practice yield is used; it mixes irrigated and dryland acres.",
+   "Soybeans: NASS publishes no irrigated yield split here (3+ paired years), so the all-practice yield is used; it mixes irrigated and dryland acres.",
+   "Winter wheat: no county yield series with 3+ years since 2009; using the IA state yield.",
+   "Winter wheat: NASS publishes no irrigated yield split here (3+ paired years), so the all-practice yield is used; it mixes irrigated and dryland acres.",
+   "Spring wheat (other spring): no county or state NASS yield series with 3+ years since -9; using the US average yield.",
+   "Grain sorghum: no county or state NASS yield series with 3+ years since -9; using the US average yield.",
+   "Oats: no county yield series with 3+ years since 2017; using the IA state yield.",
+   "Oats: NASS publishes no irrigated yield split here (3+ paired years), so the all-practice yield is used; it mixes irrigated and dryland acres.",
+   "Barley: no county or state NASS yield series with 3+ years since -9; using the US average yield."
+  ]
+ },
+ "series": {
+  "corn": [
+   {
+    "level": "county",
+    "place": "Story County, IA",
+    "series": {
+     "all": {
+      "2000": 157.4,
+      "2001": 150.4,
+      "2002": 177.1,
+      "2003": 164.5,
+      "2004": 188.1,
+      "2005": 187.6,
+      "2006": 184.1,
+      "2007": 180.7,
+      "2008": 160,
+      "2009": 174.7,
+      "2010": 163.9,
+      "2011": 163.2,
+      "2012": 157.6,
+      "2013": 137.2,
+      "2014": 169.9,
+      "2015": 188,
+      "2016": 211.9,
+      "2017": 200.3,
+      "2018": 192.3,
+      "2019": 189.3,
+      "2020": 148.4,
+      "2021": 201.2,
+      "2022": 207.1,
+      "2023": 211.4,
+      "2024": 215.5,
+      "2025": 204
+     },
+     "non-irrigated": {},
+     "irrigated": {}
+    }
+   },
+   {
+    "level": "state",
+    "place": "IA",
+    "series": {
+     "all": {
+      "2000": 144,
+      "2001": 146,
+      "2002": 163,
+      "2003": 157,
+      "2004": 181,
+      "2005": 173,
+      "2006": 166,
+      "2007": 171,
+      "2008": 171,
+      "2009": 181,
+      "2010": 165,
+      "2011": 172,
+      "2012": 137,
+      "2013": 164,
+      "2014": 178,
+      "2015": 192,
+      "2016": 203,
+      "2017": 202,
+      "2018": 196,
+      "2019": 198,
+      "2020": 177,
+      "2021": 204,
+      "2022": 200,
+      "2023": 201,
+      "2024": 211,
+      "2025": 210,
+      "2026": 219
+     },
+     "non-irrigated": {},
+     "irrigated": {}
+    }
+   }
+  ],
+  "soybeans": [
+   {
+    "level": "county",
+    "place": "Story County, IA",
+    "series": {
+     "all": {
+      "2000": 43.3,
+      "2001": 42.9,
+      "2002": 46.4,
+      "2003": 32.1,
+      "2004": 50,
+      "2005": 58.5,
+      "2006": 51.5,
+      "2007": 54,
+      "2008": 46.5,
+      "2009": 52.5,
+      "2010": 48.4,
+      "2011": 51.7,
+      "2012": 48.9,
+      "2013": 40.4,
+      "2014": 46.9,
+      "2015": 51,
+      "2016": 58.4,
+      "2017": 57.9,
+      "2018": 52.8,
+      "2019": 50,
+      "2020": 52.2,
+      "2021": 63.6,
+      "2022": 60,
+      "2023": 64.1,
+      "2024": 63.2,
+      "2025": 63.6
+     },
+     "non-irrigated": {},
+     "irrigated": {}
+    }
+   },
+   {
+    "level": "state",
+    "place": "IA",
+    "series": {
+     "all": {
+      "2000": 43.5,
+      "2001": 44,
+      "2002": 48,
+      "2003": 32.5,
+      "2004": 49,
+      "2005": 52.5,
+      "2006": 50.5,
+      "2007": 52,
+      "2008": 46.5,
+      "2009": 51,
+      "2010": 51,
+      "2011": 51.5,
+      "2012": 45,
+      "2013": 45.5,
+      "2014": 51,
+      "2015": 56.5,
+      "2016": 60,
+      "2017": 57,
+      "2018": 56,
+      "2019": 55,
+      "2020": 54,
+      "2021": 63,
+      "2022": 58.5,
+      "2023": 58,
+      "2024": 60,
+      "2025": 63.5,
+      "2026": 65
+     },
+     "non-irrigated": {},
+     "irrigated": {}
+    }
+   }
+  ],
+  "winter-wheat": [
+   {
+    "level": "state",
+    "place": "IA",
+    "series": {
+     "all": {
+      "2000": 47,
+      "2001": 54,
+      "2002": 53,
+      "2003": 61,
+      "2004": 55,
+      "2005": 50,
+      "2006": 66,
+      "2007": 48,
+      "2008": 48,
+      "2009": 45,
+      "2010": 46,
+      "2011": 45,
+      "2012": 50,
+      "2013": 52,
+      "2014": 49,
+      "2015": 52,
+      "2016": 63,
+      "2017": 68,
+      "2018": 58
+     },
+     "non-irrigated": {},
+     "irrigated": {}
+    }
+   }
+  ],
+  "spring-wheat": [],
+  "sorghum": [],
+  "oats": [
+   {
+    "level": "county",
+    "place": "Story County, IA",
+    "series": {
+     "all": {
+      "2000": 71.7,
+      "2001": 66,
+      "2002": 88.3,
+      "2003": 86.3,
+      "2004": 75,
+      "2006": 104.8,
+      "2007": 79.7,
+      "2008": 60,
+      "2010": 66.4,
+      "2012": 56.3,
+      "2013": 70.4,
+      "2014": 52.4,
+      "2015": 71.7,
+      "2018": 55,
+      "2023": 106.3
+     },
+     "non-irrigated": {},
+     "irrigated": {}
+    }
+   },
+   {
+    "level": "state",
+    "place": "IA",
+    "series": {
+     "all": {
+      "2000": 67,
+      "2001": 70,
+      "2002": 76,
+      "2003": 83,
+      "2004": 72,
+      "2005": 79,
+      "2006": 76,
+      "2007": 71,
+      "2008": 65,
+      "2009": 65,
+      "2010": 62,
+      "2011": 64,
+      "2012": 65,
+      "2013": 66,
+      "2014": 64,
+      "2015": 73,
+      "2016": 76,
+      "2017": 77,
+      "2018": 63,
+      "2019": 58,
+      "2020": 78,
+      "2021": 77,
+      "2022": 82,
+      "2023": 80,
+      "2024": 82,
+      "2025": 92,
+      "2026": 100
+     },
+     "non-irrigated": {},
+     "irrigated": {}
+    }
+   }
+  ],
+  "barley": []
+ }
+}

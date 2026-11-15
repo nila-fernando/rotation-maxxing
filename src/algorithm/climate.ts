@@ -7,14 +7,17 @@
  *   relative yield (field, crop, year) = FAO-33 Ya/Ym from the water balance
  *   multiplier = relative yield / mean DRYLAND relative yield over all years
  *
- * Dividing by the dryland mean keeps "national average yield" meaning an
- * average year, and lets irrigated fields come out above average.
+ * Dividing by the dryland mean keeps the base yield (local NASS dryland or
+ * all-practice yield, else the US average) meaning an average year, and lets
+ * irrigated fields come out above it. When an irrigated farm's base yield is
+ * an IRRIGATED yield, the irrigated mean is used instead.
  */
 import { CROP_BY_ID } from './croptraits';
 import { typicalYield } from './cropData';
 import { DEFAULT_TILLAGE, RESIDUE_FACTORS, residueRetention } from './soilData';
 import { residueLb, residueToCover } from './soilHealth';
 import { seasonFor } from './seasons';
+import { springFreeze } from './frost';
 import { FALLBACK_SEASONS } from './seasons';
 import { dailyEt0, indexOfDate, simulateBareSoil, simulateOffSeason, simulateSeason } from './waterBalance';
 import { BARE_SOIL_EVAPORATION, DAILY_EROSIVITY, KC_MAX_BARE_SOIL, R_SI_TO_US, waterParamsFor } from './waterParams';
@@ -256,14 +259,26 @@ export function scenariosFromDailyWeather(farm: Farm, weather: DailyWeather, opt
 
   // Normalise by the mean over years of each year's average (over predecessors) dryland relative yield,
   // so the average year's multiplier is exactly 1 even when early years lack some predecessors.
+  // Exception: on an irrigated farm whose base yield for the crop is an IRRIGATED yield
+  // (Farm.baseYields), normalise by the irrigated mean, so the base is the irrigated average year.
   const meanDry = new Map<string, number>();
   for (const [k, byYear] of runs) {
-    const perYear = [...byYear.values()].map((m) => [...m.values()].reduce((a, r) => a + r.dry, 0) / m.size);
+    const cropId = k.slice(k.lastIndexOf('|') + 1);
+    const key: 'dry' | 'actual' = irrigated && farm.baseYields?.[cropId]?.practice === 'irrigated' ? 'actual' : 'dry';
+    const perYear = [...byYear.values()].map((m) => [...m.values()].reduce((a, r) => a + r[key], 0) / m.size);
     meanDry.set(k, perYear.reduce((a, b) => a + b, 0) / perYear.length);
   }
 
   const erosivity = annualErosivity(weather);
   const annualClimate = annualTotals(weather, et0);
+  const wheatGrown = cropIds.includes('winter-wheat');
+  const freezeFor = (year: number): { freeze?: WeatherScenario['freeze'] } => {
+    if (!wheatGrown) return {};
+    const f = springFreeze(weather, year);
+    if (!f) return {};
+    const w = f.worst;
+    return { freeze: { 'winter-wheat': w ? { date: w.date, stage: w.stage, tminF: w.tminF, thresholdF: w.thresholdF, effect: w.effect } : null } };
+  };
   const totalAcres = fieldsWithSoil.reduce((a, p) => a + p.acres, 0);
   const scenarios: WeatherScenario[] = usableYears.map((year) => {
     const byPaddock: Record<PaddockId, Record<CropId, number>> = {};
@@ -307,6 +322,7 @@ export function scenariosFromDailyWeather(farm: Farm, weather: DailyWeather, opt
       water,
       ...(r !== undefined ? { erosivityR: r } : {}),
       ...(annualClimate[year] ? { climate: annualClimate[year]! } : {}),
+      ...freezeFor(year),
       sources: [weather.source, 'fao56Tables', 'fao66', 'fao56Ch7', 'fao56Ch11'],
     };
   });

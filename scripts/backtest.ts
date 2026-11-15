@@ -18,7 +18,8 @@
  * The key is read from the environment only and never written anywhere.
  */
 import { scenariosFromDailyWeather } from '../src/algorithm/climate';
-import type { Farm, Land, Paddock } from '../src/algorithm/types';
+import { freezeFactor } from '../src/algorithm/frost';
+import type { Farm, FreezeEventSummary, Land, Paddock } from '../src/algorithm/types';
 import { fetchCountyOutline, sampleCroplandSoils } from '../src/data/countySample';
 import { fetchPowerDaily } from '../src/data/power';
 import { fetchSoilAtPoint } from '../src/data/ssurgo';
@@ -28,6 +29,8 @@ interface County {
   state: 'IA' | 'KS';
   county: string;
   heldOut: boolean;
+  /** Added for the freeze validation (Nov 2026); never used before. */
+  freezeValidation?: boolean;
   crops: { cropId: string; commodity: string; util?: string }[];
 }
 
@@ -45,12 +48,18 @@ const COUNTIES: County[] = [
   { geoid: '19015', state: 'IA', county: 'BOONE', heldOut: true, crops: IA_CROPS },
   { geoid: '20169', state: 'KS', county: 'SALINE', heldOut: false, crops: KS_CROPS },
   { geoid: '20113', state: 'KS', county: 'MCPHERSON', heldOut: true, crops: KS_CROPS },
+  // East to west, new for the freeze validation:
+  { geoid: '20191', state: 'KS', county: 'SUMNER', heldOut: true, freezeValidation: true, crops: KS_CROPS },
+  { geoid: '20155', state: 'KS', county: 'RENO', heldOut: true, freezeValidation: true, crops: KS_CROPS },
+  { geoid: '20193', state: 'KS', county: 'THOMAS', heldOut: true, freezeValidation: true, crops: KS_CROPS },
 ];
 const CROPLAND = ['Corn', 'Soybeans', 'Winter Wheat', 'Sorghum', 'Dbl Crop WinWht/Soybeans'];
 const FIRST = 2001;
 const LAST = 2024;
 const SAMPLE_N = 15;
 const CDL_YEAR = 2020;
+/** Evaluation choice, fixed before the freeze run: a "bad wheat year" is below 80% of trend. */
+const BAD_YEAR = 0.8;
 
 async function quickStatsYields(key: string, c: County, commodity: string, util?: string): Promise<Map<number, number>> {
   const q = new URLSearchParams({
@@ -123,6 +132,10 @@ async function main(): Promise<void> {
   const key = process.env['NASS_API_KEY'];
   const lines: string[] = [`# Backtest: NASA POWER water balance vs county yields (${FIRST}-${LAST})`, ''];
   if (!key) lines.push('> **No `NASS_API_KEY` set: only model series are shown.**', '');
+  const detection: string[] = [];
+  /** stats[county][crop][mode] = { r, err } for the combined freeze table. */
+  const stats = new Map<string, Map<string, Map<string, { r: number; err: number }>>>();
+  const freezeRows: { county: string; set: string; hits: number; misses: number; falseAlarms: number }[] = [];
   const summary: string[] = ['| County | Crop | Soils | r | Mean abs. error | Spread model / actual | Worst real year (actual / model) |', '|---|---|---|---|---|---|---|'];
 
   for (const c of COUNTIES) {
@@ -150,11 +163,13 @@ async function main(): Promise<void> {
       ['sample', sample.points.map((p) => p.soil.land)],
     ];
     const models: Record<string, Map<string, Map<number, number>>> = {};
+    const freezeByYear = new Map<number, FreezeEventSummary | null>();
     for (const [mode, lands] of modes) {
       const climate = scenariosFromDailyWeather(farmFrom(c, lat, lands), power.weather, { crops: c.crops.map((x) => x.cropId) });
       const byCrop = new Map<string, Map<number, number>>();
       for (const s of climate.scenarios) {
         const y = Number(s.label!.slice(0, 4));
+        if (s.freeze && 'winter-wheat' in s.freeze) freezeByYear.set(y, s.freeze['winter-wheat'] ?? null);
         for (const crop of c.crops) {
           const m = s.multipliers[crop.cropId];
           if (m === undefined) continue;
@@ -163,9 +178,20 @@ async function main(): Promise<void> {
         }
       }
       models[mode] = byCrop;
+      // Wheat with the freeze factor (design midpoints, fixed before this run).
+      const wheat = byCrop.get('winter-wheat');
+      if (wheat) {
+        const withFreeze = new Map<number, number>();
+        for (const [y, m] of wheat) {
+          const ev = freezeByYear.get(y);
+          withFreeze.set(y, m * (ev ? freezeFactor(ev.effect) : 1));
+        }
+        byCrop.set('winter-wheat+freeze', withFreeze);
+      }
     }
 
-    for (const crop of c.crops) {
+    const cropList = c.crops.flatMap((x) => (x.cropId === 'winter-wheat' ? [x, { ...x, cropId: 'winter-wheat+freeze' }] : [x]));
+    for (const crop of cropList) {
       lines.push(`### ${crop.cropId}`, '');
       if (!key) {
         for (const mode of ['point', 'sample']) {
@@ -177,6 +203,30 @@ async function main(): Promise<void> {
         continue;
       }
       const actual = detrend(await quickStatsYields(key, c, crop.commodity, crop.util));
+      if (crop.cropId === 'winter-wheat+freeze') {
+        // (a) Detection, sourced parts only: flagged years, stage, minimum temperature, actual yield.
+        const det: string[] = ['| Year | Freeze flagged | Stage | Min temp (F) / threshold | Date | Actual / trend | Outcome |', '|---|---|---|---|---|---|---|'];
+        let hits = 0, misses = 0, falseAlarms = 0;
+        for (const y of [...freezeByYear.keys()].sort()) {
+          const ev = freezeByYear.get(y) ?? null;
+          const a = actual.get(y);
+          if (a === undefined) continue;
+          const bad = a < BAD_YEAR;
+          const outcome = ev && bad ? 'hit' : ev && !bad ? 'false alarm' : !ev && bad ? 'miss' : '';
+          if (outcome === 'hit') hits++;
+          if (outcome === 'miss') misses++;
+          if (outcome === 'false alarm') falseAlarms++;
+          if (ev || bad) det.push(`| ${y} | ${ev ? 'yes' : 'no'} | ${ev?.stage ?? ''} | ${ev ? `${Math.round(ev.tminF)} / ${ev.thresholdF}` : ''} | ${ev?.date ?? ''} | ${a.toFixed(2)} | ${outcome} |`);
+        }
+        detection.push(`**${outline.name}**: ${hits} hits, ${misses} misses, ${falseAlarms} false alarms (bad year = actual < ${BAD_YEAR} of trend).`, '', ...det, '');
+        freezeRows.push({
+          county: outline.name,
+          set: c.freezeValidation ? 'new (freeze validation)' : c.heldOut ? 'held out' : 'development',
+          hits,
+          misses,
+          falseAlarms,
+        });
+      }
       const rows: string[] = ['| Year | Actual / trend | Model (point) | Model (sample) |', '|---|---|---|---|'];
       for (const mode of ['point', 'sample']) {
         const model = models[mode]!.get(crop.cropId) ?? new Map<number, number>();
@@ -188,6 +238,11 @@ async function main(): Promise<void> {
         const a = years.map((y) => actual.get(y)!);
         const m = years.map((y) => model.get(y)!);
         const worst = years[a.indexOf(Math.min(...a))]!;
+        const err = a.reduce((s, v, i) => s + Math.abs(v - m[i]!), 0) / a.length;
+        if (!stats.has(outline.name)) stats.set(outline.name, new Map());
+        const sc = stats.get(outline.name)!;
+        if (!sc.has(crop.cropId)) sc.set(crop.cropId, new Map());
+        sc.get(crop.cropId)!.set(mode, { r: correlation(a, m), err });
         summary.push(
           `| ${outline.name}${c.heldOut ? ' *' : ''} | ${crop.cropId} | ${mode} | ${correlation(a, m).toFixed(2)} | ` +
             `${((a.reduce((s, v, i) => s + Math.abs(v - m[i]!), 0) / a.length) * 100).toFixed(0)}% | ` +
@@ -202,7 +257,35 @@ async function main(): Promise<void> {
       lines.push(...rows, '');
     }
   }
-  if (key) lines.splice(2, 0, '## Summary (* = held-out county)', '', ...summary, '');
+  if (key) {
+    const combined = ['| County | Set | Hits | Misses | False alarms | Wheat r: water only -> + freeze | Mean error: water only -> + freeze | Soils |', '|---|---|---|---|---|---|---|---|'];
+    for (const f of freezeRows) {
+      const sc = stats.get(f.county);
+      const mode = sc?.get('winter-wheat')?.has('sample') && sc?.get('winter-wheat+freeze')?.has('sample') ? 'sample' : 'point';
+      const b = sc?.get('winter-wheat')?.get(mode);
+      const a = sc?.get('winter-wheat+freeze')?.get(mode);
+      combined.push(
+        `| ${f.county} | ${f.set} | ${f.hits} | ${f.misses} | ${f.falseAlarms} | ${b ? b.r.toFixed(2) : '-'} -> ${a ? a.r.toFixed(2) : '-'} | ` +
+          `${b ? (b.err * 100).toFixed(0) + '%' : '-'} -> ${a ? (a.err * 100).toFixed(0) + '%' : '-'} | ${mode} |`,
+      );
+    }
+    lines.splice(
+      2,
+      0,
+      '## Summary (* = held-out county)',
+      '',
+      ...summary,
+      '',
+      '## Wheat freeze: all Kansas counties',
+      '',
+      ...combined,
+      '',
+      '## Wheat freeze detection by year (K-State C646 thresholds after green-up, NASA POWER Tmin)',
+      '',
+      ...detection,
+      '',
+    );
+  }
   console.log(lines.join('\n'));
 }
 

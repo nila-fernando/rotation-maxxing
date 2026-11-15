@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { generatePlans } from '../../algorithm/api';
 import { buildFarm } from '../buildFarm';
 import type { FetchFn } from '../power';
+import type { BaseYieldsFile } from '../nassYields';
 
 const fx = (n: string) => readFileSync(join(__dirname, 'fixtures', n), 'utf8');
 
@@ -61,5 +62,25 @@ describe('buildFarm (offline, recorded responses)', () => {
     );
     expect(built.farm.paddocks[0]).toMatchObject({ history: ['oats', 'oats', 'oats'], acres: 50 });
     expect(built.farm.paddocks[0]!.land.slopePct).toBe(7);
+    expect(built.farm.baseYields).toBeUndefined();
+    expect(built.gaps.join()).toMatch(/No county yields .* US averages/);
+  });
+
+  it('uses the precomputed county base yields for the farm practice', async () => {
+    const by = (value: number, practice: 'non-irrigated' | 'irrigated') => ({ value, level: 'county' as const, place: 'Story County, IA', practice, years: [2021, 2025], allPracticeMean: 200, basis: 'design' as const, sources: ['nassQuickStats'] });
+    const file: BaseYieldsFile = {
+      site: 'story-ia', geoid: '19169', place: 'Story County, IA', retrieved: '2026-11-15',
+      'non-irrigated': { baseYields: { corn: by(195, 'non-irrigated'), oats: by(70, 'non-irrigated') }, gaps: ['Oats: example gap.', 'Barley: not grown here.'] },
+      irrigated: { baseYields: { corn: by(230, 'irrigated') }, gaps: [] },
+      series: {},
+    };
+    const field = { id: 'a', name: 'A', polygon: square(-93.63, 42.03), availableCrops: ['corn', 'oats'], history: ['oats', 'oats', 'oats'] };
+    const dry = await buildFarm({ fields: [field], weatherYears: [2011, 2014], baseYields: file }, fake);
+    expect(dry.farm.baseYields?.['corn']?.value).toBe(195);
+    expect(dry.gaps).toContain('Oats: example gap.');
+    expect(dry.gaps).not.toContain('Barley: not grown here.');
+    const irr = await buildFarm({ fields: [field], weatherYears: [2011, 2014], baseYields: file, constraints: { irrigation: 'irrigated' } }, fake);
+    expect(irr.farm.baseYields?.['corn']?.value).toBe(230);
+    expect(irr.farm.baseYields?.['oats']).toBeUndefined();
   });
 });

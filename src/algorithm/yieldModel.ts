@@ -3,8 +3,9 @@
  * never care which model is used. Today: TraitYieldModel (national yield x
  * multipliers). Later: an APSIM lookup-table model.
  */
-import { getCrop, isFallow, salinityRelativeYield, typicalYield } from './cropData';
-import { sourceIds } from './evidence';
+import { baseYieldFor, getCrop, isFallow, salinityRelativeYield } from './cropData';
+import { FREEZE_DAMAGE_FACTORS } from './croptraits';
+import { FREEZE_GAP, freezeFactor, freezeRiskText, SEVERITY, worseThan } from './frost';
 import { drainageCheck, phCheck } from './landSuitability';
 import { productOf, rotationEffect, timelineOf } from './rotation';
 import { computeShade, type ShadeResult } from './shade';
@@ -19,6 +20,8 @@ export interface YieldContext {
   shadeToleranceDraw?: (cropId: CropId) => number | undefined;
   /** When false the model may return no terms (used in hot loops). */
   explain: boolean;
+  /** Monte Carlo draw (0-1) for freeze damage within its design range; midpoint if absent. */
+  freezeDraw?: () => number;
 }
 
 export interface YieldEstimate {
@@ -112,6 +115,26 @@ export function meanScenario(pool: WeatherScenario[]): WeatherScenario {
       et0Mm: cl.reduce((a, c) => a + c.et0Mm, 0) / cl.length,
     };
   }
+  const frozen = pool.filter((w) => w.freeze !== undefined);
+  if (frozen.length) {
+    out.freezeRisk = {};
+    const crops = [...new Set(frozen.flatMap((w) => Object.keys(w.freeze!)))];
+    for (const c of crops) {
+      const checked = frozen.filter((w) => c in w.freeze!);
+      const hits = checked.map((w) => w.freeze![c]).filter((e): e is NonNullable<typeof e> => !!e);
+      // Most common stage; ties go to the more severe C646 effect (not to the stage seen first).
+      const stages = new Map<string, { n: number; severity: number }>();
+      for (const h of hits) {
+        const cur = stages.get(h.stage);
+        stages.set(h.stage, { n: (cur?.n ?? 0) + 1, severity: Math.max(cur?.severity ?? 0, SEVERITY[h.effect]) });
+      }
+      const typical = [...stages.entries()].sort((a, b) => b[1].n - a[1].n || b[1].severity - a[1].severity)[0]?.[0] ?? null;
+      let worst: (typeof hits)[number] | null = null;
+      for (const h of hits) if (!worst || worseThan(h, worst)) worst = h;
+      const meanFactor = checked.reduce((a, w) => a + (w.freeze![c] ? freezeFactor(w.freeze![c]!.effect) : 1), 0) / checked.length;
+      out.freezeRisk[c] = { years: hits.length, of: checked.length, typicalStage: typical, worstStage: worst?.stage ?? null, meanFactor };
+    }
+  }
   const rs = pool.flatMap((w) => (w.erosivityR !== undefined ? [w.erosivityR] : []));
   if (rs.length) out.erosivityR = rs.reduce((a, b) => a + b, 0) / rs.length;
   const sources = [...new Set(pool.flatMap((w) => w.sources ?? []))];
@@ -149,10 +172,10 @@ export function meanScenario(pool: WeatherScenario[]): WeatherScenario {
 }
 
 /**
- * yield = national average x land suitability x rotation effect x (1 - shade loss) x weather multiplier
+ * yield = base yield (local NASS county/state, else US average) x land suitability x rotation effect x (1 - shade loss) x weather multiplier
  */
 export class TraitYieldModel implements YieldModel {
-  readonly name = 'TraitYieldModel (national yield x multipliers)';
+  readonly name = 'TraitYieldModel (base yield x multipliers)';
 
   yieldFor(
     paddock: Paddock,
@@ -169,7 +192,8 @@ export class TraitYieldModel implements YieldModel {
       const terms: Term[] = explain ? [{ label: 'Fallow: no harvest', value: 0, unit: 'per ac', basis: 'sourced' }] : [];
       return { value: 0, unit: null, terms, gaps, risks: [], shadedFraction: 0 };
     }
-    const base = typicalYield(crop);
+    const baseInfo = baseYieldFor(ctx.prepared.farm, crop);
+    const base = baseInfo.value;
     if (base === null) {
       return { value: null, unit: crop.yieldUnit, terms: [], gaps, risks: [], shadedFraction: 0 };
     }
@@ -229,11 +253,34 @@ export class TraitYieldModel implements YieldModel {
       });
     }
 
+    // Spring freeze (winter wheat): a specific season's event, or the pool's average risk.
+    const ev = weather.freeze?.[cropId];
+    const risk = weather.freezeRisk?.[cropId];
+    if (ev) {
+      const f = freezeFactor(ev.effect, ctx.freezeDraw?.());
+      const r = FREEZE_DAMAGE_FACTORS[ev.effect];
+      factors.push({
+        label: `Spring freeze at ${ev.stage} (${Math.round(ev.tminF)} F on ${ev.date.slice(5)}, injury below ${ev.thresholdF} F, K-State C646: ${ev.effect}; design range x${r.low}-${r.high})`,
+        factor: f,
+        basis: 'design',
+        sources: ['ksuC646', 'ksuMesonetWheatGdd', 'nasaPower'],
+      });
+      gaps.push(FREEZE_GAP);
+    } else if (risk && risk.years > 0 && ev === undefined) {
+      factors.push({
+        label: `Freeze risk: ${freezeRiskText(risk)} (K-State C646); average effect`,
+        factor: risk.meanFactor,
+        basis: 'design',
+        sources: ['ksuC646', 'ksuMesonetWheatGdd', 'nasaPower'],
+      });
+      gaps.push(FREEZE_GAP);
+    }
+
     const value = base * productOf(factors);
 
     const terms: Term[] = [];
     if (explain) {
-      terms.push({ label: `US average ${crop.name} yield`, value: base, unit, basis: 'sourced', sources: sourceIds(crop.yieldPerAcre?.source) });
+      terms.push({ label: baseInfo.label, value: base, unit, basis: baseInfo.basis, sources: baseInfo.sources });
       let running = base;
       for (const f of factors) {
         if (f.factor === 1) {
