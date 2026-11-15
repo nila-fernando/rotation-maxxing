@@ -1,5 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { budget, medianMs } from '../../test/timing.mjs';
 import {
   acresOf,
   formatAcres,
@@ -270,10 +271,9 @@ describe('createSnapIndex', () => {
     const many = [];
     for (let i = 0; i < 60; i++) for (let j = 0; j < 60; j++) many.push({ id: `${i}-${j}`, geometry: square(i * 100, j * 100, 90) });
     const big = createSnapIndex(many);
-    const t0 = performance.now();
     let r;
-    for (let k = 0; k < 1000; k++) r = big.query(P(3091, 2050), 3);
-    assert.ok(performance.now() - t0 < 1000);
+    const ms = medianMs(() => { for (let k = 0; k < 1000; k++) r = big.query(P(3091, 2050), 3); }, 3);
+    assert.ok(ms < budget(1000), `${ms.toFixed(0)} ms for 1000 lookups (limit ${budget(1000)})`);
     assert.equal(r.kind, 'edge');
     assert.equal(r.id, '30-20');
   });
