@@ -132,6 +132,7 @@ export function historyRunFor(field, demo) {
   const byYear = new Map();
   for (const c of demo?.cropHistory || []) byYear.set(Number(c.year), c.crop);
   for (const [y, c] of Object.entries(field.crops || {})) byYear.set(Number(y), c);
+  for (const y of field.cropsCleared || []) byYear.delete(Number(y)); // the farmer said "not sure" (src/fields/cropEdits.js)
   const years = [...byYear.keys()].sort((a, b) => a - b);
   const out = [];
   for (let i = years.length - 1; i >= 0 && out.length < 3; i--) {

@@ -27,6 +27,7 @@ import { cropBadge, hideCropTip, installCropTips } from '../ui/cropTip.js';
 import { LENS_ICONS } from '../ui/futureIcons.js';
 import { JAR } from '../ui/jarIcons.js';
 import { asset } from '../ui/asset.js';
+import { CROP_CHOICES } from '../fields/cropEdits.js';
 
 const MANAMI_SVG = asset('/manami.svg');
 
@@ -170,7 +171,35 @@ export function ndviCurve(ndvi) {
 // a speech bubble, for "Ask about this field"
 const ASK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h16v10H10l-4.5 3.5V15.5H4z" fill="currentColor" fill-opacity=".2"/><path d="M8.5 10.5h.01M12 10.5h.01M15.5 10.5h.01"/></svg>';
 
-export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onClose }) {
+// a pencil, for "Edit" on the crop history
+const EDIT_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.5L15.5 5a2.1 2.1 0 013 3L8 18.5z" fill="currentColor" fill-opacity=".2"/><path d="M13.5 7l3 3"/></svg>';
+
+/** The crop picker's options for a year, with this one chosen ('' is "Not sure"). */
+function cropOptions(chosen, otherLabel) {
+  const opts = [`<option value=""${chosen ? '' : ' selected'}>Not sure</option>`];
+  for (const c of CROP_CHOICES) {
+    const label = c.key === 'other' && chosen === 'other' && otherLabel ? `Other (${otherLabel})` : c.label;
+    opts.push(`<option value="${c.key}"${c.key === chosen ? ' selected' : ''}>${esc(label)}</option>`);
+  }
+  return opts.join('');
+}
+
+/**
+ * The crop history's edits: { year: cropKey | null } for each year whose pick differs from the
+ * report (null: "Not sure"). Empty when nothing changed.
+ */
+export function historyEdits(history, draft) {
+  const out = {};
+  for (const h of history || []) {
+    if (!(h.year in (draft || {}))) continue;
+    const was = h.crop == null ? '' : h.key;
+    const now = draft[h.year] || '';
+    if (now !== was) out[h.year] = now || null;
+  }
+  return out;
+}
+
+export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onCrops, onClose }) {
   const root = document.getElementById('checkup');
   const head = document.getElementById('checkupHead');
   const body = document.getElementById('checkupBody');
@@ -179,6 +208,8 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onClose 
   let report = null;
   let markedYear = null; // the year picked in the year bar, ringed in the crop history
   let jarSaid = null; // { id, text }: the jar strip's last line (kept through a redraw)
+  let histEdit = null; // { id, draft: { year: cropKey | '' } }: the crop history being edited
+  let histSaid = null; // { id, text }: the crop history's last line (kept through a redraw)
 
   closeBtn.addEventListener('click', () => onClose?.());
   // "Ask about this field": Ask Manami, about this field (the header is redrawn, so the click is caught here)
@@ -190,7 +221,42 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onClose 
   body.addEventListener('click', (e) => {
     const b = e.target.closest?.('[data-jar]');
     if (b && report) onJar?.(report.id, b.dataset.jar);
+    const h = e.target.closest?.('[data-hist]');
+    if (h && report) histAction(h.dataset.hist);
   });
+
+  // the crop history: Edit, Save, Cancel, and putting USDA's record back
+  function histAction(what) {
+    const r = report;
+    if (what === 'edit') {
+      histEdit = { id: r.id, draft: Object.fromEntries(r.history.map((h) => [h.year, h.crop == null ? '' : h.key])) };
+      histSaid = null;
+      redraw('select[data-hist-year]');
+    } else if (what === 'cancel') {
+      histEdit = null;
+      redraw('[data-hist="edit"]');
+    } else if (what === 'save') {
+      const edits = histEdit?.id === r.id ? historyEdits(r.history, histEdit.draft) : {};
+      histEdit = null;
+      const n = Object.keys(edits).length;
+      if (n) {
+        histSaid = { id: r.id, text: `Got it, ${n === 1 ? 'that year is' : `those ${n} years are`} yours now. The plans and the island use your crops.` };
+        onCrops?.(r.id, edits); // redraws the panel with the new history
+      }
+      redraw('[data-hist="edit"]');
+    } else if (what === 'restore') {
+      histEdit = null;
+      histSaid = { id: r.id, text: 'Okay, this field is back on USDA’s record.' };
+      onCrops?.(r.id, 'restore');
+      redraw('[data-hist="edit"]');
+    }
+  }
+  /** Draws the panel again from the latest report (after the farmer's own change), focus on `sel`. */
+  function redraw(sel) {
+    if (!report) return;
+    open(report);
+    body.querySelector(sel)?.focus({ preventScroll: true });
+  }
 
   // the crop-history names: the shared crop tip (src/ui/cropTip.js), one element on <body>, so the
   // panel's scroll area never clips it; installed here too in case main.js hasn't yet (idempotent)
@@ -211,6 +277,8 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onClose 
       if (typeof kept === 'string') e.target.value = kept;
     } else if (e.target.matches('.checkup__irrigated')) {
       onIrrigated?.(report.id, e.target.checked);
+    } else if (e.target.matches('select[data-hist-year]') && histEdit?.id === report.id) {
+      histEdit.draft[e.target.dataset.histYear] = e.target.value;
     }
   });
 
@@ -229,8 +297,27 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onClose 
     // each year: its crop icon, with the crop's name in a tooltip on hover, focus or tap
     const history = r.history.map((h) => (h.crop == null
       ? `<li class="hist hist--none" tabindex="0" data-year="${h.year}" data-crop-tip="No record" data-crop-sub="${h.year}"><span class="hist__icon" aria-hidden="true"></span><span class="hist__year" aria-hidden="true">${String(h.year).slice(-2)}</span><span class="sr-only">${h.year}: no record</span></li>`
-      : `<li class="hist" tabindex="0" data-year="${h.year}" data-crop-tip="${esc(h.label)}" data-crop-sub="${h.year}"><span class="hist__icon">${cropBadge(null, { key: h.key, name: h.label, sub: String(h.year), inControl: true, cls: 'crop-ico' })}</span><span class="hist__year" aria-hidden="true">${String(h.year).slice(-2)}</span><span class="sr-only">${h.year}: ${esc(h.label)}</span></li>`)).join('');
+      : `<li class="hist${h.byFarmer ? ' hist--farmer' : ''}" tabindex="0" data-year="${h.year}" data-crop-tip="${esc(h.label)}" data-crop-sub="${h.year}${h.byFarmer ? ', from you' : ''}"><span class="hist__icon">${cropBadge(null, { key: h.key, name: h.label, sub: `${h.year}${h.byFarmer ? ', from you' : ''}`, inControl: true, cls: 'crop-ico' })}</span><span class="hist__year" aria-hidden="true">${String(h.year).slice(-2)}</span><span class="sr-only">${h.year}: ${esc(h.label)}${h.byFarmer ? ' (from you)' : ''}</span></li>`)).join('');
     const knownYears = r.history.filter((h) => h.crop != null).length;
+    const editing = histEdit?.id === r.id;
+    const said = histSaid?.id === r.id ? histSaid.text : '';
+    const histBody = editing
+      ? `<p class="ck-caption hist-edit__lead">Put in what you really grew. Your years count over USDA’s.</p>
+        <div class="hist-edit" role="group" aria-label="Crops by year">${r.history.map((h) => `
+          <label class="hist-edit__row"><span class="hist-edit__year">${h.year}</span><select class="hist-edit__pick" data-hist-year="${h.year}" aria-label="${h.year} crop">${cropOptions(histEdit.draft[h.year] ?? '', h.key === 'other' ? h.label : null)}</select></label>`).join('')}
+        </div>
+        <div class="hist-edit__btns">
+          <button class="btn btn--primary btn--small" type="button" data-hist="save">Save</button>
+          <button class="btn btn--quiet btn--small" type="button" data-hist="cancel">Cancel</button>
+        </div>`
+      : `<ol class="history" aria-label="Crops by year">${history}</ol>
+        ${knownYears < r.history.length ? `<p class="ck-caption">${historyGap(knownYears, r.cdlOff)}</p>` : ''}
+        ${r.cropsEdited ? '<p class="ck-caption hist-mine"><span class="hist-mine__dot" aria-hidden="true"></span>Years with a dot are from you.</p>' : ''}
+        <div class="hist-edit__btns">
+          <button class="btn btn--quiet btn--small" type="button" data-hist="edit">${EDIT_ICON}<span>Edit crop history</span></button>
+          ${r.cropsEdited ? '<button class="btn btn--quiet btn--small" type="button" data-hist="restore">Put back USDA’s record</button>' : ''}
+        </div>`;
+    const histNote = `<p class="ck-caption ck-hist__note" role="status">${esc(said)}</p>`;
     const empty = (text) => `<p class="ck-empty">${text}</p>`;
     const fact = (label, value) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
 
@@ -286,8 +373,7 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onClose 
         <h3 id="ckSays" class="says__title"><img src="${MANAMI_SVG}" alt="" width="24" height="22"> Manami says</h3>
         ${says}${more}
       </section>
-      ${section('ckHist', 'Crop history', '2018–2025', `${chip('CSB')}${r.cdlYears?.length ? ` ${chip('CDL')}` : ''}`, `<ol class="history" aria-label="Crops by year">${history}</ol>
-        ${knownYears < r.history.length ? `<p class="ck-caption">${historyGap(knownYears, r.cdlOff)}</p>` : ''}`)}
+      ${section('ckHist', 'Crop history', '2018–2025', `${chip('CSB')}${r.cdlYears?.length ? ` ${chip('CDL')}` : ''}`, histBody + histNote)}
       ${section('ckSoil', 'Soil', '', r.soil ? chip('SSURGO', ph.soil) : '', soil + jarStrip(r.jar, jarSaid?.id === r.id ? jarSaid.text : ''))}
       ${section('ckSlope', 'Slope', '', r.slope ? chip('DEM', ph.slope) : '', slope)}
       ${section('ckRain', 'Rain trend', 'Apr–Sep', r.rain ? chip('POWER', ph.rain) : '', rain)}
@@ -297,12 +383,13 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onClose 
 
   function open(r) {
     const scroll = report?.id === r.id ? body.scrollTop : 0;
-    if (report?.id !== r.id) jarSaid = null;
+    if (report?.id !== r.id) { jarSaid = null; histSaid = null; histEdit = null; }
     report = r;
     hideTip();
     render(r);
     markYear(markedYear);
     body.scrollTop = scroll;
+    root.scrollTop = 0; // (the panel itself never scrolls: only its sections do, under the header)
     root.hidden = false;
     document.body.classList.add('checkup-open');
     setManamiAway(true);
@@ -334,7 +421,7 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onClose 
   function update(r) {
     if (!report || report.id !== r.id) return;
     const active = document.activeElement;
-    const keepFocus = active && root.contains(active) ? (active.matches('.checkup__irrigated') ? '.checkup__irrigated' : active.matches('.checkup__name') ? '.checkup__name' : active.matches('[data-jar]') ? `[data-jar="${active.dataset.jar}"]` : null) : null;
+    const keepFocus = active && root.contains(active) ? (active.matches('.checkup__irrigated') ? '.checkup__irrigated' : active.matches('.checkup__name') ? '.checkup__name' : active.matches('[data-jar]') ? `[data-jar="${active.dataset.jar}"]` : active.matches('[data-hist]') ? `[data-hist="${active.dataset.hist}"]` : active.matches('[data-hist-year]') ? `[data-hist-year="${active.dataset.histYear}"]` : null) : null;
     open(r);
     // (a jar button that went with the redraw: its strip's first button instead)
     if (keepFocus) (root.querySelector(keepFocus) || (keepFocus.startsWith('[data-jar') ? root.querySelector('[data-jar]') : null))?.focus({ preventScroll: true });
@@ -351,6 +438,7 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onClose 
   function close() {
     hideTip();
     report = null;
+    histEdit = null; // an edit not saved is let go
     root.hidden = true;
     document.body.classList.remove('checkup-open');
     setManamiAway(false);
