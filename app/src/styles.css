@@ -1788,6 +1788,7 @@ body.jar-open .hub-tip { display: none; }
 /* out of the way while an app dialog (the jar test, the time of day) is open over the hub */
 .tour-spot.is-aside, .tour-card.is-aside { visibility: hidden; opacity: 0; transition: none; animation: none; }
 .tour-card:focus-visible { box-shadow: 0 0 0 2px var(--wood-deep), 0 0 0 6px var(--green-dark), 0 18px 40px rgb(0 0 0 / .45); }
+.tour-card[data-quiet]:focus-visible { box-shadow: 0 0 0 2px var(--wood-deep), 0 6px 0 -1px var(--wood-deep), 0 18px 40px rgb(0 0 0 / .45); outline: none; }
 @keyframes tour-in { from { opacity: 0; transform: translateY(6px) scale(.97); } }
 .tour-card__head { display: flex; align-items: center; gap: 10px; }
 .tour-card__face {

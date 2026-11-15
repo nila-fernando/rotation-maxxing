@@ -90,7 +90,7 @@ export function jarStrip(jar, note = '') {
     <div class="ck-jar__text">
       <p class="ck-jar__title">Your jar test: <b>${esc(jar.textureClass)}</b> <span class="src-chip src-chip--jar"><span class="sr-only">Source: </span>Jar</span></p>
       <p class="ck-caption">Sand ${pct(jar.sandPct)} · Silt ${pct(jar.siltPct)} · Clay ${pct(jar.clayPct)}${conf ? ` · ${conf}` : ''}${jar.sample ? ' · A sample jar' : ''}</p>
-      <p class="ck-caption">${jar.sameAsMap ? 'It agrees with the soil map.' : 'I’m planning with your jar here.'}</p>
+      <p class="ck-caption">${jar.noSurvey ? 'There’s no soil survey here, so I can’t plan this field yet: a jar shows the texture, but not the drainage or water holding I need.' : jar.sameAsMap ? 'It agrees with the soil map.' : jar.planned ? 'I’m planning with your jar here.' : 'I can’t plan with this jar (it wasn’t clear enough), so I’m using the soil map.'}</p>
       <div class="ck-jar__acts">
         <button class="linkish" type="button" data-jar="open">See your jar</button>
         <button class="linkish" type="button" data-jar="new">Test again</button>

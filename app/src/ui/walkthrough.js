@@ -542,6 +542,9 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
   function maybeAutoStart({ search = location.search } = {}) {
     if (ui || !shouldAutoStart({ seen: memory.seen(), search })) return false;
     start();
+    // started by itself, not from the keyboard: no focus ring until a key is pressed
+    ui?.card.setAttribute('data-quiet', '');
+    addEventListener('keydown', () => ui?.card.removeAttribute('data-quiet'), { once: true, capture: true });
     return true;
   }
 
@@ -572,7 +575,9 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     if (putBack) { ctx.openPlans(); return; } // (they take the focus and the keys)
     say(finished ? END_LINES.finished : END_LINES.skipped);
     // back where the farmer was, or to the "?" that plays it again
-    const back = lastFocus?.isConnected && lastFocus !== document.body && visible(lastFocus) ? lastFocus : document.getElementById('hubHelp');
+    // back where it was; else the "?" ; else something focusable in whatever view is up (the plan view fades the hub)
+    const usable = (el) => !!el?.isConnected && el !== document.body && visible(el) && !el.closest('[inert]');
+    const back = [lastFocus, document.getElementById('hubHelp'), ...document.querySelectorAll('#futPlans button, #plans button, .fut-card button')].find(usable) || null;
     back?.focus?.({ preventScroll: true });
   }
 

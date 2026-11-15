@@ -415,7 +415,8 @@ function useJar(record, from) {
   if (app.openFieldId) hub.overview(); // the check-up steps aside, so she can say it (it shows the jar when opened again)
   const focus = jars?.focusFor(id);
   if (focus) hub.focusOn(focus, 0.75);
-  const line = reportFor(id)?.jar?.sameAsMap ? JAR_LINES.same(name) : JAR_LINES.used(name, record.textureClass, jars ? spots.get(id)?.by ?? 'none' : null); // ('none': the island is full there just now, at a festival say)
+  const rj = reportFor(id)?.jar;
+  const line = rj?.noSurvey ? JAR_LINES.noSurvey(name, record.textureClass) : rj?.sameAsMap ? JAR_LINES.same(name) : JAR_LINES.used(name, record.textureClass, jars ? spots.get(id)?.by ?? 'none' : null); // ('none': the island is full there just now, at a festival say)
   manami.say(line, {
     actions: [
       { label: 'See the new plans', primary: true, onClick: () => plansPanel.open() },
