@@ -4,7 +4,7 @@
 // demo (in a colder spring than Ames's, so a spring freeze shows) with a Kansas-like copy of it, for
 // the weather lines.
 import { readFileSync } from 'node:fs';
-import { getCounty, getFields, getFarm } from '../src/data/farmData.js';
+import { getFields, getFarm } from '../src/data/farmData.js';
 import { CROP_BY_ID, generatePlans, evaluatePlan } from '../src/vendor/rotation-maxxing/algorithm/index.ts';
 import { scenariosFromDailyWeather } from '../src/vendor/rotation-maxxing/algorithm/climate.ts';
 import { cropIdsFor } from '../src/plan/cropIds.js';
@@ -12,6 +12,7 @@ import { plannerFarm, plannerMarket, plannerPriorities } from '../src/plan/farmI
 import { frostWarning } from '../src/plan/weatherWords.js';
 import { worst } from '../src/plan/builder.js';
 import { fieldData } from './fieldData.mjs';
+import { demoMarket } from './marketFixture.mjs';
 
 export const START_YEAR = 2027; // the plans made on 2026-11-15
 
@@ -40,9 +41,9 @@ export function demoData(priorities = ['profit'], { excludedCrops = [], colderSp
   const fm = getFarm();
   const place = { id: 'demo', kind: 'farm', label: fm.name, detail: `Demo farm · ${fm.county} County, ${fm.state}`, lat: fm.center[1], lon: fm.center[0], demo: true };
   const profile = { priorities, irrigatedFieldIds: [], excludedCrops: [...excludedCrops] };
-  const { farm, gaps } = plannerFarm({ fields: appFields(), place, profile, firstSeason: START_YEAR });
+  const { farm, gaps } = plannerFarm({ market: demoMarket, fields: appFields(), place, profile, firstSeason: START_YEAR });
   const prio = plannerPriorities(profile);
-  const market = plannerMarket(getCounty());
+  const market = plannerMarket(demoMarket);
   const cropIds = cropIdsFor(farm);
   const daily = colderSpringF ? colderSpring(ames(), colderSpringF) : ames();
   const climate = scenariosFromDailyWeather(farm, daily, { crops: cropIds });

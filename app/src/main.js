@@ -18,12 +18,13 @@ import { fillSoil, withSoil } from './data/soilSurvey.js';
 import { fillSlope, withSlope } from './data/terrain.js';
 import { farmRain, withRain } from './data/rain.js';
 import { fillNdvi, withNdvi } from './data/greenness.js';
+import { createMarkets } from './data/market.js';
 import { centroid, featureCollection, feature as turfFeature } from '@turf/turf';
 import { demoRecordFor, fieldReportFor, HISTORY_YEARS } from './data/fieldReport.js';
 import { createPlanner } from './plan/planner.js';
 import { JAR_LINES } from './plan/jarTest.js';
 import { fieldWeatherNote, weatherKey } from './plan/weatherWords.js';
-import { plannerFarm } from './plan/farmInput.js';
+import { farmIrrigation, plannerFarm } from './plan/farmInput.js';
 import { createJars, jarKeepOuts } from './island/jarProps.js';
 import { createCheckIn, CROPS } from './screens/checkin.js';
 import { createFieldPanel } from './screens/fieldPanel.js';
@@ -111,7 +112,8 @@ function startFieldFill(fields) {
     if (fieldPanel.openId) fieldPanel.update(reportFor(fieldPanel.openId));
   };
   const warn = (what) => (err) => console.warn(what, err);
-  const middle = fields.length ? centroid(featureCollection(fields.map((f) => turfFeature(f.geometry)))).geometry.coordinates : null;
+  const middle = farmPoint(fields);
+  markets.warm(middle); // the county's NASS crops, yields and prices, ready by the time the plans are asked for
   const job = Promise.all([
     fillCropHistory(fields, { years: HISTORY_YEARS, known }).then(apply(withCdlYears)).catch(warn('CDL crop history')),
     fillSoil(fields).then(apply(withSoil)).catch(warn('SSURGO soil')),
@@ -122,12 +124,22 @@ function startFieldFill(fields) {
   fillNdvi(fields).then(apply(withNdvi)).catch(warn('HLS greenness'));
 }
 
+/** The middle of the farm ([lng, lat]), or null with no fields. */
+function farmPoint(fields) {
+  return fields?.length ? centroid(featureCollection(fields.map((f) => turfFeature(f.geometry)))).geometry.coordinates : null;
+}
+
+// the farm's market data: its county (FCC), the crops grown there and their USDA NASS yields and
+// prices, fetched for where the farm really is (src/data/market.js); { ok: false, reason } if not
+const markets = createMarkets({ thisYear: () => today().getFullYear() });
+const farmMarket = () => markets.forFarm(farmPoint(app.fields), { practice: farmIrrigation(app.fields, app.farmProfile) === 'irrigated' ? 'irrigated' : 'non-irrigated' });
+
 // the rotation planner (src/vendor/rotation-maxxing), in a Web Worker
 const planner = createPlanner();
 /** Three plans for the next 3 seasons for the farm as it stands (see src/plan/planner.js). */
-const planSeasons = () => planner.plans({ fields: app.fields, place: app.farm, profile: app.farmProfile, county: farmData.getCounty(), firstSeason: firstSeason(today()) });
+const planSeasons = async () => planner.plans({ fields: app.fields, place: app.farm, profile: app.farmProfile, market: await farmMarket(), firstSeason: firstSeason(today()) });
 /** Scores a plan picked field by field (or built by hand) on the farm as it stands. */
-const evaluateMix = (plan) => planner.evaluate({ fields: app.fields, place: app.farm, profile: app.farmProfile, county: farmData.getCounty(), plan, firstSeason: firstSeason(today()) });
+const evaluateMix = async (plan) => planner.evaluate({ fields: app.fields, place: app.farm, profile: app.farmProfile, market: await farmMarket(), plan, firstSeason: firstSeason(today()) });
 
 /** Manami steps aside (out of sight and the tab order) while the check-up, the plans or the jar test are open. */
 function syncManami() {
@@ -150,7 +162,7 @@ function weatherPlans() {
   if (!m || m.data !== data || m.fields !== app.fields || m.profile !== app.farmProfile || m.place !== app.farm) {
     let ok = false;
     try {
-      const now = plannerFarm({ fields: app.fields, place: app.farm, profile: app.farmProfile, firstSeason: firstSeason(today()) }).farm;
+      const now = plannerFarm({ fields: app.fields, place: app.farm, profile: app.farmProfile, firstSeason: firstSeason(today()), market: data.marketData }).farm;
       ok = weatherKey(now) === weatherKey(data.farm);
     } catch (e) { console.error('weather plans', e); }
     weatherMemo = { data, fields: app.fields, profile: app.farmProfile, place: app.farm, ok };
@@ -674,7 +686,7 @@ function testFields(n) {
   return out;
 }
 
-if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, jarPanel, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now(), ambience }; // for poking at in the console
+if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, markets, farmMarket, jarPanel, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now(), ambience }; // for poking at in the console
 
 // ---------------------------------------------------------------- the first five seconds
 (async function intro() {

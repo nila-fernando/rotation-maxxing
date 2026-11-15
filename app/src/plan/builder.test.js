@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { getCounty, getFields } from '../data/farmData.js';
+import { getFields } from '../data/farmData.js';
 import { copyPlan, createChecker, emptyCount, emptyPlan, isComplete, setCell, setCover, summarise, worst } from './builder.js';
 import { plannerFarm, plannerMarket } from './farmInput.js';
 import { fieldData } from '../../test/fieldData.mjs';
+import { demoMarket } from '../../test/marketFixture.mjs';
 
 const fields = getFields().map((f) => ({
   id: f.id, name: f.name, acres: f.acres, geometry: f.geometry, sourceIds: [f.sourceId],
   crops: Object.fromEntries(f.cropHistory.map((c) => [c.year, c.crop])), ...fieldData(f),
 }));
-const { farm } = plannerFarm({ fields, place: { lat: 42.03, demo: true }, firstSeason: 2027 });
-const market = plannerMarket(getCounty());
+const { farm } = plannerFarm({ market: demoMarket, fields, place: { lat: 42.03, demo: true }, firstSeason: 2027 });
+const market = plannerMarket(demoMarket);
 
 describe('editing a plan', () => {
   it('starts empty, fills, clears, and never changes the plan it was given', () => {
@@ -33,7 +34,7 @@ describe('editing a plan', () => {
     assert.equal(setCover(emptyPlan(farm), 'f2', 1, 'cereal-rye').sequences.f2[1].cover, undefined); // nothing to cover
   });
   it('a kept plan drops crops the farmer has since ruled out (and fields that are gone)', () => {
-    const { farm: noOats } = plannerFarm({ fields, place: { lat: 42.03, demo: true }, profile: { excludedCrops: ['oats'] }, firstSeason: 2027 });
+    const { farm: noOats } = plannerFarm({ market: demoMarket, fields, place: { lat: 42.03, demo: true }, profile: { excludedCrops: ['oats'] }, firstSeason: 2027 });
     const c = copyPlan({ sequences: { f1: [{ main: 'oats' }, { main: 'corn', cover: 'cereal-rye' }, { main: 'fallow' }], gone: [{ main: 'corn' }] } }, noOats);
     assert.deepEqual(c.sequences.f1.map((s) => s.main), [null, 'corn', 'fallow']);
     assert.equal(c.sequences.f1[1].cover, 'cereal-rye');
@@ -57,7 +58,7 @@ describe('instant checks', () => {
     assert.ok(worst(check.at(emptyPlan(farm), 'f5', 0, 'soybeans')) < worst(w));
   });
   it('flags a crop the farmer said they can\'t grow as avoid', () => {
-    const { farm: noOats } = plannerFarm({ fields, place: { lat: 42.03, demo: true }, profile: { excludedCrops: ['oats'] }, firstSeason: 2027 });
+    const { farm: noOats } = plannerFarm({ market: demoMarket, fields, place: { lat: 42.03, demo: true }, profile: { excludedCrops: ['oats'] }, firstSeason: 2027 });
     const w = createChecker(noOats, market).at(emptyPlan(noOats), 'f1', 0, 'oats');
     assert.equal(worst(w), 3);
   });

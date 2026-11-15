@@ -1,16 +1,28 @@
-// A tiny CORS proxy for USDA CropScape (Cropland Data Layer), as a Cloudflare Worker.
+// A tiny proxy for two USDA services the app can't call from the browser, as a Cloudflare Worker.
 //
-// CropScape answers point lookups but sends no Access-Control-Allow-Origin header, so the app (on
-// GitHub Pages) can't call it from the browser. This Worker forwards exactly one kind of request,
+// 1. CropScape (Cropland Data Layer) answers point lookups but sends no Access-Control-Allow-Origin
+//    header. This Worker forwards exactly one kind of request,
 //
-//   GET /axis2/services/CDLService/GetCDLValue?year=YYYY&x=<metres>&y=<metres>
+//      GET /axis2/services/CDLService/GetCDLValue?year=YYYY&x=<metres>&y=<metres>
 //
-// to https://nassgeodata.gmu.edu and adds the CORS header for the app's own origins. Anything else
-// gets a 404 or 403, so it isn't an open proxy. A CDL value for one point in one year never changes,
-// so good answers are cached at Cloudflare's edge (and in the browser) for a year.
+//    to https://nassgeodata.gmu.edu. A CDL value for one point in one year never changes, so good
+//    answers are cached at Cloudflare's edge (and in the browser) for a year.
 //
-// Deploy: see README.md next to this file. Then set the repository variable VITE_CDL_PROXY to the
-// Worker's address (no trailing slash) and re-run the GitHub Pages deploy.
+// 2. USDA NASS Quick Stats needs an API key and sends no CORS header either. This Worker forwards
+//
+//      GET /nass/api_GET/?<Quick Stats filters>
+//
+//    to https://quickstats.nass.usda.gov/api/api_GET/ with the key from the Worker secret
+//    NASS_API_KEY (`wrangler secret put NASS_API_KEY`), so the key never reaches the browser. Any
+//    key the client sends is dropped; only a fixed set of filter parameters is passed on (see
+//    NASS_PARAMS), and only JSON. Good answers are cached for a day (NASS revises figures now and then).
+//
+// Both routes add the CORS header for the app's own origins only. Anything else gets a 403, 404 or
+// 405, so it isn't an open proxy.
+//
+// Deploy: see README.md next to this file. Then set the repository variables VITE_CDL_PROXY (the
+// Worker's address, no trailing slash) and VITE_NASS_PROXY (the same address + /nass) and re-run
+// the GitHub Pages deploy.
 
 const UPSTREAM = 'https://nassgeodata.gmu.edu';
 const PATH = '/axis2/services/CDLService/GetCDLValue';
@@ -50,13 +62,86 @@ export function upstreamUrl(url, thisYear = new Date().getUTCFullYear()) {
 
 const text = (body, status, headers = {}) => new Response(body, { status, headers: { 'Content-Type': 'text/plain; charset=utf-8', ...headers } });
 
-export async function handle(request, { fetchFn = fetch, cache = globalThis.caches?.default, allowed = ALLOWED_ORIGINS, waitUntil = () => {} } = {}) {
+// ---------------------------------------------------------------------------
+// USDA NASS Quick Stats
+// ---------------------------------------------------------------------------
+
+const NASS_UPSTREAM = 'https://quickstats.nass.usda.gov/api/api_GET/';
+const NASS_TIMEOUT_MS = 30000; // Quick Stats is slow: 5-10 s is normal
+const NASS_CACHE_SECONDS = 60 * 60 * 24;
+/** Quick Stats filter parameters the proxy passes on (the `__GE`-style operators only on year). */
+export const NASS_PARAMS = new Set([
+  'source_desc', 'sector_desc', 'group_desc', 'commodity_desc', 'class_desc', 'prodn_practice_desc', 'util_practice_desc',
+  'statisticcat_desc', 'unit_desc', 'short_desc', 'domain_desc', 'domaincat_desc', 'agg_level_desc',
+  'state_alpha', 'state_fips_code', 'state_name', 'asd_code', 'county_code', 'county_name',
+  'year', 'year__GE', 'year__LE', 'year__GT', 'year__LT', 'freq_desc', 'reference_period_desc', 'format',
+]);
+const NASS_MAX_PARAMS = 80;
+const NASS_MAX_QUERY = 6000;
+const NASS_VALUE = /^[\x20-\x7E]{1,120}$/; // printable ASCII, as in NASS's own names ("$ / CWT", "(EXCL ALFALFA)")
+
+/**
+ * The Quick Stats URL for a /nass request, with `key` set server side, or null if the request isn't a
+ * plain api_GET with allowed parameters. Any key the client sent is dropped; the format is always JSON.
+ */
+export function nassUpstreamUrl(url, key) {
+  if (!key || !/^\/nass\/api_GET\/?$/.test(url.pathname)) return null;
+  if (url.search.length > NASS_MAX_QUERY) return null;
+  const out = new URLSearchParams();
+  let n = 0;
+  for (const [k, v] of url.searchParams) {
+    if (k === 'key') continue;
+    if (!NASS_PARAMS.has(k) || !NASS_VALUE.test(v) || ++n > NASS_MAX_PARAMS) return null;
+    if (k === 'format') continue;
+    if (/^year/.test(k) && !/^\d{4}$/.test(v)) return null;
+    out.append(k, v);
+  }
+  if (!n) return null; // an unfiltered query would ask for the whole database
+  out.set('format', 'JSON');
+  return { cacheKey: `https://nass-cache.invalid/api_GET/?${out}`, url: `${NASS_UPSTREAM}?key=${encodeURIComponent(key)}&${out}` };
+}
+
+async function handleNass(request, cors, { fetchFn, cache, waitUntil, nassKey }) {
+  if (!nassKey) return text('NASS key not configured', 503, cors || {});
+  const target = nassUpstreamUrl(new URL(request.url), nassKey);
+  if (!target) return text('Not allowed', 403, cors || {});
+  // cached under a URL without the key
+  const key = new Request(target.cacheKey, { method: 'GET' });
+  const hit = cache ? await cache.match(key) : null;
+  if (hit) return withHeaders(hit, { ...(cors || {}), 'X-Proxy-Cache': 'HIT' });
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), NASS_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetchFn(target.url, { signal: ctrl.signal, headers: { Accept: 'application/json' } });
+  } catch {
+    return text('USDA NASS did not answer', 504, cors || {});
+  } finally {
+    clearTimeout(timer);
+  }
+  const body = await res.text();
+  // only real data is cached; "no data" (400), errors and 5xx pass through uncached
+  const good = res.ok && body.startsWith('{"data"');
+  const headers = {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': good ? `public, max-age=${NASS_CACHE_SECONDS}` : 'no-store',
+    ...(cors || {}),
+    'X-Proxy-Cache': 'MISS',
+  };
+  if (good && cache) waitUntil(cache.put(key, new Response(body, { status: 200, headers: { 'Content-Type': headers['Content-Type'], 'Cache-Control': headers['Cache-Control'] } })));
+  return new Response(body, { status: res.status, headers });
+}
+
+export async function handle(request, { fetchFn = fetch, cache = globalThis.caches?.default, allowed = ALLOWED_ORIGINS, waitUntil = () => {}, nassKey = '' } = {}) {
   const origin = request.headers.get('Origin');
   const cors = corsFor(origin, allowed);
   // Browsers always send Origin on cross-site fetches; refusing other origins keeps it to our app.
   if (origin && !cors) return text('Origin not allowed', 403);
   if (request.method === 'OPTIONS') return cors ? new Response(null, { status: 204, headers: cors }) : text('Origin not allowed', 403);
   if (request.method !== 'GET') return text('Method not allowed', 405, { ...(cors || {}), Allow: 'GET, OPTIONS' });
+
+  if (new URL(request.url).pathname.startsWith('/nass/')) return handleNass(request, cors, { fetchFn, cache, waitUntil, nassKey });
 
   const target = upstreamUrl(new URL(request.url));
   if (!target) return text('Not found', 404, cors || {});
@@ -98,6 +183,6 @@ function withHeaders(res, extra) {
 export default {
   fetch(request, env, ctx) {
     const extra = (env?.EXTRA_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
-    return handle(request, { allowed: [...ALLOWED_ORIGINS, ...extra], waitUntil: (p) => ctx.waitUntil(p) });
+    return handle(request, { allowed: [...ALLOWED_ORIGINS, ...extra], waitUntil: (p) => ctx.waitUntil(p), nassKey: env?.NASS_API_KEY || '' });
   },
 };

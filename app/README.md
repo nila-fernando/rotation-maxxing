@@ -10,14 +10,15 @@ the plans out on the island.
 
 ## Run it on your computer
 
-You need [Node.js](https://nodejs.org) **22.18 or newer** (24 is what we use) and git. No API keys or
-`.env` file are needed.
+You need [Node.js](https://nodejs.org) **22.18 or newer** (24 is what we use) and git. Everything
+runs without keys except "Plan my next seasons", which needs a free USDA NASS Quick Stats key for
+local crops, yields and prices (see [Prices, yields and local crops](#prices-yields-and-local-crops-from-usda-nass-vite_nass_proxy)):
 
 ```sh
 git clone https://github.com/nila-fernando/rotation-maxxing.git
 cd rotation-maxxing/app
 npm install
-npm run dev
+NASS_API_KEY=your-key npm run dev   # or put NASS_API_KEY=your-key in app/.env.local (git-ignored)
 ```
 
 Then open http://localhost:5173. To pick up later changes, run `git pull` and then `npm install`
@@ -51,7 +52,8 @@ In the browser console, `window.__sheep` has handles to poke at (dev only), amon
 ```sh
 npm test              # node:test, about 4 s
 npm run build         # into dist/, for this computer (npm run preview serves it)
-npm run build:pages   # into dist/, the GitHub Pages build (under /rotation-maxxing/, CropScape off)
+npm run build:pages   # into dist/, the GitHub Pages build (under /rotation-maxxing/, CropScape and NASS off unless set)
+node --test ../proxy/cropscape/worker.test.mjs   # the Cloudflare Worker (CropScape and NASS routes)
 ```
 
 ## Releases and the live site
@@ -88,6 +90,38 @@ Actions > Variables) named `VITE_CDL_PROXY` to its address, for example
 `https://cropscape-proxy.example.workers.dev`, and run the workflow again. Locally, the same
 variable in `app/.env.local` (or the environment) overrides the default; set it empty to turn the
 lookups off.
+
+## Prices, yields and local crops from USDA NASS (`VITE_NASS_PROXY`)
+
+The planner uses the farm's own market data, never stand-in numbers (`src/data/market.js`):
+
+- **County:** the middle of the fields, looked up with the FCC Census Block API (keyless).
+- **Crops to choose from:** the planner's crops harvested in that county in the latest USDA Census of
+  Agriculture (2022), or with a NASS county yield in the last 5 years, plus fallow and a cereal-rye
+  cover crop.
+- **Yields:** NASS county yields (last 5 years), else state, else US, turned into non-irrigated or
+  irrigated yields with NASS's own practice split where it publishes one.
+- **Prices:** each crop's latest NASS marketing-year price received in the farm's state (the US one if
+  the state has none that recent), converted to the planner's unit ($/cwt to $/bu or $/lb, and so on).
+  A crop NASS has no price for is left out.
+- **Costs:** per-acre operating costs are the planner's sourced US figures (USDA ERS 2026F-2027F
+  forecast; Iowa State for alfalfa; NDSU for canola, sunflower and dry beans), not local; the plans
+  say so.
+
+Every source shows in the plans' "Good to know". If the county or NASS can't be reached, the plans
+say there is no price or yield data for the farm, and why, instead of planning.
+
+Quick Stats needs an API key and doesn't allow browser requests, so the app asks through a proxy
+that adds the key on the server; the key is never in the browser or the built files:
+
+- `npm run dev` and `npm run preview` answer `/nass/api_GET/` themselves (`vite.config.js`), with the
+  key from `NASS_API_KEY` in the environment or `app/.env.local`. Get a free key at
+  https://quickstats.nass.usda.gov/api. Without one, the plans say NASS isn't set up.
+- The GitHub Pages build has no proxy unless `VITE_NASS_PROXY` is set, so its plans say there's no
+  price or yield data. To turn it on, deploy the Worker in `proxy/cropscape/` with the secret
+  `NASS_API_KEY` (see its README), then set the repository variable `VITE_NASS_PROXY` to the Worker's
+  address plus `/nass`, for example `https://cropscape-proxy.example.workers.dev/nass`, and run the
+  workflow again. Never put the key itself in a `VITE_` variable: those end up in the browser.
 
 ## Troubleshooting
 

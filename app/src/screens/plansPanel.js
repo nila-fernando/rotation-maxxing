@@ -111,7 +111,7 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
     // if the farm changed since last time, the old plans stay on show (greyed) while new ones are worked out
     const pending = planSeasons();
     let settled = false;
-    pending.finally(() => { settled = true; });
+    pending.finally(() => { settled = true; }).catch(() => {}); // (the error is shown below)
     await Promise.resolve();
     if (data && !settled) setBusy(true);
     try {
@@ -122,7 +122,10 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
       render();
     } catch (e) {
       if (id !== run) return;
-      body.innerHTML = `<p class="plans__error">I couldn’t work out the plans this time (${esc(e.message)}). Try again in a moment.</p>`;
+      body.innerHTML = e?.code === 'no-market'
+        // no prices or yields for this farm: said plainly, with why (nothing is planned on stand-ins)
+        ? `<p class="plans__error">${esc(e.message)} Without them I can’t work out what each crop would earn here, so there are no plans to show.</p>`
+        : `<p class="plans__error">I couldn’t work out the plans this time (${esc(e.message)}). Try again in a moment.</p>`;
     }
   }
 
