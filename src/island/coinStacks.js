@@ -63,11 +63,20 @@ export function sailSpheres(spinners) {
  * per mesh, one per instance of an instanced mesh, and a firework's whole burst. Each is grown a
  * little (things drift), and the ones that stay low (under floorY) are left out: no stack is that
  * low. Only what's on show counts. Measure it once the pop-ins have settled.
+ *
+ * pad is how much each box grows. The stacks float high, where ghosts bob and bunting sways, so
+ * they keep well away (0.6). Something standing on the grass by a fence (a soil jar) only needs a
+ * little room (about 0.12): with 0.6 a lit fence would block every spot near it.
+ *
+ * split (0: off): a long thing in one geometry (a string of lights or tinsel all round a fence)
+ * fills a box as big as the whole field, which would keep everything off the grass round it. With
+ * split, a geometry wider than that is measured in pieces about that size instead (its triangles
+ * by where they are), so only where it really runs is kept clear.
  * @param {THREE.Object3D|null} root
- * @param {{floorY?: number}} [o]
+ * @param {{floorY?: number, pad?: number, split?: number}} [o]
  * @returns {THREE.Box3[]}
  */
-export function themeKeepOuts(root, { floorY = -Infinity } = {}) {
+export function themeKeepOuts(root, { floorY = -Infinity, pad = THEME_PAD, split = 0 } = {}) {
   const out = [];
   if (!root?.isObject3D) return out;
   root.updateWorldMatrix(true, true);
@@ -77,7 +86,7 @@ export function themeKeepOuts(root, { floorY = -Infinity } = {}) {
     if (b.isEmpty()) return;
     // an instance scaled to nothing is one that's put away (not on show)
     if (b.getSize(size).x < 1e-6 && size.y < 1e-6 && size.z < 1e-6) return;
-    b.expandByScalar(THEME_PAD);
+    b.expandByScalar(pad);
     if (b.max.y >= floorY) out.push(b);
   };
   const walk = (o) => {
@@ -85,16 +94,46 @@ export function themeKeepOuts(root, { floorY = -Infinity } = {}) {
     const g = o.geometry;
     if (g && (o.isMesh || o.isPoints)) {
       if (!g.boundingBox) g.computeBoundingBox();
+      const parts = split > 0 ? piecesOf(g, split, !!o.isPoints) : [g.boundingBox];
       if (o.isInstancedMesh) {
         for (let i = 0; i < o.count; i++) {
           o.getMatrixAt(i, m);
-          keep(g.boundingBox.clone().applyMatrix4(m).applyMatrix4(o.matrixWorld));
+          for (const b of parts) keep(b.clone().applyMatrix4(m).applyMatrix4(o.matrixWorld));
         }
-      } else keep(g.boundingBox.clone().applyMatrix4(o.matrixWorld));
+      } else for (const b of parts) keep(b.clone().applyMatrix4(o.matrixWorld));
     }
     for (const k of o.children) walk(k);
   };
   walk(root);
+  return out;
+}
+
+// a geometry's pieces (see themeKeepOuts' split), worked out once per geometry and size
+const piecesCache = new WeakMap();
+function piecesOf(g, split, points) {
+  const bb = g.boundingBox;
+  const pos = g.attributes?.position;
+  if (!pos || (bb.max.x - bb.min.x <= split && bb.max.z - bb.min.z <= split)) return [bb];
+  let byGeo = piecesCache.get(g);
+  if (!byGeo) piecesCache.set(g, (byGeo = new Map()));
+  if (byGeo.has(split)) return byGeo.get(split);
+  const cells = new Map();
+  const idx = g.index;
+  const step = points ? 1 : 3;
+  const n = points ? pos.count : idx ? idx.count : pos.count;
+  const v = new THREE.Vector3();
+  const tri = new THREE.Box3();
+  for (let i = 0; i + step - 1 < n; i += step) {
+    tri.makeEmpty();
+    for (let k = 0; k < step; k++) tri.expandByPoint(v.fromBufferAttribute(pos, idx && !points ? idx.getX(i + k) : i + k));
+    tri.getCenter(v);
+    const key = `${Math.floor(v.x / split)},${Math.floor(v.y / split)},${Math.floor(v.z / split)}`;
+    const cell = cells.get(key);
+    if (cell) cell.union(tri);
+    else cells.set(key, tri.clone());
+  }
+  const out = cells.size ? [...cells.values()] : [bb];
+  byGeo.set(split, out);
   return out;
 }
 
