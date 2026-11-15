@@ -81,7 +81,7 @@ header), so the app asks through a proxy:
 - The GitHub Pages build has none, so it doesn't ask. The check-up says the rest of the years come
   from CropScape and can't be reached from the site yet.
 
-To turn it on for the live site, run a tiny proxy that forwards `/axis2/...` to
+To turn it on for the live site, deploy the Worker in `proxy/cropscape/` (see its README; it's ready to go), or run any tiny proxy that forwards `/axis2/...` to
 `https://nassgeodata.gmu.edu/axis2/...` and adds an `Access-Control-Allow-Origin` header (a few
 lines on Cloudflare Workers, say), then set a repository variable (Settings > Secrets and variables >
 Actions > Variables) named `VITE_CDL_PROXY` to its address, for example
