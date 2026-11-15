@@ -8,7 +8,7 @@
 // tint); the glass and what's in it stay the colours they are. Each jar pushes a round obstacle
 // onto view.obstacles, so the sheep walk round it and festival things keep off it.
 //
-//   const jars = createJars(view, { getKeepOuts })
+//   const jars = createJars(view, { getKeepOuts, getName, onChange })
 //   jars.set(records)        JarRecord[] (one per field): adds, rebuilds and removes jars to match
 //   jars.refresh()           checks every jar's spot again (a festival came or went): moves or drops it
 //   jars.spotOf(fieldId)     { x, z, ground, by } | null
@@ -25,7 +25,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { sailSpheres, themeKeepOuts } from './coinStacks.js';
 import { attachSeasons } from './seasons.js';
-import { JAR, OB_PAD, PICK_R, jarSpot, rayHitsBall } from './jarSpots.js';
+import { JAR, JAR_OB_R, PICK_R, jarSpot, rayHitsBall } from './jarSpots.js';
 
 const SOIL = new Set(['clay', 'fines', 'silt', 'sand', 'organic', 'gravel', 'other']);
 const LIQUID = new Set(['water', 'tea', 'cloudy', 'foam', 'floating']);
@@ -127,7 +127,8 @@ export function jarEnv(view, { keepOuts = [], jars = [] } = {}) {
     minHeight: typeof tf.levelHeight === 'function' ? tf.levelHeight(0) - 0.15 : -Infinity,
     pondMask: tf.pondMask, pathMask: tf.pathMask, cragMask: tf.cragMask,
     fields: (view?.fields || []).map((f) => ({ id: f.id, ring: mainRing(f.polygons), polygons: f.polygons })),
-    obstacles: view?.obstacles || [],
+    // (and the little seasonal things the sheep step over, which only a jar keeps off: decor.js)
+    obstacles: view?.keepClear?.length ? [...(view.obstacles || []), ...view.keepClear] : view?.obstacles || [],
     slots: view?.slots || [],
     sheep: (view?.flock?.sheep || []).map((sh) => ({ x: sh.g?.position?.x, z: sh.g?.position?.z, size: sh.size ?? 0.6 })).filter((s) => Number.isFinite(s.x) && Number.isFinite(s.z)),
     tufts: tuftsOf(view),
@@ -217,8 +218,9 @@ const signature = (r) => JSON.stringify([r?.textureClass ?? null, (r?.layers || 
  * @param {() => Array} [o.getKeepOuts]   the festival's boxes right now, asked on every placement
  *   (default: jarKeepOuts of the island's 'Festival themes', measured there and then)
  * @param {(fieldId: string) => string} [o.getName]   a field's name for the tap tip
+ * @param {() => void} [o.onChange]   a check moved a jar, or took one away (refresh, or step's late check)
  */
-export function createJars(view, { reduced = defaultReduced, getKeepOuts = () => jarKeepOuts(view.island), getName = null } = {}) {
+export function createJars(view, { reduced = defaultReduced, getKeepOuts = () => jarKeepOuts(view.island), getName = null, onChange = null } = {}) {
   const island = view.island;
   const fieldOf = (id) => (view.fields || []).find((f) => f.id === id) || null;
   const nameOf = (id) => (getName ? getName(id) : null) ?? fieldOf(id)?.name ?? id;
@@ -234,7 +236,7 @@ export function createJars(view, { reduced = defaultReduced, getKeepOuts = () =>
     new THREE.CircleGeometry(JAR.R, 20).rotateX(-Math.PI / 2).translate(0, BASE, 0),
   ].map((g) => { g.deleteAttribute('uv'); return g; }));
   const lidGeo = new THREE.CylinderGeometry(JAR.LID_R, JAR.LID_R, JAR.LID_H, 20).translate(0, JAR.H + JAR.LID_H / 2, 0);
-  const shadowGeo = new THREE.CircleGeometry(JAR.R * 1.6, 20).rotateX(-Math.PI / 2).translate(0, 0.004, 0);
+  const shadowGeo = new THREE.CircleGeometry(JAR.SHADOW_R, 20).rotateX(-Math.PI / 2).translate(0, 0.004, 0);
   const shared = [soilMat, glassMat, lidMat, shadowMat, glassGeo, lidGeo, shadowGeo];
 
   const jars = new Map(); // fieldId -> { record, sig, spot, group, obstacle, own: [geometry/material], k }
@@ -309,12 +311,40 @@ export function createJars(view, { reduced = defaultReduced, getKeepOuts = () =>
     }
     j.group.visible = true;
     j.group.position.set(spot.x, spot.ground, spot.z);
+    drapeShadow(j, spot);
     const s = j.k >= 1 ? 1 : Math.max(0.001, easeOutBack(clamp01(j.k)));
     j.group.scale.setScalar(s);
     if (!j.obstacle) {
-      j.obstacle = { x: spot.x, z: spot.z, r: JAR.R + OB_PAD };
+      j.obstacle = { x: spot.x, z: spot.z, r: JAR_OB_R };
       view.obstacles?.push(j.obstacle);
     } else { j.obstacle.x = spot.x; j.obstacle.z = spot.z; }
+  }
+
+  /**
+   * The shadow laid on the grass where the jar stands (each point at the ground's height there), so
+   * on a gentle slope it doesn't sink into the uphill side or float over the downhill one.
+   */
+  function drapeShadow(j, spot) {
+    const sh = j.group?.getObjectByName('Jar shadow');
+    const h = view.heightAt;
+    if (!sh || typeof h !== 'function') return;
+    if (j.shadowAt === spot) return;
+    let geo = sh.geometry;
+    if (geo === shadowGeo) {
+      geo = shadowGeo.clone();
+      j.own.push(geo);
+      sh.geometry = geo;
+    }
+    const pos = geo.attributes.position;
+    const base = shadowGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const y = h(spot.x + base.getX(i), spot.z + base.getZ(i));
+      pos.setY(i, (Number.isFinite(y) ? y - spot.ground : 0) + base.getY(i));
+    }
+    pos.needsUpdate = true;
+    geo.computeBoundingSphere();
+    geo.computeBoundingBox();
+    j.shadowAt = spot;
   }
 
   function freeGroup(j) {
@@ -322,6 +352,7 @@ export function createJars(view, { reduced = defaultReduced, getKeepOuts = () =>
     for (const o of j.own || []) o.dispose();
     j.group = null;
     j.own = [];
+    j.shadowAt = null;
   }
 
   function remove(id) {
@@ -382,9 +413,10 @@ export function createJars(view, { reduced = defaultReduced, getKeepOuts = () =>
    */
   function refresh() {
     if (!alive || !jars.size) return;
-    recheck();
+    if (recheck()) tellChange();
     settle = JAR_SETTLE;
   }
+  const tellChange = () => { try { onChange?.(); } catch (e) { console.error('jars: onChange', e); } };
 
   /** refresh's work: every jar's spot checked again. Returns whether any jar moved, went or came back. */
   function recheck() {
@@ -439,7 +471,7 @@ export function createJars(view, { reduced = defaultReduced, getKeepOuts = () =>
       settle -= Math.max(0, dt);
       if (settle <= 0) {
         settle = 0;
-        if (jars.size) moving = recheck();
+        if (jars.size && recheck()) { moving = true; tellChange(); }
       }
     }
     const still = reduced();

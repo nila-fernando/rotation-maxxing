@@ -24,11 +24,15 @@ import { columnBlocked } from './stackSpots.js';
 import { distanceToEdges, pointInPolygons } from './picking.js';
 
 /** The jar's size: radius, glass height, lid radius and height, and how tall it stands in all. */
-export const JAR = { R: 0.085, H: 0.30, LID_R: 0.095, LID_H: 0.035, TOP: 0.34 };
+export const JAR = { R: 0.085, H: 0.30, LID_R: 0.095, LID_H: 0.035, TOP: 0.34, SHADOW_R: 0.136 }; // (SHADOW_R: its soft shadow on the grass)
 export const FENCE_CLEAR = 0.14; // its side keeps this far from any field's edge (fence posts, festival lights)
 export const GATE_SIDE = 0.56; // along the fence from the gate's middle: past the gate post (0.32) and the swung bar
 export const GATE_OUT = 0.30; // and this far out from the fence
-export const OB_PAD = 0.06; // the sheep keep this much further off than the glass (its obstacle is R + OB_PAD)
+export const OB_PAD = 0.06; // a jar keeps this much further off another thing's spot than its glass
+// The jar's own spot on view.obstacles, sized for the sheep's reach: a sheep stops with its middle
+// o.r + 0.22 (src/island/wander.js) from the jar, and Manami's face reaches about 0.34 ahead of her
+// middle, a little more as she grazes, so: lid 0.095 + 0.34 + 0.05 - 0.22, and a hair.
+export const JAR_OB_R = 0.27;
 export const PICK_R = 0.24; // a generous ball round the jar for a finger to tap
 
 const LEVEL = 0.05; // the ground under it may differ by this much at most
@@ -102,6 +106,37 @@ export function jarCandidates(jf) {
   }
   rings.sort((a, b) => a.score - b.score);
   for (const { x, z } of rings) out.push({ x, z, by });
+  // still nothing (a festival can fill the grass by the gate): a little further out, then all the
+  // way round the outside of the field's fence, nearest the gate first. Every spot still goes
+  // through the same checks, so the jar only moves to grass that is clear.
+  const far = [];
+  for (let k = 8; k <= 12; k++) {
+    const d = 0.6 + k * 0.2;
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      far.push({ x: g.x + Math.cos(a) * d, z: g.z + Math.sin(a) * d, score: d });
+    }
+  }
+  const ring = jf?.ring;
+  if (Array.isArray(ring) && ring.length > 2) {
+    for (let i = 0; i < ring.length; i++) {
+      const [x0, z0] = ring[i], [x1, z1] = ring[(i + 1) % ring.length];
+      const len = Math.hypot(x1 - x0, z1 - z0);
+      if (!(len > 1e-6)) continue;
+      const ex = -(z1 - z0) / len, ez = (x1 - x0) / len; // one side of the edge (the other is tried too)
+      for (let s = 0.2; s < len; s += 0.4) {
+        const px = x0 + ((x1 - x0) * s) / len, pz = z0 + ((z1 - z0) * s) / len;
+        for (const d of [0.3, 0.55]) {
+          for (const side of [1, -1]) {
+            const x = px + ex * d * side, z = pz + ez * d * side;
+            far.push({ x, z, score: 3 + Math.hypot(x - g.x, z - g.z) });
+          }
+        }
+      }
+    }
+  }
+  far.sort((a, b) => a.score - b.score);
+  for (const { x, z } of far) out.push({ x, z, by: 'beside' });
   return out;
 }
 

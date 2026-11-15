@@ -46,6 +46,14 @@ const HOWTO = [
 ];
 const RECORD_SIZE = { width: 200, height: 300 }; // the drawn jar for a saved record (no photo)
 
+/**
+ * This session's photo and layers for a field, but only while they are what the field uses: the
+ * entry made the record the field holds now (an Undo or a newer jar leaves it behind). Else null.
+ */
+export function keptFor(kept, saved) {
+  return kept && saved && kept.at != null && kept.at === saved.at ? kept : null;
+}
+
 const UP = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 14.5l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const DOWN = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9.5l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
@@ -143,8 +151,8 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
     endDrag();
     fieldId = list.some((x) => x.id === want) ? want : (list.find((x) => !x.jar) || list[0]).id;
     resetWork();
-    const kept = session.get(fieldId);
     const saved = fieldOf(fieldId)?.jar || null;
+    const kept = keptFor(session.get(fieldId), saved);
     if (wantStep === 'result' && kept) {
       ({ img, photo, box, analysis, elapsed, sample } = kept);
       step = 'layers';
@@ -234,6 +242,7 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
     if (!el && m) el = root.querySelector(`[data-key="type-${Math.max(0, Number(m[2]) - 1)}"]`);
     if (el && !el.disabled) el.focus({ preventScroll: true });
     else if (el) el.closest('li')?.querySelector('select')?.focus({ preventScroll: true });
+    else title.focus({ preventScroll: true }); // (that control is gone: Back to How to, say)
   }
 
   const saysHtml = () => `<div class="says jar-says">
@@ -565,7 +574,18 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
     img = data;
     photo = canvasEl;
     sample = isSample;
-    box = cleanBox(startBox, img.width, img.height) || cleanBox(defaultBox(img.width, img.height), img.width, img.height);
+    box = cleanBox(startBox, img.width, img.height) || cleanBox(defaultBox(img.width, img.height), img.width, img.height)
+      || cleanBox({ x0: 0, x1: img.width, y0: 0, y1: img.height }, img.width, img.height); // a small photo: all of it
+    if (!box) {
+      // too small to read at all
+      img = photo = null;
+      sample = false;
+      step = 'howto';
+      says = [JAR_LINES.photo];
+      render();
+      title.focus({ preventScroll: true });
+      return;
+    }
     analysis = null;
     note = '';
     edge = 'top';
@@ -576,6 +596,7 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
   }
 
   function trySample() {
+    run++; // (a photo still opening is moot)
     const { img: s, box: b } = paintSampleJar({ seed: 1 });
     const c = document.createElement('canvas');
     c.width = s.width;
@@ -586,7 +607,7 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
 
   async function loadFile(file) {
     if (!file) return;
-    const id = run;
+    const id = ++run; // (an earlier photo still opening is moot)
     try {
       const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
       const k = Math.min(1, WORK_MAX / Math.max(bmp.width, bmp.height));
@@ -684,7 +705,7 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
       return;
     }
     const rec = toRecord(analysis, v.result, { fieldId, sample });
-    session.set(fieldId, { img, photo, box, analysis, elapsed, sample });
+    session.set(fieldId, { img, photo, box, analysis, elapsed, sample, at: rec.at }); // (tied to this record: see keptFor)
     const f = from;
     close({ restore: false });
     onUse?.(rec, { from: f });
@@ -703,7 +724,12 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
       select.focus();
       return;
     }
-    if (step === 'layers') paintFoot(); // only the button's name changes
+    if (step === 'layers') {
+      // the button's name, and the soil map's texture in the result is this field's
+      resultSig = '';
+      paintResult();
+      paintFoot();
+    }
   });
 
   root.addEventListener('click', (e) => {
@@ -760,7 +786,7 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
     } else if (seg.dataset.seg === 'edge') {
       edge = v;
       render();
-      sayLater(edgeLabel(box, edge, img.width, img.height));
+      if (box && img) sayLater(edgeLabel(box, edge, img.width, img.height));
     }
     root.querySelector(`[data-key="${seg.dataset.seg}-${v}"]`)?.focus({ preventScroll: true });
   }
@@ -818,7 +844,9 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
     if (e.button !== 0 || !img) return;
     const p = toImage(e);
     const tol = EDGE_GRAB / scale;
-    if (step === 'photo' && box) {
+    if (step === 'photo' && !box) {
+      drag = { kind: 'new', sx: p.x, sy: p.y, temp: null, before: box };
+    } else if (step === 'photo') {
       const inX = p.x >= box.x0 - tol && p.x <= box.x1 + tol;
       const inY = p.y >= box.y0 - tol && p.y <= box.y1 + tol;
       const near = [

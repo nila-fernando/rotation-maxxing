@@ -577,6 +577,8 @@ export function createTimeTravel({ hub, onYear } = {}) {
       preview,
       /** Builds these crop layouts ([Map id -> crop key]) in idle time, so showing them later is instant. */
       prebuild: (keyMaps) => crops.prebuild(keyMaps),
+      /** fn() with the festival on show at its full size (themes.atFull): for measuring what it fills. */
+      atFullTheme: (fn) => themes.atFull(fn),
       /** Jumps the play-through to `seconds` (for testing in the console). */
       seek(seconds) { if (!playback) play(); playT = Math.max(0, Math.min(playback.duration - 0.01, seconds)); apply(playback.at(playT)); },
       get mode() { return mode; },

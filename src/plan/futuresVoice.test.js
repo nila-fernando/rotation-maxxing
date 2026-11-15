@@ -5,9 +5,9 @@
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
 import { demoData, clonedData, coverPickData, kansasLike, wheatData, START_YEAR } from '../../test/futuresDemo.mjs';
-import { KINDS, compareFutures, frostIds, mixedPlan, reelStops, viewField } from './compareFutures.js';
+import { KINDS, compareFutures, frostIds, mixedPlan, reelStops, viewField, waterWorry } from './compareFutures.js';
 import {
-  GAP_PHRASE, STAGE_WORD, allLines, captionLine, coverLine, dryLine, farmRiskLines, fieldLine, flipLine, frostCaveat, frostLine, frostPeekLine,
+  GAP_PHRASE, STAGE_WORD, allLines, captionLine, coverLine, dryLine, farmRiskLines, farmWeatherLine, fieldLine, flipLine, frostCaveat, frostLine, frostPeekLine,
   gapLines, giveUpLine, goodFitLine, lintLine, mixLine, nCarriedLine, nLine, pickedLine, priceLine, reelLine, saveLabel, seasonLabel, sevPhrase,
   skipHintLine, statusLine, tipFor, vsProfitLine, warnCtx, warnEntry, warnLine, watchItems, watchLine, watchRows, weatherLine, weatherRiskLine,
   weightsLine,
@@ -267,9 +267,30 @@ describe('the weather: spring freezes on the wheat, and water', () => {
 
   it('says the dry stop where water is the worry', () => {
     const dry = reelStops(ks).find((s) => s.id === 'dry');
-    assert.equal(reelLine(ks, dry), 'Water is the big weather worry here, so dry years are the ones to plan for. The drops show the fields my pick leaves short of water in 2027.');
-    assert.equal(dryLine(ks, 1), 'Water is the big weather worry here, so dry years are the ones to plan for. The drops show the fields my pick leaves short of water in 2028.');
+    assert.equal(reelLine(ks, dry), 'Water is the big weather worry here, so dry years are the ones to plan for. The drops show that my pick leaves every field short of water in 2027.');
+    assert.equal(dryLine(ks, 1), 'Water is the big weather worry here, so dry years are the ones to plan for. The drops show that my pick leaves every field short of water in 2028.');
     assert.equal(dryLine(cmp, 1), null, 'a humid farm has no dry stop');
+  });
+
+  it('names the fields the dry stop and the season radios mean (the drops are hidden from screen readers)', () => {
+    // only two fields short of water in 2027
+    const two = structuredClone(ks);
+    for (const f of two.fields) if (!['f1', 'f3'].includes(f.id)) for (const e of Object.values(f.byKind)) e.seasons[0].waterShort = 0;
+    const [a, b] = ['f1', 'f3'].map((id) => two.fields.find((f) => f.id === id).name);
+    assert.equal(dryLine(two, 0), `Water is the big weather worry here, so dry years are the ones to plan for. The drops show ${a} and ${b}, which my pick leaves short of water in 2027.`);
+    assert.ok(seasonLabel(two, 'priority', 0).endsWith(` Short of water on ${a} and ${b}.`));
+    assert.match(seasonLabel(ks, 'priority', 0), / Short of water on every field\.$/);
+    assert.doesNotMatch(seasonLabel(cmp, 'priority', 0), /water/, 'not on a humid farm');
+  });
+
+  it('never calls water plentiful and the big worry in one walk (just under the dry line)', () => {
+    // the planner: water-limited, but its weights call water plentiful (an aridity just under 0.65)
+    const edge = { ...ks, weights: { ...ks.weights, waterPlentiful: true } };
+    assert.equal(waterWorry(edge), false);
+    assert.equal(dryLine(edge, 0), null);
+    assert.ok(!reelStops(edge).some((s) => s.id === 'dry'));
+    assert.match(farmWeatherLine(edge), /^Water isn’t the big weather worry here\./);
+    assert.match(farmWeatherLine(ks), /^Water is the big weather worry here/);
   });
 });
 

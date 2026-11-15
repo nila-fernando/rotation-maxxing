@@ -118,6 +118,7 @@ export const wheatData = () => demoData(['profit'], { excludedCrops: ['soybeans'
 export function kansasLike(cmp) {
   const c = structuredClone(cmp);
   c.weatherRisk = { ...(c.weatherRisk || {}), waterLimited: true, aridityClass: 'semi-arid' };
+  c.weights = { ...c.weights, waterPlentiful: false }; // (well inside the dry line: the planner doesn't call water plentiful)
   c.facts = { ...(c.facts || {}), state: 'KS' };
   const label = 'Freeze risk: in 2 of 4 years, temperatures fell below the jointing threshold (K-State C646); average effect';
   const p = 0.106; // pct = −bu / (yield − bu): the yield already has the cut taken off

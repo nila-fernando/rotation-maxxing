@@ -420,5 +420,17 @@ export function createThemes(view, { attach } = {}) {
     host.parent?.remove(host);
   }
 
-  return { setTheme, update, snap, dispose, get theme() { return want; } };
+  /**
+   * fn() run with the wanted festival's things at their full size, then put back as they were (all
+   * before the next frame is drawn): so something that must keep clear of them (a soil jar) can
+   * measure where they will be once they've popped in, not where they are part way.
+   */
+  function atFull(fn) {
+    const b = want ? built[want] : null;
+    if (!b || b.k >= 1) return fn();
+    show(b, 1);
+    try { return fn(); } finally { show(b, b.k); }
+  }
+
+  return { setTheme, update, snap, atFull, dispose, get theme() { return want; } };
 }

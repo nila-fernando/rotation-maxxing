@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
 import { wheatData, demoData, START_YEAR } from '../../test/futuresDemo.mjs';
 import {
-  FREEZE_EVENT, FREEZE_TERM, FROST_CAREFUL_PCT, STAGE_WORD, fieldWeatherNote, freezeOf, frostCaveat, frostNumbers, frostWarning, weatherRiskLine,
+  FREEZE_EVENT, FREEZE_TERM, FROST_CAREFUL_PCT, STAGE_WORD, fieldWeatherNote, freezeOf, frostCaveat, frostNumbers, frostWarning, weatherRiskLine, weatherKey,
 } from './weatherWords.js';
 import { lintLine } from './futuresVoice.js';
 import { LENS_ICONS } from '../ui/futureIcons.js';
@@ -101,6 +101,44 @@ describe('the field check-up’s weather captions', () => {
     assert.deepEqual(fieldWeatherNote(demoData(['profit']), 'f1', { startYear: START_YEAR }), { water: HUMID, frost: null });
     assert.deepEqual(fieldWeatherNote(null, 'f1', { startYear: START_YEAR }), { water: weatherRiskLine(null), frost: null });
   });
+
+  // a dry farm's plans, by hand: water-limited, the farm planned as dryland
+  const dryData = (terms = []) => ({
+    result: { plans: { priority: { weatherRisk: { waterLimited: true }, objectiveTerms: terms, paddocks: [] } } },
+    farm: { constraints: { irrigation: 'dryland' }, paddocks: [] },
+  });
+  const DRY = 'Water is the big weather worry here, since the rain falls short of what crops could use.';
+
+  it('on a partly watered farm: a watered field hears that the plans take it as dryland for now', () => {
+    assert.equal(fieldWeatherNote(dryData(), 'f1').water, `${DRY} So dry years are the ones to plan for.`);
+    assert.equal(fieldWeatherNote(dryData(), 'f1', { irrigated: true }).water, `${DRY} This field is watered, but until every field is, I plan the whole farm as dryland. So dry years are the ones to plan for.`);
+    const all = { ...dryData(), farm: { constraints: { irrigation: 'irrigated' }, paddocks: [] } };
+    assert.equal(fieldWeatherNote(all, 'f1', { irrigated: true }).water, `${DRY} Your fields are watered, so the real worry is your water supply.`);
+  });
+
+  it('just under the dry line, where the planner calls water plentiful, she says so too', () => {
+    const edge = dryData([{ label: 'Water is plentiful here (aridity index 0.64), so water use counts for little', value: 0 }]);
+    assert.equal(fieldWeatherNote(edge, 'f1').water, HUMID);
+    assert.equal(weatherRiskLine({ waterLimited: true }, { plentiful: true }), HUMID);
+  });
+
+  it('weatherKey: what the captions hang on (watered or not, the state, each field’s ground), not the names', () => {
+    const farm = demoData(['profit']).farm;
+    const key = weatherKey(farm);
+    const renamed = structuredClone(farm);
+    renamed.paddocks[0].name = 'Somewhere else';
+    assert.equal(weatherKey(renamed), key);
+    const watered = structuredClone(farm);
+    watered.constraints.irrigation = 'irrigated';
+    assert.notEqual(weatherKey(watered), key);
+    const jarred = structuredClone(farm);
+    jarred.paddocks[1].land = { ...jarred.paddocks[1].land, texture: 'sandy loam' };
+    assert.notEqual(weatherKey(jarred), key);
+    const fewer = structuredClone(farm);
+    fewer.paddocks.pop();
+    assert.notEqual(weatherKey(fewer), key);
+    assert.equal(weatherKey(null), '');
+  });
 });
 
 describe('the weather lines in Manami’s voice, and the frost icon', () => {
@@ -108,6 +146,7 @@ describe('the weather lines in Manami’s voice, and the frost icon', () => {
     const data = wheatData();
     const lines = [
       ...[false, true].flatMap((wheat) => [false, true].flatMap((irrigated) => [true, false, null].map((waterLimited) => weatherRiskLine({ waterLimited }, { wheat, irrigated })))),
+      weatherRiskLine({ waterLimited: true }, { fieldWatered: true }),
       ...['KS', 'IA', null].flatMap((st) => Object.keys(STAGE_WORD).map((stage) => frostCaveat(st, stage))),
       ...['f1', 'f2', 'f3', 'f4', 'f5'].flatMap((id) => Object.values(fieldWeatherNote(data, id, { startYear: START_YEAR }))),
     ].filter((s) => s != null);

@@ -266,7 +266,7 @@ describe('Manami on the jar test', () => {
   const lines = Object.entries(JAR_LINES).flatMap(([key, l]) => {
     if (typeof l !== 'function') return [[key, l]];
     if (key === 'found') return [[key, l(9)], [key, l(1)]];
-    if (key === 'used') return ['gate', 'beside', null].map((p) => [key, l(DEMO.name, DEMO.cls, p)]);
+    if (key === 'used') return ['gate', 'beside', 'none', null].map((p) => [key, l(DEMO.name, DEMO.cls, p)]);
     if (key === 'same') return [[key, l('Home place')]];
     return [[key, l(DEMO.name)]];
   });
@@ -279,6 +279,7 @@ describe('Manami on the jar test', () => {
     assert.equal(JAR_LINES.found(9), 'I found 9 layers. Check each label, and drag a line if it’s off.');
     assert.equal(JAR_LINES.used('West 140', 'Clay loam', 'gate'), 'Done. By your jar, West 140 is clay loam, and I’ll plan with that. I’ve left the jar by its gate.');
     assert.equal(JAR_LINES.used('West 140', 'Clay loam', 'beside'), 'Done. By your jar, West 140 is clay loam, and I’ll plan with that. I’ve left the jar beside it.');
+    assert.equal(JAR_LINES.used('West 140', 'Clay loam', 'none'), 'Done. By your jar, West 140 is clay loam, and I’ll plan with that. There’s no clear grass by it just now, so I’ll set the jar out when there’s room.');
     assert.equal(JAR_LINES.used('West 140', 'Clay loam', null), 'Done. By your jar, West 140 is clay loam, and I’ll plan with that.');
     assert.equal(JAR_LINES.same('Home place'), 'Done. Your jar agrees with the soil map on Home place, so your plans won’t change.');
     assert.equal(JAR_LINES.undone('West 140'), 'Okay, West 140 is back on the soil map.');

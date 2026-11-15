@@ -25,6 +25,7 @@ import * as THREE from 'three';
 import {
   KINDS, kindFor, mixedPlan, compareFutures, fieldOf, viewField, seasonChanges, seasonCashFor, coinPlan,
   tiles as tileValues, sameCrops, uniformKind, gainField, reelStops, fineprint, frostIds, dryIds,
+  waterWorry,
 } from '../plan/compareFutures.js';
 import { marksFor } from '../plan/futureMarks.js';
 import { frostNumbers } from '../plan/weatherWords.js';
@@ -120,6 +121,18 @@ export function frostRowWords(seasons, years) {
   if (!ys.length) return '';
   const list = ys.length > 1 ? `${ys.slice(0, -1).join(', ')} and ${ys[ys.length - 1]}` : String(ys[0]);
   return ` Spring freeze risk on the wheat in ${list}.`;
+}
+
+/**
+ * The years in a plan's seasons that leave the field short of water (1 in or more), where water is
+ * the weather worry (dry), for its row's label: " Short of water in 2027." ('' otherwise).
+ */
+export function dryRowWords(seasons, years, dry = false) {
+  if (!dry) return '';
+  const ys = seasons.map((s, y) => ((s.waterShort ?? 0) >= 1 ? years[y] : null)).filter((y) => y != null);
+  if (!ys.length) return '';
+  const list = ys.length > 1 ? `${ys.slice(0, -1).join(', ')} and ${ys[ys.length - 1]}` : String(ys[0]);
+  return ` Short of water in ${list}.`;
 }
 
 /** "+$25k" / "−$2k" (a money difference with its sign). */
@@ -603,6 +616,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     if (was && repaint && cmp) {
       previewIsland();
       paintMarks();
+      paintChips(); // (the frost fields' chips stop winning a place)
       if (cardId) renderCard();
     }
     return was;
@@ -725,6 +739,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     if (!cmp) return;
     const changes = marksBase && marksBase !== view ? seasonChanges(cmp, view, choice, marksBase)[season] : new Map();
     const dry = dryIds(cmp, view, season, choice);
+    const dryStop = !!reel?.stops[reel.i]?.dryLens; // the walk's dry stop: the drops' chips win a place
     const written = [];
     for (const c of chips) {
       const f = fieldOf(cmp, c.id);
@@ -733,8 +748,9 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
       const s = e.seasons[season];
       const d = e.total - f.byKind.current.total;
       const showDiff = kindOf(c.id) !== 'current' && Math.abs(d) >= 500;
-      // (with the frost lens on, the frost fields' chips win a place over the others)
-      c.changed = changes.has(c.id) || c.id === focusId || c.id === cardId || (frostLens && !!s.freeze);
+      // (with the frost lens on, the frost fields' chips win a place over the others; at the dry
+      // stop, the dry fields')
+      c.changed = changes.has(c.id) || c.id === focusId || c.id === cardId || (frostLens && !!s.freeze) || (dryStop && dry.has(c.id));
       c.weight = Math.abs(d);
       const html = chipHtml({ s, total: e.total, diff: d, showDiff, dry: dry.has(c.id) });
       const cls = `fut-chip${showDiff ? ' has-diff' : ''}${e.total <= 0 ? ' is-loss' : ''}${c.id === focusId || c.id === cardId ? ' is-focus' : ''}`;
@@ -1114,7 +1130,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     const sev = Math.max(0, ...e.seasons.map((s) => s.worst));
     const d = e.total - f.byKind.current.total;
     const total = kind === 'current' ? money(e.total) : `${money(e.total)}, ${Math.abs(d) < 500 ? 'same' : signed(d)}`;
-    const label = `${NAME[kind]}: ${e.seasons.map((s, y) => `${years()[y]} ${cellName(s)}`).join(', ')}. About ${money(e.total)} over 3 seasons${kind === 'current' ? '' : `, ${diffWords(d)}`}.${sev ? ` ${SEVERITY_LABEL[sev]}: something to watch.` : ''}${frostRowWords(e.seasons, years())}${sameAs ? ` Same crops as ${NAME[sameAs]}.` : ''}`;
+    const label = `${NAME[kind]}: ${e.seasons.map((s, y) => `${years()[y]} ${cellName(s)}`).join(', ')}. About ${money(e.total)} over 3 seasons${kind === 'current' ? '' : `, ${diffWords(d)}`}.${sev ? ` ${SEVERITY_LABEL[sev]}: something to watch.` : ''}${frostRowWords(e.seasons, years())}${dryRowWords(e.seasons, years(), waterWorry(cmp) === true)}${sameAs ? ` Same crops as ${NAME[sameAs]}.` : ''}`;
     return `<button type="button" role="radio" class="fut-row fut-row--${kind}" data-kind="${kind}" aria-checked="${on}" tabindex="${on ? 0 : -1}" aria-label="${esc(label)}">
       <span class="fut-row__head"><span class="fut-row__icon">${PLAN_ICONS[kind]}</span><b>${esc(NAME[kind])}</b>${kind === 'priority' ? '<span class="fut-plan__badge">Recommended</span>' : ''}${sameAs ? `<span class="fut-row__same">same crops as ${esc(NAME[sameAs])}</span>` : ''}</span>
       <span class="fut-row__cells">${cells}</span>
@@ -1180,7 +1196,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     const risks = voice.farmRiskLines(cmp, view, mixScore, choice);
     // (the weather worry in her words; the planner's own sentence stays in the fine print)
     const wheat = cmp.fields.some((f) => viewField(cmp, f.id, view, choice).seasons.some((s) => /wheat/.test(s.crop)));
-    const weatherRisk = voice.weatherRiskLine(cmp.weatherRisk, { wheat, irrigated: !!cmp.facts?.irrigated });
+    const weatherRisk = voice.farmWeatherLine(cmp, { wheat });
     const good = [voice.weatherLine(cmp.weather), weatherRisk, voice.captionLine(coinsPlan.value), ...gaps.farm];
     const raw = fineprint(cmp, view, mixScore, choice);
     const p = (t) => `<p>${esc(t)}</p>`;

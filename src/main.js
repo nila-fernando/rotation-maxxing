@@ -16,8 +16,9 @@ import * as farmData from './data/farmData.js';
 import { fieldReportFor } from './data/fieldReport.js';
 import { createPlanner } from './plan/planner.js';
 import { JAR_LINES } from './plan/jarTest.js';
-import { fieldWeatherNote } from './plan/weatherWords.js';
-import { createJars } from './island/jarProps.js';
+import { fieldWeatherNote, weatherKey } from './plan/weatherWords.js';
+import { plannerFarm } from './plan/farmInput.js';
+import { createJars, jarKeepOuts } from './island/jarProps.js';
 import { createCheckIn, CROPS } from './screens/checkin.js';
 import { createFieldPanel } from './screens/fieldPanel.js';
 import { createJarPanel } from './screens/jarPanel.js';
@@ -96,15 +97,39 @@ function syncManami() {
 }
 
 /**
+ * The plans the check-up's weather words may come from: the plans panel's, while they were made
+ * for the farm as it is now (no field switched to irrigated or back, no jar test come or gone
+ * since); null otherwise, until there are new plans. (Worked out again only when the farm or the
+ * plans change.)
+ */
+let weatherMemo = null;
+function weatherPlans() {
+  const data = plansPanel.data;
+  if (!data) return null;
+  const m = weatherMemo;
+  if (!m || m.data !== data || m.fields !== app.fields || m.profile !== app.farmProfile || m.place !== app.farm) {
+    let ok = false;
+    try {
+      const now = plannerFarm({ fields: app.fields, place: app.farm, profile: app.farmProfile, firstSeason: firstSeason(today()) }).farm;
+      ok = weatherKey(now) === weatherKey(data.farm);
+    } catch (e) { console.error('weather plans', e); }
+    weatherMemo = { data, fields: app.fields, profile: app.farmProfile, place: app.farm, ok };
+  }
+  return weatherMemo.ok ? data : null;
+}
+
+/**
  * A field's check-up (flags, soil, slope, rain, greenness, its jar test) from what the app knows
- * now; once there are plans, Manami's weather words for it too.
+ * now; once there are plans for the farm as it stands, Manami's weather words for it too.
  */
 function reportFor(id) {
   const f = app.fields.find((x) => x.id === id);
   if (!f) return null;
   let planWeather = null;
   try {
-    planWeather = plansPanel.data ? fieldWeatherNote(plansPanel.data, f.id, { startYear: firstSeason(today()) }) : null;
+    const data = weatherPlans();
+    const irrigated = !!app.farmProfile?.irrigatedFieldIds?.includes(f.id);
+    planWeather = data ? fieldWeatherNote(data, f.id, { startYear: firstSeason(today()), irrigated }) : null;
   } catch (e) { console.error('weather note', e); }
   return fieldReportFor(f, { profile: app.farmProfile, farmIsDemo: !!app.farm?.demo, planWeather });
 }
@@ -155,7 +180,8 @@ const hub = createHub({
   getPanelInsets: () => (planFutures?.active ? planFutures.insets() : fieldPanel.insets()),
   panelEl: fieldPanel.el,
   onPlan: () => plansPanel.open(),
-  onJarTap: (id) => jarPanel.open({ fieldId: id, step: 'result', from: 'island' }),
+  // (not over the plans: on a wide screen the island shows beside them, but they keep the keys)
+  onJarTap: (id) => { if (!plansPanel.isOpen) jarPanel.open({ fieldId: id, step: 'result', from: 'island' }); },
 });
 
 // "Plan my next seasons": the planner's three plans, a pick per field, and a preview on the island
@@ -278,11 +304,9 @@ const timeTravel = createTimeTravel({
 // and clay. "Use" saves it on the field (field.jar, src/plan/jarTest.js toRecord): the planner
 // plans with that texture, the check-up shows it, and the jar stands by the field's gate
 // (src/island/jarProps.js), where a tap opens it again.
-const JAR_REFRESH_MS = 800; // after a festival change, as the coin stacks wait (its things pop in first)
 const jarSession = new Map(); // fieldId -> this session's photo and layers (never saved)
 let jars = null;
 let jarFrameOff = null;
-let jarTimer = 0;
 let jarOccasion; // the festival the jars were last placed for
 const jarInert = new Map(); // what the dialog made inert -> whether it was before
 /** Each field's jar test in use (one whose record is for that field). */
@@ -306,6 +330,9 @@ const jarPanel = createJarPanel({
   onClose: () => {
     for (const [el, was] of jarInert) el.inert = was;
     jarInert.clear();
+    // the field list from how things are now, not as they were at open (the plans may have shut since)
+    const list = $('hubPanel');
+    if (list) list.inert = plansPanel.isOpen || !!planFutures?.active || islandPlanner.active;
     syncManami();
   },
   onUse: (record, { from }) => useJar(record, from),
@@ -345,7 +372,7 @@ function useJar(record, from) {
   if (app.openFieldId) hub.overview(); // the check-up steps aside, so she can say it (it shows the jar when opened again)
   const focus = jars?.focusFor(id);
   if (focus) hub.focusOn(focus, 0.75);
-  const line = reportFor(id)?.jar?.sameAsMap ? JAR_LINES.same(name) : JAR_LINES.used(name, record.textureClass, spots.get(id)?.by ?? null);
+  const line = reportFor(id)?.jar?.sameAsMap ? JAR_LINES.same(name) : JAR_LINES.used(name, record.textureClass, jars ? spots.get(id)?.by ?? 'none' : null); // ('none': the island is full there just now, at a festival say)
   manami.say(line, {
     actions: [
       { label: 'See the new plans', primary: true, onClick: () => plansPanel.open() },
@@ -380,19 +407,28 @@ function removeJar(id, { from } = {}) {
 /** The jars on a new island: built once their materials are compiled, tapped through the hub. */
 function startJars(island) {
   stopJars();
-  const mine = createJars(island.view, { getName: (id) => app.fields.find((f) => f.id === id)?.name ?? null });
+  const mine = createJars(island.view, {
+    getName: (id) => app.fields.find((f) => f.id === id)?.name ?? null,
+    // the festival's things measured at the size they'll pop in to (so a jar moves before they reach it)
+    getKeepOuts: () => {
+      const measure = () => jarKeepOuts(island.view.island);
+      const tt = timeTravel.session;
+      return tt?.atFullTheme ? tt.atFullTheme(measure) : measure();
+    },
+    onChange: () => hub.session?.repick(), // a jar moved or went: the tooltip and cursor look again
+  });
   jars = mine;
   jarOccasion = timeTravel.session?.state?.occasion ?? null;
   jarFrameOff = island.view.onFrame((dt) => {
-    mine.step(dt);
     // a festival came or went (by date, or picked in the day panel; a new crop year doesn't say so):
-    // once its things have popped in a little, the jars check their spots again
+    // the jars check their spots at once, against its things at full size, and once more after
+    // they've all grown in (JAR_SETTLE)
     const occasion = timeTravel.session?.state?.occasion ?? null;
     if (occasion !== jarOccasion) {
       jarOccasion = occasion;
-      clearTimeout(jarTimer);
-      jarTimer = setTimeout(() => { if (jars === mine) mine.refresh(); }, JAR_REFRESH_MS);
+      mine.refresh();
     }
+    mine.step(dt);
   });
   hub.setPropPicker((origin, dir) => mine.pick(origin, dir));
   mine.prewarm(island.view.camera).then(() => {
@@ -400,7 +436,6 @@ function startJars(island) {
   });
 }
 function stopJars() {
-  clearTimeout(jarTimer);
   jarFrameOff?.();
   jarFrameOff = null;
   jars?.dispose();

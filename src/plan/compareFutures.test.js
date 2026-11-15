@@ -211,8 +211,11 @@ describe('the weather on the demo farm (no wheat)', () => {
 
   it('shows no dry fields on a humid farm, and some where water is the worry', () => {
     for (const y of [0, 1, 2]) assert.equal(dryIds(cmp, 'priority', y).size, 0);
-    const dry = { ...cmp, weatherRisk: { ...cmp.weatherRisk, waterLimited: true } };
+    const dry = { ...cmp, weatherRisk: { ...cmp.weatherRisk, waterLimited: true }, weights: { ...cmp.weights, waterPlentiful: false } };
     assert.ok(dryIds(dry, 'priority', 0).size > 0);
+    // just under the dry line the planner's weights still call water plentiful: then it isn't the worry
+    const edge = { ...dry, weights: { ...cmp.weights, waterPlentiful: true } };
+    for (const y of [0, 1, 2]) assert.equal(dryIds(edge, 'priority', y).size, 0);
   });
 });
 

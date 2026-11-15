@@ -426,11 +426,22 @@ export function frostStop(cmp) {
 }
 
 /**
+ * Whether water is the weather worry here: the planner's weatherRisk, except just under its dry
+ * line, where its own weights call water plentiful (then Manami says that, and never both).
+ * true | false, or null with no real weather.
+ */
+export function waterWorry(cmp) {
+  const limited = cmp?.weatherRisk?.waterLimited;
+  if (limited == null) return null;
+  return limited === true && !cmp.weights?.waterPlentiful;
+}
+
+/**
  * The fields left short of water (1 in or more) in the shown season, only where water is what
- * limits the crops (the planner's weatherRisk): Set of ids, empty on a humid farm.
+ * limits the crops (waterWorry): Set of ids, empty on a humid farm.
  */
 export function dryIds(cmp, view, season, choice) {
-  if (cmp.weatherRisk?.waterLimited !== true) return new Set();
+  if (waterWorry(cmp) !== true) return new Set();
   return new Set(cmp.fields.filter((f) => (entryFor(f, view, choice).seasons[season]?.waterShort ?? 0) >= 1).map((f) => f.id));
 }
 

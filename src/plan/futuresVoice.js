@@ -16,6 +16,7 @@ import {
   KINDS, kindFor, fieldOf, viewField, seasonChanges, seasonCashFor, tiles, totalsOf, headline, flagsFor,
   gainField, firstCropChange, sameCropPick, giveUpFields, watchSeason, samePlans, sameCrops, sameEverywhere,
   acreGain, mixKind, idsByName, rawFor, coinPlan, coverOnlyFields, coverAddFields, frostIds, frostStop, dryIds,
+  waterWorry,
 } from './compareFutures.js';
 import { FREEZE_TERM, FREEZE_EVENT, STAGE_WORD, frostCaveat, frostCut, springsWords, weatherRiskLine } from './weatherWords.js';
 
@@ -543,6 +544,8 @@ export function goodFitLine(cmp) {
 
 /** The fields' names for a list of ids. */
 const namesOf = (cmp, ids) => names([...ids].map((id) => fieldOf(cmp, id).name));
+/** The fields short of water, named (up to 5), or "every field". */
+const dryNames = (cmp, ids) => (ids.size > 1 && ids.size === cmp.fields.length ? 'every field' : names([...ids].map((id) => fieldOf(cmp, id).name), 5));
 
 /**
  * The walk's frost stop: where the pick sows wheat a spring freeze can hurt, how often one did, and
@@ -565,8 +568,20 @@ export function frostPeekLine(cmp, season, ids) {
 
 /** The walk's dry stop, where water is the weather worry (null where it isn't, or no field runs short). */
 export function dryLine(cmp, season) {
-  if (!dryIds(cmp, 'priority', season).size) return null;
-  return `Water is the big weather worry here, so dry years are the ones to plan for. The drops show the fields my pick leaves short of water in ${cmp.years[season]}.`;
+  const ids = dryIds(cmp, 'priority', season);
+  if (!ids.size) return null;
+  const year = cmp.years[season];
+  const lead = 'Water is the big weather worry here, so dry years are the ones to plan for.';
+  if (ids.size > 1 && ids.size === cmp.fields.length) return `${lead} The drops show that my pick leaves every field short of water in ${year}.`;
+  return `${lead} The ${ids.size === 1 ? 'drop shows' : 'drops show'} ${dryNames(cmp, ids)}, which my pick leaves short of water in ${year}.`;
+}
+
+/**
+ * The Notes' "Good to know" line on the farm's weather worry (weatherRiskLine, agreeing with the
+ * weights line where the planner calls water plentiful). wheat: the plan shown grows wheat.
+ */
+export function farmWeatherLine(cmp, { wheat = false } = {}) {
+  return weatherRiskLine(cmp.weatherRisk, { wheat, irrigated: !!cmp.facts?.irrigated, plentiful: waterWorry(cmp) === false });
 }
 
 /** Explore's first line when the walk is skipped. */
@@ -672,12 +687,14 @@ const diffWords = (d) => (Math.abs(d) < 500 ? 'about the same as keeping going' 
 
 /**
  * The season radio's screen-reader label: "2027, about $132k, $16k more than keeping going.", with
- * " Frost risk on the wheat." when a field's wheat has a spring freeze that season.
+ * " Frost risk on the wheat." when a field's wheat has a spring freeze that season, and " Short of
+ * water on North draw." where water is the worry and a field runs short.
  */
 export function seasonLabel(cmp, view, season, choice) {
   const cash = seasonCashFor(cmp, view, choice)[season];
   const year = cmp.years[season];
-  const frost = frostIds(cmp, view, season, choice).size ? ' Frost risk on the wheat.' : '';
+  const dry = dryIds(cmp, view, season, choice);
+  const frost = (frostIds(cmp, view, season, choice).size ? ' Frost risk on the wheat.' : '') + (dry.size ? ` Short of water on ${dryNames(cmp, dry)}.` : '');
   if (view === 'current') return `${year}, about ${money(cash)}.${frost}`;
   return `${year}, about ${money(cash)}, ${diffWords(cash - cmp.seasonCash.current[season])}.${frost}`;
 }
@@ -808,7 +825,7 @@ export function allLines(cmp, { choice, mixScore } = {}) {
   const out = [introLine(cmp), flipLine(cmp), gainLine(cmp), sameCropLine(cmp), giveUpLine(cmp), vsProfitLine(cmp),
     weightsLine(cmp.weights), watchLine(cmp), yourTurnLine(), goodFitLine(cmp), skipHintLine(cmp), priceLine(cmp.price), weatherLine(cmp.weather),
     captionLine(coinPlan(cmp).value), frostLine(cmp)];
-  for (const wheat of [false, true]) out.push(weatherRiskLine(cmp.weatherRisk, { wheat, irrigated: !!cmp.facts?.irrigated }));
+  for (const wheat of [false, true]) out.push(farmWeatherLine(cmp, { wheat }));
   const gaps = gapLines(cmp);
   out.push(...gaps.farm, ...Object.values(gaps.byField).flat());
   for (const view of views) {

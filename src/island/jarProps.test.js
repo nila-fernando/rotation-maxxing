@@ -8,7 +8,7 @@ import * as THREE from 'three';
 
 const { fakeView } = await import('./fakeIsland.mjs');
 const { createJars, jarLayers, jarField, JAR_SETTLE } = await import('./jarProps.js');
-const { JAR, OB_PAD, jarCandidates, jarBox } = await import('./jarSpots.js');
+const { JAR, JAR_OB_R, jarCandidates, jarBox } = await import('./jarSpots.js');
 
 /** The sample jar's record (src/plan/jarTest.js toRecord), top to bottom. */
 const RECORD = {
@@ -34,6 +34,54 @@ const meshesOf = (o) => { const out = []; o.traverse((m) => { if (m.isMesh) out.
 const lightsIn = (o) => { let n = 0; o.traverse((m) => { if (m.isLight) n++; }); return n; };
 
 describe('soil jars', () => {
+  it('onChange: told when a check moves a jar or takes it away, not when nothing moved', () => {
+    const view = fakeView();
+    let keepOuts = [];
+    let told = 0;
+    const jars = createJars(view, { ...still, getKeepOuts: () => keepOuts, onChange: () => { told++; } });
+    const first = jars.set([record('f0')]).get('f0');
+    jars.refresh();
+    assert.equal(told, 0, 'stayed put');
+    keepOuts = [{ min: { x: first.x - 0.05, y: 0, z: first.z - 0.05 }, max: { x: first.x + 0.05, y: 2, z: first.z + 0.05 } }];
+    jars.refresh();
+    assert.equal(told, 1, 'moved');
+    keepOuts = [];
+    jars.step(JAR_SETTLE + 0.01); // the late check finds the gate spot clear again
+    assert.equal(told, 2);
+    assert.deepEqual(jars.spotOf('f0'), first);
+    jars.dispose();
+  });
+
+  it('keeps off the little seasonal things on view.keepClear (the hidden eggs, the barn door pumpkins)', () => {
+    const view = fakeView();
+    const cands = jarCandidates(jarField(view.fields[0], view));
+    view.keepClear = [{ x: cands[0].x + 0.1, z: cands[0].z, r: 0.06 }];
+    const jars = createJars(view, still);
+    const s = jars.set([record('f0')]).get('f0');
+    assert.notDeepEqual([s.x, s.z], [cands[0].x, cands[0].z]);
+    for (const o of view.keepClear) assert.ok(Math.hypot(o.x - s.x, o.z - s.z) >= o.r + JAR.R);
+    assert.ok(!view.obstacles.includes(view.keepClear[0]), 'not a spot for the sheep');
+    jars.dispose();
+  });
+
+  it('lays its shadow on the grass where it stands, a slope and all', () => {
+    const view = fakeView();
+    const slope = 0.12; // rises to +x
+    view.heightAt = (x) => 0.6 + x * slope;
+    const jars = createJars(view, still);
+    const s = jars.set([record('f0')]).get('f0');
+    assert.ok(s);
+    const sh = jars.groupOf('f0').getObjectByName('Jar shadow');
+    const pos = sh.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const ground = view.heightAt(s.x + pos.getX(i), s.z + pos.getZ(i)) - s.ground;
+      assert.ok(Math.abs(pos.getY(i) - ground - 0.004) < 1e-6, 'just over the ground at every point');
+    }
+    const ys = Array.from({ length: pos.count }, (_, i) => pos.getY(i));
+    assert.ok(Math.max(...ys) - Math.min(...ys) > 0.02, 'tilted with the slope');
+    jars.dispose();
+  });
+
   it('set([record]) adds one group by the gate and one obstacle', () => {
     const view = fakeView();
     const kids = view.island.children.length, obs = view.obstacles.length;
@@ -47,7 +95,7 @@ describe('soil jars', () => {
     assert.deepEqual(Object.keys(s).sort(), ['by', 'ground', 'x', 'z']);
     assert.equal(s.by, 'gate');
     const o = view.obstacles[view.obstacles.length - 1];
-    assert.deepEqual(o, { x: s.x, z: s.z, r: JAR.R + OB_PAD });
+    assert.deepEqual(o, { x: s.x, z: s.z, r: JAR_OB_R });
     assert.deepEqual([g.position.x, g.position.y, g.position.z], [s.x, s.ground, s.z]);
     // the sheep's own check now walks round it
     assert.ok(view.obstacles.some((q) => Math.hypot(q.x - s.x, q.z - s.z) < 1e-9));
@@ -161,7 +209,7 @@ describe('soil jars', () => {
     assert.deepEqual(b.get('f2'), a.get('f2'), 'in the same spot');
     assert.ok(jars.groupOf('f3'));
     assert.equal(g1.parent, null);
-    assert.equal(view.obstacles.filter((o) => o.r === JAR.R + OB_PAD).length, 2);
+    assert.equal(view.obstacles.filter((o) => o.r === JAR_OB_R).length, 2);
     // the same records again change nothing
     const g3 = jars.groupOf('f3');
     const g2b = jars.groupOf('f2');
@@ -187,7 +235,7 @@ describe('soil jars', () => {
     jars.refresh();
     const moved = jars.spotOf('f0');
     assert.deepEqual([moved.x, moved.z], [cands[1].x, cands[1].z], 'to the next spot');
-    const ob = view.obstacles.filter((o) => o.r === JAR.R + OB_PAD);
+    const ob = view.obstacles.filter((o) => o.r === JAR_OB_R);
     assert.equal(ob.length, 1, 'one obstacle still');
     assert.deepEqual([ob[0].x, ob[0].z], [moved.x, moved.z], 'and it moved with the jar');
     jars.refresh();
@@ -206,7 +254,7 @@ describe('soil jars', () => {
     jars.refresh();
     assert.equal(jars.spotOf('f0'), null);
     assert.equal(jars.groupOf('f0').visible, false);
-    assert.equal(view.obstacles.filter((o) => o.r === JAR.R + OB_PAD).length, 0);
+    assert.equal(view.obstacles.filter((o) => o.r === JAR_OB_R).length, 0);
     assert.equal(jars.pick(new THREE.Vector3(first.x, 5, first.z), new THREE.Vector3(0, -1, 0)), null, "a jar that's gone can't be tapped");
     keepOuts = [];
     jars.refresh();

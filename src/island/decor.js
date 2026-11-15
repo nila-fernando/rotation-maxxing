@@ -976,6 +976,27 @@ export function createDecor(view, { attach } = {}) {
   bats.visible = false;
   root.add(bats);
   attach?.(barnBits); // the wreath and door pumpkins get snow like everything else
+
+  // ---- the little seasonal things a soil jar keeps off (src/island/jarProps.js reads
+  // view.keepClear): the hidden eggs (the sheep step over them) and the pumpkins by the barn door
+  // (out in front of the barn's own spot), in island space, all year whether shown or not
+  const keepClear = eggSpots.map((e) => ({ x: e.x, z: e.z, r: 0.06 }));
+  if (view.barn?.isObject3D && view.island?.isObject3D) {
+    barnBits.updateWorldMatrix(true, true);
+    view.island.updateWorldMatrix(true, false);
+    const k = view.island.getWorldScale(new THREE.Vector3()).x || 1;
+    const box = new THREE.Box3(), c = new THREE.Vector3(), size = new THREE.Vector3();
+    for (const name of ['doorPumpkins', 'doorLanterns']) {
+      for (const pk of items[name].wrap.children) {
+        box.setFromObject(pk);
+        if (box.isEmpty()) continue;
+        const at = view.island.worldToLocal(box.getCenter(c));
+        box.getSize(size);
+        keepClear.push({ x: at.x, z: at.z, r: Math.max(size.x, size.z) / 2 / k });
+      }
+    }
+  }
+  (view.keepClear ||= []).push(...keepClear);
   const batInfo = [...Array(8)].map((_, i) => ({ r: 1.6 + (i % 4) * 0.6, h: 2.6 + (i % 3) * 0.45, sp: 0.5 + (i % 5) * 0.12, ph: i * 0.8 }));
 
   let want = {};
@@ -1057,6 +1078,7 @@ export function createDecor(view, { attach } = {}) {
     root.parent?.remove(root);
     barnBits.parent?.remove(barnBits);
     // free the spots again
+    if (view.keepClear) view.keepClear = view.keepClear.filter((o) => !keepClear.includes(o));
     if (view.obstacles) for (const t of taken) { const i = view.obstacles.indexOf(view.obstacles.find((o) => o.x === t.x && o.z === t.z)); if (i >= 0) view.obstacles.splice(i, 1); }
   }
 

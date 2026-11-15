@@ -7,7 +7,7 @@ import { describe, it } from 'node:test';
 import * as THREE from 'three';
 
 const { fakeView, plannedView, demoFields, fifteenFields } = await import('./fakeIsland.mjs');
-const { JAR, FENCE_CLEAR, GATE_SIDE, GATE_OUT, OB_PAD, jarBox, jarCandidates, jarBlocked, jarSpot, rayHitsBall } = await import('./jarSpots.js');
+const { JAR, FENCE_CLEAR, GATE_SIDE, GATE_OUT, OB_PAD, JAR_OB_R, jarBox, jarCandidates, jarBlocked, jarSpot, rayHitsBall } = await import('./jarSpots.js');
 const { jarField, jarEnv, jarKeepOuts, createJars, JAR_SETTLE } = await import('./jarProps.js');
 const { columnBlocked, stackSpots, columnBox } = await import('./stackSpots.js');
 const { pointInPolygons, distanceToEdges } = await import('./picking.js');
@@ -39,7 +39,7 @@ function checkJar(id, spot, env, view) {
     assert.ok(d >= R + FENCE_CLEAR - 1e-9, `${at} is ${d.toFixed(3)} from ${f.id}'s fence`);
   }
   assert.ok(!columnBlocked(spot.box, env), `${at} meets a prop, the sails, a lamp or a keep-out`);
-  for (const o of env.obstacles) if (!(o.x === spot.x && o.z === spot.z && o.r === R + OB_PAD)) assert.ok(Math.hypot(o.x - spot.x, o.z - spot.z) >= o.r + R + OB_PAD - 1e-9, `${at} is on an obstacle`);
+  for (const o of env.obstacles) if (!(o.x === spot.x && o.z === spot.z && o.r === JAR_OB_R)) assert.ok(Math.hypot(o.x - spot.x, o.z - spot.z) >= o.r + R + OB_PAD - 1e-9, `${at} is on an obstacle`);
   for (const sl of view.slots || []) assert.ok(Math.hypot(sl.at[0] - spot.x, sl.at[1] - spot.z) >= sl.r + R + 0.1 - 1e-9, `${at} is on a pad`);
   for (const s of env.sheep) assert.ok(Math.hypot(s.x - spot.x, s.z - spot.z) >= R + 0.25 + s.size * 0.6 - 1e-9, `${at} is on a sheep`);
   for (const t of env.tufts) assert.ok(Math.hypot(t.x - spot.x, t.z - spot.z) >= t.r + R + 0.02 - 1e-9, `${at} is on a tuft`);
@@ -146,7 +146,7 @@ describe('jar spots', () => {
     assert.equal(jarBlocked(0, 3.2, { ...env, coastR: () => 3.5 }), 'coast', 'by the shore');
     assert.equal(jarBlocked(0, 3.2, env), null);
     // a jar's own obstacle doesn't block it
-    const own = { x: 0, z: 3.2, r: JAR.R + OB_PAD };
+    const own = { x: 0, z: 3.2, r: JAR_OB_R };
     view.obstacles.push(own);
     assert.equal(jarBlocked(0, 3.2, jarEnv(view)), 'obstacle');
     assert.equal(jarBlocked(0, 3.2, jarEnv(view), { obstacle: own }), null);

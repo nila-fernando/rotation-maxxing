@@ -9,7 +9,7 @@ import { LENS_ICONS } from '../ui/futureIcons.js';
 // planFutures.js touches the DOM only inside createPlanFutures; these are plain functions
 globalThis.document ??= { getElementById: () => null };
 globalThis.matchMedia ??= () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
-const { keysFor, cellsFor, changedIds, overlaps, declutter, focusHome, chipHtml, seasonYearHtml, frostRowWords, VIEWS } = await import('./planFutures.js');
+const { keysFor, cellsFor, changedIds, overlaps, declutter, focusHome, chipHtml, seasonYearHtml, frostRowWords, dryRowWords, VIEWS } = await import('./planFutures.js');
 
 describe('the plans on the island (demo farm)', () => {
   let cmp;
@@ -155,6 +155,13 @@ describe('spring freezes on the chips, the season radios and the card (wheat dem
     assert.equal(frostRowWords(wheat.fields.find((f) => f.id === 'f3').byKind.priority.seasons, wheat.years), '');
     const twice = pick.map((s, y) => (y === 1 ? s : { ...s, freeze: y === 2 ? s.freeze ?? pick[1].freeze : null }));
     assert.equal(frostRowWords(twice, wheat.years), ' Spring freeze risk on the wheat in 2028 and 2029.');
+  });
+
+  it('says a water shortfall in the plan row’s label, only where water is the worry (the drop is hidden from screen readers)', () => {
+    const seasons = [{ waterShort: 1.4 }, { waterShort: 0.3 }, { waterShort: 2 }];
+    assert.equal(dryRowWords(seasons, wheat.years, true), ' Short of water in 2027 and 2029.');
+    assert.equal(dryRowWords(seasons, wheat.years, false), '', 'a humid farm');
+    assert.equal(dryRowWords([{ waterShort: 0 }, {}, { waterShort: 0.9 }], wheat.years, true), '');
   });
 
   it('keeps the chip as it was where there is no freeze or drop', () => {

@@ -333,7 +333,14 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
     function fillTip(f) {
       const b = document.createElement('b');
       const s = document.createElement('span');
-      if (propHit) {
+      if (propHit && planMode) {
+        // planning: a tap on a jar goes to its field (not the jar test), so the tip is the field's
+        const pf = byId.get(propHit.fieldId);
+        const t = planMode.tipFor?.(propHit.fieldId) || {};
+        b.textContent = t.title || pf?.name || '';
+        s.textContent = t.note || '';
+        tip.dataset.sev = String(t.sev || 0);
+      } else if (propHit) {
         b.textContent = propHit.tip?.title || '';
         s.textContent = propHit.tip?.note || '';
         delete tip.dataset.sev;
@@ -358,7 +365,7 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
     let planMode = null;
     function setPlanMode(mode) {
       planMode = mode || null;
-      if (hover) { fillTip(byId.get(hover.id)); placeTip(); }
+      if (hover || propHit) { fillTip(hover ? byId.get(hover.id) : null); placeTip(); }
     }
     /** Lights up the field under (x, y) (or none); returns its id. */
     function hoverAt(x, y) {
@@ -370,7 +377,7 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
     }
     /** The tooltip again (what's under the pointer changed, or the plan did). */
     function refreshTip() {
-      if (hover) { fillTip(byId.get(hover.id)); placeTip(); }
+      if (hover || propHit) { fillTip(hover ? byId.get(hover.id) : null); placeTip(); }
     }
 
     const v = new THREE.Vector3();

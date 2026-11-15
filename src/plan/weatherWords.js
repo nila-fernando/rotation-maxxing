@@ -4,7 +4,8 @@
 //
 //   freezeOf(year.terms, year.yieldPerAcre)   a season's freeze: { years, of, stage, bu, pct, cashAc, label } | null
 //   weatherRiskLine(cmp.weatherRisk, { wheat }) the Notes' "Good to know" weather line
-//   fieldWeatherNote(plansPanel.data, 'f1', { startYear })   the field check-up's captions
+//   fieldWeatherNote(plansPanel.data, 'f1', { startYear, irrigated })   the field check-up's captions
+//   weatherKey(farm)                            what of a planner farm the weather words hang on
 //
 // Pure, and it imports only money.js, so the field check-up can use it without pulling in the
 // planner. The planner's freeze rule comes from Kansas and starts counting on 1 March everywhere,
@@ -75,16 +76,23 @@ export function frostCaveat(state, stage) {
   return 'My frost rule comes from Kansas, so check it with someone who grows wheat near you.';
 }
 
+/** The planner's own word that water is plentiful here (an objective term), just under its dry line. */
+export const WATER_PLENTIFUL = /^Water is plentiful/;
+
 /**
  * The farm's weather risk in Manami's words, from the planner's weatherRisk ({ waterLimited, … }).
  * `wheat`: the plan shown grows wheat (then she says she does count its spring freezes);
- * `irrigated`: the whole farm is watered.
+ * `irrigated`: the whole farm is watered; `fieldWatered`: this one field is, on a farm planned as
+ * dryland; `plentiful`: the planner's weights call water plentiful here (an aridity just under its
+ * dry line), so she doesn't call water the big worry in the same breath.
  */
-export function weatherRiskLine(wr, { wheat = false, irrigated = false } = {}) {
+export function weatherRiskLine(wr, { wheat = false, irrigated = false, fieldWatered = false, plentiful = false } = {}) {
   const limited = wr?.waterLimited;
   if (limited == null) return 'I couldn’t get real weather here, so I can’t say what the big weather worry is.';
-  if (limited) {
-    const s2 = irrigated ? 'Your fields are watered, so the real worry is your water supply.' : 'So dry years are the ones to plan for.';
+  if (limited && !plentiful) {
+    const s2 = irrigated ? 'Your fields are watered, so the real worry is your water supply.'
+      : fieldWatered ? 'This field is watered, but until every field is, I plan the whole farm as dryland. So dry years are the ones to plan for.'
+        : 'So dry years are the ones to plan for.';
     return `Water is the big weather worry here, since the rain falls short of what crops could use. ${s2}`;
   }
   return `Water isn’t the big weather worry here. Wet springs, floods and wind matter more, and I can’t count most of those yet.${wheat ? ' I do count spring freezes on wheat.' : ''}`;
@@ -95,11 +103,13 @@ export function weatherRiskLine(wr, { wheat = false, irrigated = false } = {}) {
  * comparison is made from): { water, frost }. `frost` is the first season of Manami's pick that
  * grows wheat with a freeze on this field, or null.
  */
-export function fieldWeatherNote(data, fieldId, { startYear } = {}) {
+export function fieldWeatherNote(data, fieldId, { startYear, irrigated: fieldWatered = false } = {}) {
   const plans = data?.result?.plans;
   const pick = plans?.priority;
   const farm = data?.farm || {};
-  const water = weatherRiskLine(pick?.weatherRisk ?? null, { irrigated: farm.constraints?.irrigation === 'irrigated' });
+  const irrigated = farm.constraints?.irrigation === 'irrigated';
+  const plentiful = (pick?.objectiveTerms || []).some((t) => WATER_PLENTIFUL.test(String(t?.label || '')));
+  const water = weatherRiskLine(pick?.weatherRisk ?? null, { irrigated, fieldWatered: !irrigated && !!fieldWatered, plentiful });
   let frost = null;
   const years = pick?.paddocks?.find((p) => p.paddockId === fieldId)?.years || [];
   const y = years.findIndex((yr) => freezeOf(yr.terms, yr.yieldPerAcre));
@@ -111,6 +121,16 @@ export function fieldWeatherNote(data, fieldId, { startYear } = {}) {
     frost = `In my pick this field grows winter wheat${when}. ${springsWords(fz)}, a night got cold enough to hurt it.${caveat ? ` ${caveat}` : ''}`;
   }
   return { water, frost };
+}
+
+/**
+ * What of a planner farm (src/plan/farmInput.js plannerFarm) the weather words hang on: whether it
+ * is watered, its state, and each field's ground (a jar test changes it). Plans made for a farm
+ * with another key say things that may no longer be true (the check-up leaves them out).
+ */
+export function weatherKey(farm) {
+  if (!farm) return '';
+  return JSON.stringify([farm.constraints?.irrigation ?? null, farm.state ?? null, (farm.paddocks || []).map((p) => [p.id, p.land ?? null])]);
 }
 
 /**
