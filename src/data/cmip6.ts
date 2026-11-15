@@ -190,6 +190,9 @@ export function fitTrend(byYear: Map<number, number[]>, relative: boolean): Tren
   return { slope, se };
 }
 
+/** Linear back-off between retries in the precompute (5 s, 10 s, ... ). */
+export const RETRY_BACKOFF_MS = 5000;
+
 /** A minimal cache interface (the script backs it with files; tests with a Map). */
 export interface ResponseCache {
   get(key: string): Promise<string | undefined>;
@@ -197,11 +200,13 @@ export interface ResponseCache {
 }
 
 /** Fetch text with the cache in front, retrying transient errors. */
-export async function cachedText(url: string, cache: ResponseCache, fetchFn: FetchFn, attempts = 4): Promise<string> {
+export async function cachedText(url: string, cache: ResponseCache, fetchFn: FetchFn, attempts = 4, backoffMs = 0): Promise<string> {
   const hit = await cache.get(url);
   if (hit !== undefined) return hit;
   let last = '';
   for (let a = 0; a < attempts; a++) {
+    // Back off before each retry (linear), so a brief network drop or NCCS hiccup doesn't end the run.
+    if (a > 0 && backoffMs > 0) await new Promise((r) => setTimeout(r, backoffMs * a));
     try {
       const res = await fetchFn(url);
       if (res.ok) {
@@ -273,14 +278,14 @@ export async function fetchSiteTrends(
     for (const v of CMIP6_VARIABLES) {
       const catalogs = new Map<string, Map<number, string>>();
       for (const sc of ['historical', 'ssp245']) {
-        catalogs.set(sc, parseCatalog(await cachedText(catalogUrl(m.model, sc, m.variant, v), cache, fetchFn)));
+        catalogs.set(sc, parseCatalog(await cachedText(catalogUrl(m.model, sc, m.variant, v), cache, fetchFn, 6, RETRY_BACKOFF_MS)));
       }
       const years = Array.from({ length: FIT_YEARS.last - FIT_YEARS.first + 1 }, (_, i) => FIT_YEARS.first + i);
       const series = await pool(
         years.map((y) => async () => {
           const path = catalogs.get(scenarioFor(y))!.get(y);
           if (!path) throw new Error(`No ${m.model} ${v} file for ${y}`);
-          const s = parseNcssCsv(await cachedText(ncssUrl(path, v, lat, lng, y), cache, fetchFn));
+          const s = parseNcssCsv(await cachedText(ncssUrl(path, v, lat, lng, y), cache, fetchFn, 6, RETRY_BACKOFF_MS));
           done++;
           onProgress?.(done, total);
           return { y, s };
