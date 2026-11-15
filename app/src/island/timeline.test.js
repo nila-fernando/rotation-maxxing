@@ -135,3 +135,29 @@ describe('playback', () => {
     assert.ok(pb.duration > 10 && pb.duration < 30);
   });
 });
+
+describe('frost', () => {
+  it('frostLook raises the snow to at least FROST_SNOW and leaves the rest alone', async () => {
+    const { FROST_SNOW, frostLook } = await import('./timeline.js');
+    assert.equal(FROST_SNOW, 0.3);
+    const summer = lookAt('summer', 0.6);
+    const frosty = frostLook(summer);
+    assert.equal(frosty.snow, FROST_SNOW);
+    assert.notEqual(frosty, summer, 'a new look, the old one untouched');
+    assert.equal(summer.snow, 0);
+    for (const k of Object.keys(summer)) if (k !== 'snow') assert.deepEqual(frosty[k], summer[k], k);
+    assert.deepEqual(Object.keys(frosty).sort(), Object.keys(summer).sort());
+    // deeper snow stays as deep
+    const winter = lookAt('winter', 0.5);
+    assert.ok(winter.snow > FROST_SNOW);
+    assert.deepEqual(frostLook(winter), winter);
+    // a look with no snow value at all gets the rime
+    assert.equal(frostLook({ growth: 1 }).snow, FROST_SNOW);
+    // a state's season and occasion are not part of the look, so they can't change
+    const st = nowState(D(2026, 12, 24), 2025);
+    const look = frostLook(st.look);
+    assert.equal(st.season, 'winter');
+    assert.equal(st.occasion, 'christmas');
+    assert.ok(!('season' in look) && !('occasion' in look));
+  });
+});

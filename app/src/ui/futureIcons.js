@@ -53,6 +53,8 @@ export const LENS_ICONS = {
   market: S(`<path d="M3.6 12.4V4.6a1 1 0 0 1 1-1h7.8l8 8a1.4 1.4 0 0 1 0 2l-6.8 6.8a1.4 1.4 0 0 1-2 0z" ${SOFT}/><circle cx="8.2" cy="8.2" r="1.6"/>`),
   // a hill
   land: S(`<path d="M2.8 19.4c2.4-5.6 5.2-9 9.2-9s6.8 3.4 9.2 9z" ${SOFT}/><path d="M7.2 8.4l2.4-2.6 2 2"/>`),
+  // a snowflake, drawn as the winter season's (src/ui/season.js): a spring freeze on the wheat
+  frost: S('<path d="M12 2.5v19M3.8 7.25l16.4 9.5M3.8 16.75l16.4-9.5M9.5 4l2.5 2.5L14.5 4M9.5 20l2.5-2.5 2.5 2.5M3.6 10.4l3.4-.9-.9-3.4M20.4 13.6l-3.4.9.9 3.4M6.1 17.9l.9-3.4-3.4-.9M17.9 6.1l-.9 3.4 3.4.9"/>'),
 };
 
 /** The dock's and the card's buttons. */

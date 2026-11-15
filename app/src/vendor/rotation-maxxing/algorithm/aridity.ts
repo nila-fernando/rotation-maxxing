@@ -10,6 +10,7 @@
  * Irrigated farms always get 1: irrigation water is a real, paid resource.
  */
 import { ARIDITY_CLASSES, SCARCITY_CURVE } from './waterParams';
+import type { WeatherRisk } from './types';
 
 export interface WaterScarcity {
   /** Aridity index P / ET0, null if the weather pool has no daily-weather totals. */
@@ -21,6 +22,24 @@ export interface WaterScarcity {
   /** Plain-English sentence for the explanation. */
   explanation: string;
   irrigated: boolean;
+}
+
+/** The "water-limited?" flag for the frontend. */
+export function weatherRiskFrom(w: WaterScarcity): WeatherRisk {
+  const ai = w.aridityIndex;
+  if (ai === null) {
+    return { waterLimited: null, aridityIndex: null, aridityClass: null, message: 'Climate unknown: no daily weather was supplied.' };
+  }
+  const humid = ai >= SCARCITY_CURVE.zeroAt;
+  const irrigated = w.irrigated ? ' Fields are irrigated, so the real water risk is the irrigation supply.' : '';
+  return {
+    waterLimited: !humid,
+    aridityIndex: ai,
+    aridityClass: w.aridityClass,
+    message: humid
+      ? `Weather risk here is mostly not about water (${w.aridityClass}, aridity index ${ai.toFixed(2)}): wet springs, floods, wind and frost matter more, and the model doesn't capture most of those yet.${irrigated}`
+      : `Water is a main weather risk here (${w.aridityClass}, aridity index ${ai.toFixed(2)}).${irrigated}`,
+  };
 }
 
 export function aridityClass(ai: number): string {

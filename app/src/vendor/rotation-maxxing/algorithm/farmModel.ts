@@ -370,6 +370,7 @@ export function yieldWithNeighbours(
   weather: WeatherScenario,
   shadeToleranceDraw?: (cropId: CropId) => number | undefined,
   explain = false,
+  freezeDraw?: () => number,
 ) {
   const index = ctx.paddockIndex;
   return ctx.model.yieldFor(ctx.paddocks[p]!, seqs[p]!, y, weather, {
@@ -380,6 +381,7 @@ export function yieldWithNeighbours(
       return q === undefined ? null : (seqs[q]?.[y] ?? null);
     },
     ...(shadeToleranceDraw ? { shadeToleranceDraw } : {}),
+    ...(freezeDraw ? { freezeDraw } : {}),
     explain,
   });
 }

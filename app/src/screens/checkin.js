@@ -8,6 +8,8 @@
 // waits); if the answers finish first, Manami shares a fun fact until the checklist is done.
 // The answers become farmProfile { priorities[], irrigatedFieldIds[], excludedCrops[] }.
 
+import { createTurntable } from '../ui/rotateManami.js';
+
 // Line icons (24×24, drawn with currentColor) in the same style as the toolbar. No emoji in the UI.
 const ICON = {
   profit: '<circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.6 9.4c-.5-.9-1.5-1.4-2.6-1.4-1.5 0-2.6.8-2.6 1.9 0 1.2 1.1 1.7 2.7 2s2.8.9 2.8 2.1-1.2 2-2.8 2c-1.3 0-2.4-.6-2.8-1.5M12 6.4V8M12 16v1.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
@@ -63,6 +65,7 @@ export function createCheckIn({ manami, onDone }) {
   const root = $('checkin');
   const card = $('checkinCard');
   const listEl = $('checklistRows');
+  const turntable = createTurntable($('checklist')); // Manami turning on top of the checklist (src/ui/rotateManami.js)
   const progressEl = $('checklistProgress');
 
   let run = 0; // bumped by start/stop so a stale run's timers do nothing
@@ -78,6 +81,7 @@ export function createCheckIn({ manami, onDone }) {
     root.hidden = false;
     document.body.classList.add('checkin-on');
     requestAnimationFrame(() => root.classList.add('is-in'));
+    turntable.start();
 
     let dataIn = false;
     const checklistDone = runChecklist(alive).then(() => { dataIn = true; });
@@ -97,6 +101,7 @@ export function createCheckIn({ manami, onDone }) {
 
   function stop() {
     run++;
+    turntable.stop();
     root.classList.remove('is-in');
     root.hidden = true;
     document.body.classList.remove('checkin-on');

@@ -26,6 +26,8 @@ export interface Sample {
   price: Record<CropId, number[]>;
   /** Shade tolerance draws for crops whose tolerance is not sourced. */
   shadeTolerance: Record<CropId, number>;
+  /** Where freeze damage falls within its design range this sample (0-1), shared by every field and plan. */
+  freezeU: number;
 }
 
 export interface Draws {
@@ -57,7 +59,7 @@ export function drawSamples(ctx: ModelContext, n: number, rng: Rng): Draws {
     for (const id of cropIds) {
       if (shadeTolerance(ctx.crops[id]!) === null) tol[id] = rng.next();
     }
-    samples.push({ weather, price, shadeTolerance: tol });
+    samples.push({ weather, price, shadeTolerance: tol, freezeU: rng.next() });
   }
   return { samples, gaps: [...gaps] };
 }
@@ -69,8 +71,9 @@ export function drawSamples(ctx: ModelContext, n: number, rng: Rng): Draws {
 export function simulate(ctx: ModelContext, seqs: CropId[][], fixedMoney: number, draws: Draws): number[] {
   return draws.samples.map((s) => {
     const tol = (id: CropId) => s.shadeTolerance[id];
+    const freezeDraw = () => s.freezeU;
     const yields = seqs.map((seq, p) =>
-      seq.map((_, y) => yieldWithNeighbours(ctx, seqs, p, y, s.weather[y]!, tol).value ?? 0),
+      seq.map((_, y) => yieldWithNeighbours(ctx, seqs, p, y, s.weather[y]!, tol, false, freezeDraw).value ?? 0),
     );
     return farmRevenue(ctx, seqs, yields, (c, y) => s.price[c]?.[y] ?? 1) + fixedMoney;
   });

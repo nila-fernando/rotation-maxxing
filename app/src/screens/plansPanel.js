@@ -81,7 +81,8 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
 
   // Esc closes it wherever focus is (Safari doesn't focus buttons on click)
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !root.hidden && !e.target.closest?.('input, textarea')) { e.preventDefault(); e.stopPropagation(); close(); }
+    // (a jar test open over the plans takes the Esc for itself)
+    if (e.key === 'Escape' && !root.hidden && !document.body.classList.contains('jar-open') && !e.target.closest?.('input, textarea')) { e.preventDefault(); e.stopPropagation(); close(); }
   }, true);
   let opener = null; // focus goes back here on close
 

@@ -2,13 +2,14 @@
 // which fields grow back in, which chips show when they'd overlap), on the demo farm's real plans.
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
-import { demoData, START_YEAR } from '../../test/futuresDemo.mjs';
-import { compareFutures, seasonChanges } from '../plan/compareFutures.js';
+import { demoData, wheatData, kansasLike, START_YEAR } from '../../test/futuresDemo.mjs';
+import { compareFutures, seasonChanges, viewField, frostIds, dryIds } from '../plan/compareFutures.js';
+import { LENS_ICONS } from '../ui/futureIcons.js';
 
 // planFutures.js touches the DOM only inside createPlanFutures; these are plain functions
 globalThis.document ??= { getElementById: () => null };
 globalThis.matchMedia ??= () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
-const { keysFor, cellsFor, changedIds, overlaps, declutter, focusHome, VIEWS } = await import('./planFutures.js');
+const { keysFor, cellsFor, changedIds, overlaps, declutter, focusHome, chipHtml, seasonYearHtml, frostRowWords, dryRowWords, VIEWS } = await import('./planFutures.js');
 
 describe('the plans on the island (demo farm)', () => {
   let cmp;
@@ -94,5 +95,82 @@ describe('where focus goes back to in the dock', () => {
     const plan = el(true, true), more = el(true);
     assert.equal(focusHome([null, plan, more]), more);
     assert.equal(focusHome([el(false), null]), null);
+  });
+});
+
+describe('spring freezes on the chips, the season radios and the card (wheat demo)', () => {
+  let wheat, plain;
+  // a chip as paintChips writes it, for a field, view and season
+  const chip = (cmp, id, view, season) => {
+    const f = cmp.fields.find((x) => x.id === id);
+    const e = viewField(cmp, id, view, {});
+    const d = e.total - f.byKind.current.total;
+    return chipHtml({ s: e.seasons[season], total: e.total, diff: d, showDiff: true, dry: dryIds(cmp, view, season, {}).has(id) });
+  };
+  const flakes = (html) => (html.match(/fut-chip__frost/g) || []).length;
+  before(() => {
+    wheat = compareFutures(wheatData(), { startYear: START_YEAR });
+    plain = compareFutures(demoData(['profit']), { startYear: START_YEAR });
+  });
+
+  it('puts a snowflake on a chip only where that season’s wheat has a freeze', () => {
+    for (const id of ['f1', 'f2', 'f5']) {
+      const html = chip(wheat, id, 'priority', 1);
+      assert.equal(flakes(html), 1, id);
+      assert.ok(html.includes(`<span class="fut-chip__frost" aria-hidden="true">${LENS_ICONS.frost}</span>`));
+    }
+    assert.equal(flakes(chip(wheat, 'f3', 'priority', 1)), 0); // corn that season
+    assert.equal(flakes(chip(wheat, 'f1', 'priority', 0)), 0); // the year before the wheat
+    assert.equal(flakes(chip(wheat, 'f1', 'current', 1)), 0); // keeping going grows no wheat
+    for (const view of ['current', 'maxProfit', 'priority', 'mix']) {
+      for (const f of plain.fields) for (const y of [0, 1, 2]) assert.equal(flakes(chip(plain, f.id, view, y)), 0, `${view} ${f.id} ${y}`);
+    }
+  });
+
+  it('puts a drop on a chip only where water is the weather worry and the field runs short', () => {
+    const drops = (cmp, id, season) => (chip(cmp, id, 'priority', season).match(/fut-chip__dry/g) || []).length;
+    for (const f of wheat.fields) for (const y of [0, 1, 2]) assert.equal(drops(wheat, f.id, y), 0); // humid Iowa: none
+    const dry = kansasLike(wheat);
+    const ids = dryIds(dry, 'priority', 0, {});
+    assert.ok(ids.size > 0);
+    for (const f of dry.fields) assert.equal(drops(dry, f.id, 0), ids.has(f.id) ? 1 : 0, f.id);
+  });
+
+  it('shows the season radio’s snowflake only in a season with a freeze', () => {
+    const shown = (cmp, view) => [0, 1, 2].map((i) => !/fut-season__frost" aria-hidden="true" hidden/.test(seasonYearHtml(cmp.years[i], frostIds(cmp, view, i, {}).size > 0)));
+    assert.deepEqual(shown(wheat, 'priority'), [false, true, false]);
+    assert.deepEqual(shown(wheat, 'current'), [false, false, false]);
+    for (const view of ['current', 'maxProfit', 'priority', 'mix']) assert.deepEqual(shown(plain, view), [false, false, false], view);
+    // the glyph is always there (paintDock flips hidden in place) and carries no words of its own
+    const html = seasonYearHtml(2028, false);
+    assert.ok(html.includes('2028'));
+    assert.ok(html.includes(LENS_ICONS.frost));
+    assert.ok(/class="fut-season__frost" aria-hidden="true" hidden/.test(html));
+    assert.ok(!/ hidden>/.test(seasonYearHtml(2028, true)));
+  });
+
+  it('says the freeze in the plan row’s label', () => {
+    const pick = wheat.fields.find((f) => f.id === 'f1').byKind.priority.seasons;
+    assert.equal(frostRowWords(pick, wheat.years), ' Spring freeze risk on the wheat in 2028.');
+    assert.equal(frostRowWords(wheat.fields.find((f) => f.id === 'f3').byKind.priority.seasons, wheat.years), '');
+    const twice = pick.map((s, y) => (y === 1 ? s : { ...s, freeze: y === 2 ? s.freeze ?? pick[1].freeze : null }));
+    assert.equal(frostRowWords(twice, wheat.years), ' Spring freeze risk on the wheat in 2028 and 2029.');
+  });
+
+  it('says a water shortfall in the plan row’s label, only where water is the worry (the drop is hidden from screen readers)', () => {
+    const seasons = [{ waterShort: 1.4 }, { waterShort: 0.3 }, { waterShort: 2 }];
+    assert.equal(dryRowWords(seasons, wheat.years, true), ' Short of water in 2027 and 2029.');
+    assert.equal(dryRowWords(seasons, wheat.years, false), '', 'a humid farm');
+    assert.equal(dryRowWords([{ waterShort: 0 }, {}, { waterShort: 0.9 }], wheat.years, true), '');
+  });
+
+  it('keeps the chip as it was where there is no freeze or drop', () => {
+    const s = { crop: 'corn', cover: null, worst: 1 };
+    const html = chipHtml({ s, total: 81234, diff: -2400, showDiff: true });
+    assert.ok(html.startsWith('<span class="fut-chip__crop plan-crop">'));
+    assert.ok(html.includes('<span class="fut-chip__diff is-down">−'));
+    assert.ok(html.endsWith('<span class="fut-chip__dot sev-1"></span>'));
+    assert.ok(!/fut-chip__(frost|dry)/.test(html));
+    assert.ok(!/fut-chip__diff/.test(chipHtml({ s, total: 81234, diff: 0 })));
   });
 });

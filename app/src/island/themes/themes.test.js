@@ -123,6 +123,29 @@ describe('festival themes', () => {
     });
   }
 
+  it('atFull: what the festival will fill once popped in, measured before it has, and put back', () => {
+    const view = fakeView();
+    const themes = createThemes(view, { attach: () => {} });
+    themes.setTheme('easter');
+    const host = view.island.getObjectByName('Festival themes');
+    const root = host.getObjectByName('easter theme');
+    const scales = () => root.children.map((o) => o.scale.toArray().join());
+    const before = scales();
+    assert.equal(root.visible, false, 'not shown yet');
+    let seen = null;
+    const out = themes.atFull(() => { seen = { visible: root.visible, scales: scales() }; return 7; });
+    assert.equal(out, 7);
+    assert.equal(seen.visible, true);
+    assert.notDeepEqual(seen.scales, before, 'at full size while measured');
+    assert.equal(root.visible, false, 'and back as it was');
+    assert.deepEqual(scales(), before);
+    themes.snap();
+    const full = scales();
+    themes.atFull(() => {});
+    assert.deepEqual(scales(), full, 'all popped in: nothing to do');
+    themes.dispose();
+  });
+
   it('the manager builds a theme when wanted, pops it in, switches and cleans up', () => {
     const view = fakeView();
     const before = view.obstacles.length;

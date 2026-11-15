@@ -108,6 +108,21 @@ export const SOURCES = {
     url: 'https://pubdev.silo.lib.ia.us/16704/1/nldec11.pdf',
     covers: 'Corn after soybean generally needs no rootworm control and less N',
   },
+  ksuC646: {
+    title: 'Shroyer et al. 1995, K-State Research and Extension C646, Spring Freeze Injury to Kansas Wheat (Table 1)',
+    url: 'https://bookstore.ksre.ksu.edu/pubs/C646.PDF',
+    covers: 'Freeze-injury temperatures (two hours) by wheat growth stage, symptoms and yield effect',
+  },
+  ksuMesonetWheatGdd: {
+    title: 'Kansas Mesonet, Wheat Growth Stage (growing degrees and estimated stage legend)',
+    url: 'https://mesonet.k-state.edu/agriculture/wheat/gdd',
+    covers: 'Growing degrees = (Tmax + Tmin)/2 - 32 (F), negatives set to 0; GDD bands -> estimated wheat stage',
+  },
+  ksuSrp982: {
+    title: 'K-State SRP 982, 2007 Kansas Performance Tests with Winter Wheat (2007 Wheat Crop Review)',
+    url: 'https://extension.k-state.edu/historicpublications/pubs/SRP982.pdf',
+    covers: 'Early-April 2007 record cold after early jointing (46% jointed by April 2)',
+  },
   isuA120_2026: {
     title: 'Hart 2026, Iowa State University Ag Decision Maker A1-20, Estimated Costs of Crop Production in Iowa-2026 (pp. 9-10)',
     url: 'https://www.extension.iastate.edu/agdm/crops/pdf/a1-20.pdf',
@@ -729,6 +744,9 @@ export const DATA_GAPS = [
   'EcoCrop drainage class "I" needs its exact definition confirmed before mapping to SSURGO drainage classes.',
   'Frost/winter hardiness: EcoCrop killing temperatures are unusable for most crops (0 default). Summer-crop frost risk should come from NASA POWER minimum temperatures vs the season span.',
   'Slope has no crop-specific limit; it belongs in the erosion term (RUSLE LS factor), not crop suitability.',
+  'Wet springs and excess water (planting delays, ponding, flooding) are not modelled; in humid states these drive many bad years.',
+  'Freeze injury uses NASA POWER daily minimum air temperature for a ~50 km grid cell; low spots and the canopy get colder, and daily data cannot resolve the two-hour exposure C646 assumes. Snow cover protection is not modelled.',
+  'Wheat freeze damage sizes (yield factor ranges for C646 qualitative effects) are unsourced design values.',
 ];
 
 // ===========================================================================
@@ -984,4 +1002,66 @@ export const DATA_GAPS_RESOLVED = [
   'Tillage residue retention (NRCS VA Technical Note Table 2) replaces the 0.3 / 0.6 / 0.9 placeholder.',
   'Residue factors for barley, oats and rye.',
   'pH ranges and drainage tolerance for all 13 crops (FAO EcoCrop, expert opinion).',
+];
+
+// ---------------------------------------------------------------------------
+// Spring freeze injury to winter wheat (K-State C646, Kansas Mesonet)
+// ---------------------------------------------------------------------------
+
+export type WheatStage = 'tillering' | 'jointing' | 'boot' | 'heading' | 'flowering' | 'milk' | 'dough';
+export type FreezeYieldEffect = 'slight to moderate' | 'moderate to severe' | 'severe';
+
+/** K-State C646 Table 1: approximate injurious temperature for two hours of exposure, by stage. */
+export const WHEAT_FREEZE_INJURY: Record<WheatStage, { injuriousF: number; symptoms: string; yieldEffect: FreezeYieldEffect }> = {
+  tillering: { injuriousF: 12, symptoms: 'Leaf chlorosis; burning of leaf tips; silage odor; blue cast to fields', yieldEffect: 'slight to moderate' },
+  jointing: { injuriousF: 24, symptoms: 'Death of growing point; leaf yellowing or burning; lesions, splitting, or bending of lower stem; odor', yieldEffect: 'moderate to severe' },
+  boot: { injuriousF: 28, symptoms: 'Floret sterility; spike trapped in boot; damage to lower stem; leaf discoloration; odor', yieldEffect: 'moderate to severe' },
+  heading: { injuriousF: 30, symptoms: 'Floret sterility; white awns or white spikes; damage to lower stem; leaf discoloration', yieldEffect: 'severe' },
+  flowering: { injuriousF: 30, symptoms: 'Floret sterility; white awns or white spikes; damage to lower stem; leaf discoloration', yieldEffect: 'severe' },
+  milk: { injuriousF: 28, symptoms: 'White awns or white spikes; damage to lower stems; leaf discoloration; shrunken, roughened, or discolored kernels', yieldEffect: 'moderate to severe' },
+  dough: { injuriousF: 28, symptoms: 'Shriveled, discolored kernels; poor germination', yieldEffect: 'slight to moderate' },
+};
+
+/**
+ * Freeze events are counted from spring green-up only. C646 Table 1 covers
+ * SPRING growth stages; C646 (p. 5): "Spring tillering of wheat in Kansas
+ * usually begins during late February and continues through March." The
+ * 1 March start is DERIVED from that wording (the first full spring date it
+ * supports). Applying Table 1 to dormant winter wheat was outside the source's
+ * scope; this was found during validation (Nov 2026), and fixed as a scope
+ * correction, not tuning: thresholds and damage ranges were not changed.
+ * Growing degrees still accumulate from 1 January for staging.
+ */
+export const FREEZE_COUNT_FROM_MMDD = { value: '03-01', source: 'ksuC646' as SourceId, basis: 'derived' } as const;
+
+/**
+ * UNSOURCED DESIGN VALUES: yield factor ranges for C646's qualitative yield
+ * effects, chosen before the backtest was re-run. Midpoints are used in the
+ * deterministic search; Monte Carlo samples uniformly within the range.
+ */
+export const FREEZE_DAMAGE_FACTORS: Record<FreezeYieldEffect, { low: number; high: number; basis: 'design' }> = {
+  'slight to moderate': { low: 0.8, high: 1.0, basis: 'design' },
+  'moderate to severe': { low: 0.5, high: 0.85, basis: 'design' },
+  severe: { low: 0.2, high: 0.6, basis: 'design' },
+};
+
+/**
+ * Kansas Mesonet legend: growing degrees (F) and estimated stage. The legend's
+ * bands overlap ("tillering or strongly upright tillers", ...); mapping each
+ * band to one C646 stage at its midpoint is a DESIGN choice:
+ *   < 800 tillering | 800-1200 jointing | 1200-1400 boot | 1400-1600 heading |
+ *   1600-2000 flowering | 2000-2400 milk | 2400-2800 dough | >= 2800 mature (no injury).
+ * Accumulation start 1 January: ASSUMPTION. The Mesonet page doesn't state it;
+ * it is corroborated by Tribune KS 2026 (Mesonet season total 4,346 F; NASA
+ * POWER from 1 January to 30 June gives 4,443 F).
+ */
+export const WHEAT_GDD_STAGES: readonly { belowF: number; stage: WheatStage | 'mature' }[] = [
+  { belowF: 800, stage: 'tillering' },
+  { belowF: 1200, stage: 'jointing' },
+  { belowF: 1400, stage: 'boot' },
+  { belowF: 1600, stage: 'heading' },
+  { belowF: 2000, stage: 'flowering' },
+  { belowF: 2400, stage: 'milk' },
+  { belowF: 2800, stage: 'dough' },
+  { belowF: Infinity, stage: 'mature' },
 ];

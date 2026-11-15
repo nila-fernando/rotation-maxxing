@@ -15,8 +15,13 @@ import { LENS_LABEL, SEVERITY_LABEL } from './builder.js';
 import {
   KINDS, kindFor, fieldOf, viewField, seasonChanges, seasonCashFor, tiles, totalsOf, headline, flagsFor,
   gainField, firstCropChange, sameCropPick, giveUpFields, watchSeason, samePlans, sameCrops, sameEverywhere,
-  acreGain, mixKind, idsByName, rawFor, coinPlan, coverOnlyFields, coverAddFields,
+  acreGain, mixKind, idsByName, rawFor, coinPlan, coverOnlyFields, coverAddFields, frostIds, frostStop, dryIds,
+  waterWorry,
 } from './compareFutures.js';
+import { FREEZE_TERM, FREEZE_EVENT, STAGE_WORD, frostCaveat, frostCut, springsWords, weatherRiskLine } from './weatherWords.js';
+
+// the weather lines the field check-up shares (src/plan/weatherWords.js imports no planner code)
+export { weatherRiskLine, frostCaveat, STAGE_WORD } from './weatherWords.js';
 
 // ---- the rules ----
 
@@ -118,7 +123,8 @@ const plainKit = (s) => String(s).replace(/\s*\(.*?\)/g, '');
 
 /**
  * The planner's rule warnings in Manami's words, by lens and reason. ctx is
- * { field, crop, prev, year, slopePct, drag, unit } (crop ids; drag in bu/ac, negative).
+ * { field, crop, prev, year, slopePct, drag, unit, freeze } (crop ids; drag in bu/ac, negative;
+ * freeze from weatherWords.freezeOf, or null).
  */
 export const WARN_PHRASE = [
   { lens: 'repeat', re: /^(Next year: )?(.+?) can't follow .+?: back-to-back hosts build up (.+?)\.$/,
@@ -148,6 +154,11 @@ export const WARN_PHRASE = [
   { lens: 'erosion', re: /has a ([\d.]+)% slope and .+?'s residue cover isn't sourced/,
     say: (m, c) => `${c.field} has a ${m[1]}% slope, and I don’t know how well ${word(c.crop)} ${verb(c.crop, 'cover')} the ground, so I assume little.` },
   { lens: 'water', re: /(?:)/, say: (m, c) => `This ground may run short of water for ${word(c.crop)}.` },
+  // the planner's spring freeze on wheat (weatherWords.js reads it off the season's terms)
+  { lens: 'frost', re: FREEZE_TERM,
+    say: (m, c) => `Spring freezes can hurt the wheat. One got cold enough in ${m[1]} of ${m[2]} springs here${c.freeze ? `, so I take ${frostCut(c.freeze)} off` : ''}.` },
+  { lens: 'frost', re: FREEZE_EVENT, say: (m, c) => `A spring freeze can hurt the wheat here, so I take ${c.freeze ? frostCut(c.freeze) : 'a little'} off.` },
+  { lens: 'frost', re: /(?:)/, say: () => 'Spring freezes can hurt the wheat here.' },
   { lens: 'shade', re: /would put ([\d.]+)% of (.+?) \(to the north\) in noon shade/,
     say: (m, c) => `The ${word(c.crop)} here would shade about ${Math.round(Number(m[1]))}% of ${m[2]} at noon.` },
   { lens: 'shade', re: /([\d.]+)% of .+? is in noon shade/,
@@ -165,7 +176,7 @@ export const WARN_PHRASE = [
   { lens: 'land', re: /(?:)/, say: (m, c) => `This ground doesn’t suit ${word(c.crop)} well.` },
 ];
 
-const LENS_WORD = { nitrogen: 'nitrogen', pest: 'pest', water: 'water', erosion: 'erosion', repeat: 'rotation', shade: 'shade', market: 'market', land: 'land' };
+const LENS_WORD = { nitrogen: 'nitrogen', pest: 'pest', water: 'water', frost: 'frost', erosion: 'erosion', repeat: 'rotation', shade: 'shade', market: 'market', land: 'land' };
 
 /** The WARN_PHRASE entry for a warning, or null (it then gets the plain fallback). */
 export function warnEntry(w) {
@@ -196,7 +207,7 @@ export function warnCtx(cmp, id, view, season, choice) {
   const f = fieldOf(cmp, id);
   const seasons = entryOf(f, view, choice).seasons;
   const s = seasons[season];
-  return { field: f.name, crop: s.crop, prev: prevCrop(f, seasons, season), year: cmp.years[season], slopePct: f.slopePct, drag: s.drag, unit: s.unit };
+  return { field: f.name, crop: s.crop, prev: prevCrop(f, seasons, season), year: cmp.years[season], slopePct: f.slopePct, drag: s.drag, unit: s.unit, freeze: s.freeze ?? null };
 }
 
 /** Every warning for a field on a view, for the card's "What to watch": [{ season, year, severity, label, lens, text }]. */
@@ -230,6 +241,13 @@ const FARM_RISK = [
     say: (m) => `In a bad run of years this plan could lose about ${moneyAbout(Number(m[1].replace(/,/g, '')))} over 3 seasons.` },
   { re: /^Year (\d): the farm grows more (.+?) than local buyers take/,
     say: (m, cmp) => `In ${cmp.years[Number(m[1]) - 1] ?? 'one season'}, the farm grows more ${saidName(m[2])} than local buyers take.` },
+  // the wheat's spring freeze, with the caveat that the rule is a Kansas one
+  { re: FREEZE_TERM,
+    say: (m, cmp) => {
+      const how = STAGE_WORD[m[3]];
+      const caveat = frostCaveat(cmp.facts?.state ?? null, m[3]);
+      return `In ${m[1]} of ${m[2]} springs here, a freeze got cold enough to hurt the wheat${how ? ` ${how}` : ''}.${caveat ? ` ${caveat}` : ''}`;
+    } },
 ];
 
 /** The farm-wide risks for a plan: { lines (in her words), unmatched (word for word) }. */
@@ -255,6 +273,13 @@ const shadeVerb = (crops) => (crops.length > 1 || CROP_WORD[idOfName(crops[0])]?
  * first (m[1]); they get a card line for that field, and the farm line groups them.
  */
 export const GAP_PHRASE = [
+  // a field's jar test (farmInput.js): ahead of 'survey', which the no-survey jar line would match too
+  { key: 'jarNoSurvey', field: true, re: /^(.+?): no soil survey yet, but soil texture from your jar test \((.+?)\)/,
+    farm: (ms) => `I’ve used your jar test for ${names(ms.map((m) => m[1]))} instead of the soil map.`,
+    card: (m) => `I don’t have a soil survey here, so I used your jar test: ${m[2].split(',')[0]}.` },
+  { key: 'jar', field: true, re: /^(.+?): soil texture from your jar test \((.+?)\) instead of the soil survey \((.+)\)\.$/,
+    farm: (ms) => `I’ve used your jar test for ${names(ms.map((m) => m[1]))} instead of the soil map.`,
+    card: (m) => `Your jar test says ${m[2].split(',')[0]} here, so I planned with that instead of the soil map’s ${m[3]}.` },
   { key: 'record', field: true, re: /^(.+?): (?:(\d{4})'s crop isn't|the (\d{4})-(\d{4}) crops aren't) on record yet, .*\((.+)\)\.$/,
     farm: ([m]) => `I don’t have ${m[2] ? `${m[2]}’s crops` : `the ${m[3]} to ${m[4]} crops`} on record yet, so I’ve taken each field to follow its usual turn.`,
     card: (m) => (m[2]
@@ -278,6 +303,8 @@ export const GAP_PHRASE = [
     card: () => 'It’s worth asking NRCS about contour strips, terraces or more residue for the low-cover years.' },
   { key: 'yields', re: /Yields start from US averages/, farm: () => 'My yields start from US averages, so check them against your own records.' },
   { key: 'pests', re: /Pest and disease penalties/, farm: () => 'My pest and disease numbers are estimates. Your agronomist will know local pressure.' },
+  { key: 'freeze', re: /^Freeze injury uses NASA POWER daily minimum/,
+    farm: () => 'I count a freeze when a night after March 1 gets colder than the wheat can take at its stage. I use weather for the wider area, so low spots may get colder, and I don’t count snow cover.' },
 ];
 
 /** Every raw gap and local-review note, once each. */
@@ -481,6 +508,7 @@ const TOPICS = [
   { test: (w) => w.lens === 'land', say: 'how well the ground suits the crop' },
   { test: (w) => w.lens === 'market', say: 'selling the crop' },
   { test: (w) => w.lens === 'shade', say: 'shade' },
+  { test: (w) => w.lens === 'frost', say: 'spring freezes on the wheat' },
   { test: () => true, say: 'a few things' },
 ];
 
@@ -512,6 +540,50 @@ export function goodFitLine(cmp) {
   return `Your rotation is already a good fit. My pick keeps your crops and only ${adds ? 'adds a winter cover on' : 'changes the winter covers on'} ${fields}, ${cost}.`;
 }
 
+// ---- the weather ----
+
+/** The fields' names for a list of ids. */
+const namesOf = (cmp, ids) => names([...ids].map((id) => fieldOf(cmp, id).name));
+/** The fields short of water, named (up to 5), or "every field". */
+const dryNames = (cmp, ids) => (ids.size > 1 && ids.size === cmp.fields.length ? 'every field' : names([...ids].map((id) => fieldOf(cmp, id).name), 5));
+
+/**
+ * The walk's frost stop: where the pick sows wheat a spring freeze can hurt, how often one did, and
+ * how much I take off for it (never in dollars). Null when the pick has no freeze.
+ */
+export function frostLine(cmp) {
+  const st = frostStop(cmp);
+  if (!st) return null;
+  const seasons = st.ids.map((id) => fieldOf(cmp, id).byKind.priority.seasons[st.season]);
+  const fz = seasons.reduce((a, s) => (s.freeze.pct > a.pct ? s.freeze : a), seasons[0].freeze);
+  const crops = [...new Set(seasons.map((s) => s.crop))];
+  const caveat = frostCaveat(cmp.facts?.state ?? null, fz.stage);
+  return `My pick sows ${joinAnd(crops.map(word))} on ${namesOf(cmp, st.ids)} for the ${cmp.years[st.season]} harvest. ${springsWords(fz)}, a night got cold enough to hurt it, so I take ${frostCut(fz)} off.${caveat ? ` ${caveat}` : ''}`;
+}
+
+/** The status line for the card's freeze peek: "A spring freeze on the farm in 2028. It could hurt the wheat on …". */
+export function frostPeekLine(cmp, season, ids) {
+  return `A spring freeze on the farm in ${cmp.years[season]}. It could hurt the wheat on ${namesOf(cmp, ids)}.`;
+}
+
+/** The walk's dry stop, where water is the weather worry (null where it isn't, or no field runs short). */
+export function dryLine(cmp, season) {
+  const ids = dryIds(cmp, 'priority', season);
+  if (!ids.size) return null;
+  const year = cmp.years[season];
+  const lead = 'Water is the big weather worry here, so dry years are the ones to plan for.';
+  if (ids.size > 1 && ids.size === cmp.fields.length) return `${lead} The drops show that my pick leaves every field short of water in ${year}.`;
+  return `${lead} The ${ids.size === 1 ? 'drop shows' : 'drops show'} ${dryNames(cmp, ids)}, which my pick leaves short of water in ${year}.`;
+}
+
+/**
+ * The Notes' "Good to know" line on the farm's weather worry (weatherRiskLine, agreeing with the
+ * weights line where the planner calls water plentiful). wheat: the plan shown grows wheat.
+ */
+export function farmWeatherLine(cmp, { wheat = false } = {}) {
+  return weatherRiskLine(cmp.weatherRisk, { wheat, irrigated: !!cmp.facts?.irrigated, plentiful: waterWorry(cmp) === false });
+}
+
 /** Explore's first line when the walk is skipped. */
 export function skipHintLine(cmp) {
   const f = gainField(cmp);
@@ -523,8 +595,9 @@ export function reelLine(cmp, stop) {
   const say = {
     intro: introLine, flip: flipLine, gain: gainLine, sameCrop: sameCropLine, giveUp: giveUpLine, vsProfit: vsProfitLine,
     why: (c) => weightsLine(c.weights), watch: watchLine, yourTurn: yourTurnLine, goodFit: goodFitLine,
+    frost: frostLine, dry: (c, st) => dryLine(c, st.season ?? 0),
   }[stop.id];
-  return say ? say(cmp) : null;
+  return say ? say(cmp, stop) : null;
 }
 
 // ---- the field card ----
@@ -612,12 +685,18 @@ export function mixLine(cmp, choice, mixScore) {
 
 const diffWords = (d) => (Math.abs(d) < 500 ? 'about the same as keeping going' : `${about(d)} ${moreLess(d)} than keeping going`);
 
-/** The season radio's screen-reader label: "2027, about $132k, $16k more than keeping going." */
+/**
+ * The season radio's screen-reader label: "2027, about $132k, $16k more than keeping going.", with
+ * " Frost risk on the wheat." when a field's wheat has a spring freeze that season, and " Short of
+ * water on North draw." where water is the worry and a field runs short.
+ */
 export function seasonLabel(cmp, view, season, choice) {
   const cash = seasonCashFor(cmp, view, choice)[season];
   const year = cmp.years[season];
-  if (view === 'current') return `${year}, about ${money(cash)}.`;
-  return `${year}, about ${money(cash)}, ${diffWords(cash - cmp.seasonCash.current[season])}.`;
+  const dry = dryIds(cmp, view, season, choice);
+  const frost = (frostIds(cmp, view, season, choice).size ? ' Frost risk on the wheat.' : '') + (dry.size ? ` Short of water on ${dryNames(cmp, dry)}.` : '');
+  if (view === 'current') return `${year}, about ${money(cash)}.${frost}`;
+  return `${year}, about ${money(cash)}, ${diffWords(cash - cmp.seasonCash.current[season])}.${frost}`;
 }
 
 /** What the island shows in a season, for the status line: grouped by crop, or counted. */
@@ -745,7 +824,8 @@ export function allLines(cmp, { choice, mixScore } = {}) {
   const views = [...KINDS, 'mix'];
   const out = [introLine(cmp), flipLine(cmp), gainLine(cmp), sameCropLine(cmp), giveUpLine(cmp), vsProfitLine(cmp),
     weightsLine(cmp.weights), watchLine(cmp), yourTurnLine(), goodFitLine(cmp), skipHintLine(cmp), priceLine(cmp.price), weatherLine(cmp.weather),
-    captionLine(coinPlan(cmp).value)];
+    captionLine(coinPlan(cmp).value), frostLine(cmp)];
+  for (const wheat of [false, true]) out.push(farmWeatherLine(cmp, { wheat }));
   const gaps = gapLines(cmp);
   out.push(...gaps.farm, ...Object.values(gaps.byField).flat());
   for (const view of views) {
@@ -759,6 +839,11 @@ export function allLines(cmp, { choice, mixScore } = {}) {
         out.push(tip.note, statusLine(cmp, view, y, choice, mixScore), seasonLabel(cmp, view, y, choice));
       }
     }
+    for (const y of [0, 1, 2]) {
+      const ids = frostIds(cmp, view, y, choice);
+      if (ids.size) out.push(frostPeekLine(cmp, y, ids));
+    }
   }
+  for (const y of [0, 1, 2]) out.push(dryLine(cmp, y));
   return out.filter((s) => s != null);
 }

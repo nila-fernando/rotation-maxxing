@@ -7,6 +7,7 @@
 //   createPlayback(years)          the play-through: spring → summer → fall → winter, year by year
 //     .duration                    seconds
 //     .at(seconds)                 the state at that moment
+//   frostLook(look)                that look with a spring freeze's rime of frost on it
 //
 // A state: { year, cropYear, season, t, occasion, label, look }
 //   t        0..1 through the season
@@ -111,6 +112,14 @@ export function lookAt(season, t) {
       return { growth: 0, ripe: 1, harvested: true, snow: Math.max(0.35, smooth(0, 0.12, t)) * (1 - 0.5 * smooth(0.88, 1, t)), grass: 0.6, leaves: 1 + smooth(0, 0.3, t) };
   }
 }
+
+/**
+ * A hard spring freeze on the farm: a light rime of frost on the ground, roofs and fences. It only
+ * raises the snow (to FROST_SNOW at least, and never lowers deeper snow); the season, the crops and
+ * any festival stay as they were, so nothing appears or disappears.
+ */
+export const FROST_SNOW = 0.3;
+export const frostLook = (look) => ({ ...look, snow: Math.max(look.snow ?? 0, FROST_SNOW) });
 
 /** "Summer 2019", "Winter 2019–20". */
 export function seasonLabel(season, year) {

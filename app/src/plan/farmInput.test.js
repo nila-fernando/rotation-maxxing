@@ -4,12 +4,16 @@ import { describe, it } from 'node:test';
 import { getCounty, getFields } from '../data/farmData.js';
 import { generatePlans, checkPlacement, evaluatePlan, planFromCrops } from '../vendor/rotation-maxxing/algorithm/index.ts';
 import { scenariosFromDailyWeather } from '../vendor/rotation-maxxing/algorithm/climate.ts';
-import { DEFAULT_LAND, historyFor, historyUpTo, landFor, outerRing, plannerFarm, plannerMarket, plannerPriorities, stateOf } from './farmInput.js';
+import { historyFor, historyUpTo, landFor, outerRing, plannerFarm, plannerMarket, plannerPriorities, stateOf, textureBucket, usableJar } from './farmInput.js';
+import { plansKey } from './planner.js';
+import { analysePhoto, toRecord, verdict } from './jarTest.js';
+import { paintSampleJar } from './jarSample.js';
+import { fieldData } from '../../test/fieldData.mjs';
 
 // the app's demo fields, as the field step hands them on
 const appFields = () => getFields().map((f) => ({
   id: f.id, name: f.name, acres: f.acres, geometry: f.geometry, sourceIds: [f.sourceId],
-  crops: Object.fromEntries(f.cropHistory.map((c) => [c.year, c.crop])),
+  crops: Object.fromEntries(f.cropHistory.map((c) => [c.year, c.crop])), ...fieldData(f),
 }));
 const DEMO_PLACE = { lat: 42.0255, lon: -93.3555, label: 'Sheeeep Hollow', detail: 'Demo farm · Story County, IA', demo: true };
 const ames = () => JSON.parse(readFileSync(new URL('../vendor/rotation-maxxing/fixtures/power_ames_2000_2024.daily.json', import.meta.url), 'utf8'));
@@ -43,15 +47,18 @@ describe('the planner farm from the app', () => {
     assert.ok(!farm.paddocks[0].availableCrops.includes('alfalfa'));
     assert.equal(farm.constraints.irrigation, 'irrigated');
   });
-  it('a field on another farm gets the stand-in soil, and says so', () => {
+  it('a field with no soil data gets no stand-in: it is left out of the plans, and says so', () => {
     const field = { id: 'field-1', name: 'Back 80', acres: 80, crops: { 2023: 'Corn' }, geometry: { type: 'Polygon', coordinates: [[[-97, 40], [-96.99, 40], [-96.99, 40.01], [-97, 40.01], [-97, 40]]] } };
-    const { farm, gaps } = plannerFarm({ fields: [field], place: { lat: 40, lon: -97, label: 'Seward County', detail: 'Nebraska, United States' } });
-    assert.deepEqual(farm.paddocks[0].land, DEFAULT_LAND);
-    assert.ok(scenariosFromDailyWeather(farm, ames()).scenarios.length > 0, 'stand-in soil still gets weather years');
-    assert.deepEqual(farm.paddocks[0].history, ['corn']);
-    assert.equal(farm.state, 'NE');
-    assert.ok(gaps.some((g) => /no soil survey/.test(g)));
-    assert.ok(gaps.some((g) => /only 1 of the last 3/.test(g)));
+    const place = { lat: 40, lon: -97, label: 'Seward County', detail: 'Nebraska, United States' };
+    assert.throws(() => plannerFarm({ fields: [field], place }), /No soil data is available for this field/);
+    const { farm, gaps } = plannerFarm({ fields: [...appFields(), field], place: DEMO_PLACE });
+    assert.equal(farm.paddocks.length, 5);
+    assert.ok(!farm.paddocks.some((p) => p.id === 'field-1'));
+    assert.ok(gaps.includes('Back 80: no soil data is available (the soil survey has nothing at this spot), so this field is left out of the plans.'), gaps.join(' | '));
+    // a survey but no slope from the elevation tiles or the survey: also left out
+    const noSlope = { ...field, soil: { ...appFields()[0].soil, gaps: ['SSURGO reports no slope for this map unit; enter it manually.'] } };
+    const r = plannerFarm({ fields: [...appFields(), noSlope], place: DEMO_PLACE });
+    assert.ok(r.gaps.some((g) => /Back 80: no slope data is available/.test(g)));
   });
   it('helpers', () => {
     assert.deepEqual(outerRing({ type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] }), [[0, 0], [1, 0], [1, 1]]);
@@ -130,5 +137,100 @@ describe('the planner on the demo farm (real NASA POWER weather for Ames, offlin
   });
   it(`is quick enough to run off the main thread (pool ${Math.round(poolMs)} ms, plans ${Math.round(planMs)} ms)`, () => {
     assert.ok(poolMs + planMs < 20000);
+  });
+});
+
+describe('a jar test sets the field\u2019s soil texture, and nothing else', () => {
+  // the sample jar, used on West 140 (f2): clay loam by the jar, silty clay loam on the soil map
+  const sampleRecord = (fieldId = 'f2') => {
+    const { img, box } = paintSampleJar({ seed: 1 });
+    const { analysis } = analysePhoto(img, box, 'ok');
+    const v = verdict(analysis, { isDemoFarm: true, sample: true });
+    return toRecord(analysis, v.result, { fieldId, sample: true, at: '2026-11-15T20:14:00.000Z' });
+  };
+  const withJar = (fields, id, jar) => fields.map((f) => (f.id === id ? { ...f, jar } : f));
+  const paddock = (farm, id) => farm.paddocks.find((p) => p.id === id);
+  const KEPT = ['drainage', 'awcInPerIn', 'organicMatterPct', 'ph', 'slopePct', 'salinityECe'];
+
+  it('West 140: silt by the soil survey, loam by the sample jar; drainage, water, organic matter, pH and slope unchanged', () => {
+    const fields = appFields();
+    const plain = plannerFarm({ fields, place: DEMO_PLACE });
+    const jarred = plannerFarm({ fields: withJar(fields, 'f2', sampleRecord()), place: DEMO_PLACE });
+    assert.equal(paddock(plain.farm, 'f2').land.texture, 'silt');
+    assert.equal(paddock(jarred.farm, 'f2').land.texture, 'loam');
+    for (const k of KEPT) assert.deepEqual(paddock(jarred.farm, 'f2').land[k], paddock(plain.farm, 'f2').land[k], k);
+    assert.deepEqual(Object.keys(paddock(jarred.farm, 'f2').land).sort(), Object.keys(paddock(plain.farm, 'f2').land).sort());
+    assert.equal(paddock(jarred.farm, 'f2').tileDrained, true);
+    // the other fields are untouched
+    for (const id of ['f1', 'f3', 'f4', 'f5']) assert.deepEqual(paddock(jarred.farm, id), paddock(plain.farm, id));
+    const l = landFor(fields[1], sampleRecord());
+    assert.equal(l.jar, true);
+    assert.equal(l.known, true);
+  });
+  it('a record that isn\u2019t fit to plan with gives the survey texture back', () => {
+    const good = sampleRecord();
+    const bad = {
+      low: { ...good, confidence: 'low' },
+      short: { ...good, elapsed: 'short' },
+      nan: { ...good, sandPct: NaN },
+      single: { ...good, layers: good.layers.map((x) => (['clay', 'silt'].includes(x.type) ? { ...x, type: 'sand' } : x)) },
+      sum103: { ...good, sandPct: good.sandPct + 3 },
+      version: { ...good, v: 2 },
+      noClass: { ...good, textureClass: null },
+      none: null,
+    };
+    const west = appFields()[1];
+    assert.equal(usableJar(good), true);
+    for (const [name, jar] of Object.entries(bad)) {
+      assert.equal(usableJar(jar), false, name);
+      const l = landFor(west, jar);
+      assert.equal(l.land.texture, 'silt', name);
+      assert.equal(l.jar, undefined, name);
+      const { farm, gaps } = plannerFarm({ fields: withJar(appFields(), 'f2', jar), place: DEMO_PLACE });
+      assert.equal(paddock(farm, 'f2').land.texture, 'silt', name);
+      assert.ok(!gaps.some((g) => /jar test/.test(g)), name);
+    }
+  });
+  it('says so in the gaps, word for word', () => {
+    const { gaps } = plannerFarm({ fields: withJar(appFields(), 'f2', sampleRecord()), place: DEMO_PLACE });
+    assert.ok(gaps.includes('West 140: soil texture from your jar test (clay loam, a sample jar) instead of the soil survey (silty clay loam).'), gaps.join(' | '));
+    const adjusted = { ...sampleRecord(), adjusted: true, confidence: 'adjusted', sample: false };
+    const g2 = plannerFarm({ fields: withJar(appFields(), 'f2', adjusted), place: DEMO_PLACE }).gaps;
+    assert.ok(g2.includes('West 140: soil texture from your jar test (clay loam, adjusted by you) instead of the soil survey (silty clay loam).'), g2.join(' | '));
+  });
+  it('a field with no soil survey: a jar test alone isn\u2019t enough to plan with (no drainage or water holding)', () => {
+    const loam = {
+      v: 1, fieldId: 'field-9', at: '2026-11-15T20:14:00.000Z', sample: false, elapsed: 'ok',
+      textureClass: 'Loam', sandPct: 40, siltPct: 40, clayPct: 20, confidence: 'adjusted', adjusted: true,
+      layers: [{ type: 'water', rgb: [200, 220, 230], share: 0.4 }, { type: 'clay', rgb: [140, 110, 85], share: 0.12 }, { type: 'silt', rgb: [170, 140, 105], share: 0.24 }, { type: 'sand', rgb: [200, 180, 130], share: 0.24 }],
+      warnings: [],
+    };
+    const field = { id: 'field-9', name: 'Field 9', acres: 40, crops: { 2025: 'Corn' }, geometry: { type: 'Polygon', coordinates: [[[-97, 40], [-96.99, 40], [-96.99, 40.01], [-97, 40.01], [-97, 40]]] } };
+    const { farm, gaps } = plannerFarm({ fields: [...appFields(), { ...field, jar: loam }], place: DEMO_PLACE });
+    assert.ok(!farm.paddocks.some((p) => p.id === 'field-9'));
+    assert.ok(gaps.some((g) => /^Field 9: no soil data is available/.test(g)), gaps.join(' | '));
+    assert.equal(landFor({ ...field, jar: loam }).land, null);
+  });
+  it('the plans are worked out again after a jar test, even where the texture bucket stays the same', () => {
+    const P = plannerPriorities(null), M = plannerMarket(getCounty());
+    for (const id of ['f2', 'f1']) {
+      const plain = plannerFarm({ fields: appFields(), place: DEMO_PLACE });
+      const jarred = plannerFarm({ fields: withJar(appFields(), id, sampleRecord(id)), place: DEMO_PLACE });
+      assert.notEqual(plansKey(jarred.farm, jarred.gaps, P, M, 1), plansKey(plain.farm, plain.gaps, P, M, 1), id);
+      assert.notEqual(JSON.stringify([jarred.farm, jarred.gaps, P, M, 1]), JSON.stringify([plain.farm, plain.gaps, P, M, 1]), id);
+    }
+    // Home place (f1): clay loam on the map and by the jar, the same bucket, so only the gaps differ
+    const plain = plannerFarm({ fields: appFields(), place: DEMO_PLACE });
+    const jarred = plannerFarm({ fields: withJar(appFields(), 'f1', sampleRecord('f1')), place: DEMO_PLACE });
+    assert.equal(textureBucket('clay loam'), 'loam');
+    assert.deepEqual(jarred.farm, plain.farm);
+    assert.notDeepEqual(jarred.gaps, plain.gaps);
+  });
+  it('textureBucket', () => {
+    assert.equal(textureBucket('Silty clay loam'), 'silt');
+    assert.equal(textureBucket('loam'), 'loam');
+    assert.equal(textureBucket('Sand'), 'sand');
+    assert.equal(textureBucket(''), null);
+    assert.equal(textureBucket(null), null);
   });
 });

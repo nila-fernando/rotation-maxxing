@@ -1,31 +1,38 @@
 // The demo farm's plans worked out for real, as the app does (main.js planSeasons and the planner
 // worker), for the plan-views tests: src/plan/compareFutures.test.js and futuresVoice.test.js.
-// Also synthetic farms of any size, cloned from the demo, for "doesn't fall over" checks.
+// Also synthetic farms of any size, cloned from the demo, for "doesn't fall over" checks, and the wheat
+// demo (a spring freeze) with a Kansas-like copy of it, for the weather lines.
 import { readFileSync } from 'node:fs';
 import { getCounty, getFields, getFarm } from '../src/data/farmData.js';
 import { CROP_BY_ID, generatePlans, evaluatePlan } from '../src/vendor/rotation-maxxing/algorithm/index.ts';
 import { scenariosFromDailyWeather } from '../src/vendor/rotation-maxxing/algorithm/climate.ts';
 import { cropIdsFor } from '../src/plan/cropIds.js';
 import { plannerFarm, plannerMarket, plannerPriorities } from '../src/plan/farmInput.js';
+import { frostWarning } from '../src/plan/weatherWords.js';
+import { worst } from '../src/plan/builder.js';
+import { fieldData } from './fieldData.mjs';
 
 export const START_YEAR = 2027; // the plans made on 2026-11-15
 
 // the ?hub=5 demo fields, as main.js testFields(5) hands them on
 const appFields = () => getFields().map((f) => ({
   id: f.id, demoId: f.id, name: f.name, geometry: f.geometry, acres: f.acres, sourceIds: [f.sourceId],
-  crops: Object.fromEntries(f.cropHistory.map((c) => [c.year, c.crop])), source: 'usda',
+  crops: Object.fromEntries(f.cropHistory.map((c) => [c.year, c.crop])), ...fieldData(f), source: 'usda',
 }));
 const ames = () => JSON.parse(readFileSync(new URL('../src/vendor/rotation-maxxing/fixtures/power_ames_2000_2024.daily.json', import.meta.url), 'utf8'));
 
 const cache = new Map();
 
-/** The plans panel's data for the demo farm with these priorities: { result, weather, gaps, farm, priorities, market }. */
-export function demoData(priorities = ['profit']) {
-  const key = priorities.join(',');
+/**
+ * The plans panel's data for the demo farm with these priorities: { result, weather, gaps, farm, priorities, market }.
+ * excludedCrops are the check-in's "crops I can't grow" answers (its keys, e.g. 'soybeans').
+ */
+export function demoData(priorities = ['profit'], { excludedCrops = [] } = {}) {
+  const key = JSON.stringify([priorities, excludedCrops]);
   if (cache.has(key)) return cache.get(key);
   const fm = getFarm();
   const place = { id: 'demo', kind: 'farm', label: fm.name, detail: `Demo farm · ${fm.county} County, ${fm.state}`, lat: fm.center[1], lon: fm.center[0], demo: true };
-  const profile = { priorities, irrigatedFieldIds: [], excludedCrops: [] };
+  const profile = { priorities, irrigatedFieldIds: [], excludedCrops: [...excludedCrops] };
   const { farm, gaps } = plannerFarm({ fields: appFields(), place, profile, firstSeason: START_YEAR });
   const prio = plannerPriorities(profile);
   const market = plannerMarket(getCounty());
@@ -94,4 +101,45 @@ export function coverPickData(data, { gain = 0, soilPts = 0 } = {}) {
   const soil = (cur.endSoilHealth ?? cur.soilHealth) + soilPts / 100;
   const priority = { ...cur, kind: 'priority', plan: { sequences }, expectedGM: cur.expectedGM + gain, endSoilHealth: soil, probBeatsCurrent: 0 };
   return { ...data, result: { ...data.result, plans: { ...data.result.plans, priority } } };
+}
+
+/**
+ * The demo farm for a farmer who can't grow soybeans, profit first: Manami's pick sows winter wheat
+ * for the 2028 harvest on Home place, West 140 and East place, so the planner's spring freeze shows
+ * (13 of 24 years at Ames, at tillering, about 5% of the crop).
+ */
+export const wheatData = () => demoData(['profit'], { excludedCrops: ['soybeans'] });
+
+/**
+ * A copy of a wheat comparison (compareFutures on wheatData) made to look like a dry Kansas farm,
+ * for the lines the Iowa demo never says: water is the weather worry, the state is KS, and only
+ * Home place (f1) has a freeze: 2 of 4 years, at jointing, taking 10.6% of the crop (a Careful).
+ * `cmp` itself is left as it is.
+ */
+export function kansasLike(cmp) {
+  const c = structuredClone(cmp);
+  c.weatherRisk = { ...(c.weatherRisk || {}), waterLimited: true, aridityClass: 'semi-arid' };
+  c.weights = { ...c.weights, waterPlentiful: false }; // (well inside the dry line: the planner doesn't call water plentiful)
+  c.facts = { ...(c.facts || {}), state: 'KS' };
+  const label = 'Freeze risk: in 2 of 4 years, temperatures fell below the jointing threshold (K-State C646); average effect';
+  const p = 0.106; // pct = −bu / (yield − bu): the yield already has the cut taken off
+  for (const f of c.fields) {
+    for (const e of Object.values(f.byKind)) {
+      for (const s of e.seasons) {
+        if (!s.freeze) continue;
+        if (f.id === 'f1') {
+          const bu = (-p * s.yield) / (1 - p);
+          const price = s.freeze.cashAc / s.freeze.bu;
+          s.freeze = { years: 2, of: 4, stage: 'jointing', bu, pct: p * 100, cashAc: bu * price, label };
+        } else s.freeze = null;
+        const fw = frostWarning(s.freeze);
+        s.warnings = [...s.warnings.filter((w) => w.lens !== 'frost'), ...(fw ? [fw] : [])];
+        s.worst = worst(s.warnings);
+      }
+    }
+  }
+  for (const r of Object.values(c.raw)) {
+    r.risks = r.risks.map((x) => (/^Freeze risk: /.test(x) ? 'Freeze risk: in 2 of 4 years, temperatures fell below the jointing threshold (K-State C646).' : x));
+  }
+  return c;
 }

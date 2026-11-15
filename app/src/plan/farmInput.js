@@ -7,7 +7,7 @@
 //
 // Everything here is plain data (no three.js, no DOM), so it can be sent to the planner's Web Worker.
 // Where the app has no value, a stand-in is used and said so in `gaps` (shown with the plans).
-import { mapDrainage, mapTexture } from '../vendor/rotation-maxxing/data/ssurgo.ts';
+import { mapTexture } from '../vendor/rotation-maxxing/data/ssurgo.ts';
 import { continueHistory } from '../vendor/rotation-maxxing/algorithm/plans.ts';
 import { cropKeyFor } from '../island/crops.js';
 import { demoRecordFor } from '../data/fieldReport.js';
@@ -47,13 +47,6 @@ const TEXTURE_PCT = {
   'sandy clay loam': [60, 27], 'clay loam': [32, 34], 'silty clay loam': [10, 34], 'sandy clay': [52, 42], 'silty clay': [7, 47], clay: [20, 55],
 };
 
-/**
- * Used for a field the app knows nothing about (no soil survey yet): a middling Corn Belt soil.
- * The water-holding capacity (0.17 in/in, the planner's Ames SSURGO value) is what lets the
- * planner run its weather years at all; without it every field falls back to one "average year".
- */
-export const DEFAULT_LAND = { slopePct: 2, texture: 'loam', drainage: 'moderate', salinityECe: 0, ph: null, awcInPerIn: 0.17 };
-
 /** The largest outer ring of a GeoJSON Polygon/MultiPolygon, without the repeated closing point. */
 export function outerRing(geometry) {
   const polys = geometry.type === 'MultiPolygon' ? geometry.coordinates : [geometry.coordinates];
@@ -70,32 +63,47 @@ export function outerRing(geometry) {
   return ring;
 }
 
+/** The planner's texture bucket for a USDA texture name ("Silty clay loam" -> 'silt'), or null. */
+export const textureBucket = (name) => { const p = TEXTURE_PCT[String(name || '').toLowerCase()]; return p ? mapTexture(p[0], p[1]) : null; };
+
+const JAR_MINERAL = ['sand', 'silt', 'clay', 'fines'];
+
 /**
- * The planner's Land for a field: its own SSURGO survey if it has one (src/data/soilSurvey.js),
- * else the demo data's soil and slope, else the stand-in.
+ * Is a saved jar test (src/plan/jarTest.js toRecord) fit to plan with? A second check after the jar
+ * test's own gate, so a record is never trusted blindly: not taken too early, not low confidence,
+ * a texture class to name, sand, silt and clay real percentages adding up to 100, and at least 2
+ * different soil layers.
  */
-export function landFor(demo, field = null) {
-  const surveyed = field?.soil?.land;
-  if (surveyed) {
-    const land = { ...surveyed, ph: surveyed.ph ?? null };
-    // SSURGO's map-unit slope; when it has none (parseSsurgo gives 0), the demo slope or the default
-    if (!(surveyed.slopePct > 0)) land.slopePct = Number.isFinite(demo?.slopePct) ? demo.slopePct : DEFAULT_LAND.slopePct;
-    return { land, known: true, gaps: field.soil.gaps || [] };
-  }
-  if (!demo?.soil) return { land: { ...DEFAULT_LAND }, known: false };
-  const s = demo.soil;
-  const [sand, clay] = TEXTURE_PCT[String(s.texture || '').toLowerCase()] || [null, null];
-  const land = {
-    slopePct: Number.isFinite(demo.slopePct) ? demo.slopePct : DEFAULT_LAND.slopePct,
-    texture: mapTexture(sand, clay),
-    drainage: mapDrainage(s.drainage || null),
-    salinityECe: 0, // Iowa cropland isn't saline; no survey value in the demo data
-    ph: null, // unknown: the planner skips the pH check and says so
-  };
-  if (Number.isFinite(s.organicMatterPct)) land.organicMatterPct = s.organicMatterPct;
-  // the demo data gives available water in the top 60 in of soil; the planner wants in/in
-  if (Number.isFinite(s.waterHoldingIn)) land.awcInPerIn = Math.round((s.waterHoldingIn / 60) * 1000) / 1000;
-  return { land, known: true };
+export function usableJar(j) {
+  return !!j && j.v === 1 && j.elapsed !== 'short' && j.confidence !== 'low' && typeof j.textureClass === 'string' && !!j.textureClass
+    && [j.sandPct, j.siltPct, j.clayPct].every((v) => Number.isFinite(v) && v >= 0 && v <= 100)
+    && Math.abs(j.sandPct + j.siltPct + j.clayPct - 100) <= 1
+    && new Set((Array.isArray(j.layers) ? j.layers : []).map((l) => l?.type).filter((t) => JAR_MINERAL.includes(t))).size >= 2;
+}
+
+/**
+ * The planner's Land for a field, from its own soil survey (src/data/soilSurvey.js) only: no
+ * stand-in soil. Slope is the field's own (elevation tiles, src/data/terrain.js), else the survey's
+ * map-unit slope. A usable jar test sets the texture and nothing else: drainage, water holding,
+ * organic matter and pH stay with the survey (the jar's guesses at those are by volume and only
+ * shown). Returns land: null when the field has no survey, or no slope from either source.
+ */
+export function landFor(field, jar = field?.jar ?? null) {
+  const survey = field?.soil?.land;
+  if (!survey) return { land: null, known: false, why: 'soil' };
+  const noSurveySlope = (field.soil.gaps || []).some((g) => /no slope/i.test(g));
+  const slopePct = Number.isFinite(field.slopePct) ? field.slopePct : noSurveySlope ? null : survey.slopePct;
+  if (!Number.isFinite(slopePct)) return { land: null, known: false, why: 'slope' };
+  const land = { ...survey, slopePct, ph: survey.ph ?? null };
+  if (!usableJar(jar)) return { land, known: true, gaps: field.soil.gaps || [] };
+  return { land: { ...land, texture: mapTexture(jar.sandPct, jar.clayPct) }, known: true, jar: true, gaps: field.soil.gaps || [] };
+}
+
+/** The gap line for a field planned with its jar test (the plans panel and the field card show it). */
+export function jarGapLine(name, field, jar) {
+  const cls = String(jar.textureClass || '').toLowerCase();
+  const survey = field?.soil?.display?.texture;
+  return `${name}: soil texture from your jar test (${cls}${jar.adjusted ? ', adjusted by you' : ''}${jar.sample ? ', a sample jar' : ''})${survey ? ` instead of the soil survey (${survey})` : ''}.`;
 }
 
 /**
@@ -152,7 +160,8 @@ const STATE_NAMES = { IA: 'Iowa', IL: 'Illinois', IN: 'Indiana', NE: 'Nebraska',
 
 /**
  * @param {object} o
- * @param {object[]} o.fields   app fields: { id, name, acres, geometry, crops?, sourceIds?, demoId? }
+ * @param {object[]} o.fields   app fields: { id, name, acres, geometry, crops?, sourceIds?, demoId?, jar? }
+ *                              (jar: a saved jar test, src/plan/jarTest.js toRecord)
  * @param {object} [o.place]    the farm's search place ({ lat, lon, label, detail, demo })
  * @param {object} [o.profile]  farmProfile ({ irrigatedFieldIds, excludedCrops })
  */
@@ -161,11 +170,19 @@ export function plannerFarm({ fields, place = null, profile = null, firstSeason 
   const excluded = new Set((profile?.excludedCrops || []).flatMap((k) => EXCLUDE[k] || []));
   const available = COUNTY_CROPS.filter((c) => !excluded.has(c));
   gaps.push('Crops to choose from: the usual Corn Belt crops (corn, soybeans, oats, wheat, alfalfa) until county seed data is in.');
+  const skipped = [];
   const paddocks = fields.map((f) => {
     const demo = demoRecordFor(f);
-    const { land, known, gaps: soilGaps = [] } = landFor(demo, f);
+    const { land, jar, why, gaps: soilGaps = [] } = landFor(f);
+    if (!land) {
+      skipped.push(f.name);
+      gaps.push(why === 'slope'
+        ? `${f.name}: no slope data is available, so this field is left out of the plans.`
+        : `${f.name}: no soil data is available (the soil survey has nothing at this spot), so this field is left out of the plans.`);
+      return null;
+    }
     for (const g of soilGaps) gaps.push(`${f.name}: ${g}`);
-    if (!known) gaps.push(`${f.name}: no soil survey yet, so a typical loam on a gentle slope (holding 0.17 in of water per inch) is assumed.`);
+    if (jar) gaps.push(jarGapLine(f.name, f, f.jar));
     const run = historyRunFor(f, demo);
     if (run.history.length < 3) gaps.push(`${f.name}: only ${run.history.length} of the last 3 years' crops are on record.`);
     const { history, filled } = historyUpTo(run.history, run.lastYear, firstSeason, f.name);
@@ -190,7 +207,10 @@ export function plannerFarm({ fields, place = null, profile = null, firstSeason 
       gaps.push(`${f.name}: poorly drained soil that has grown row crops, so it's taken to be tile drained.`);
     }
     return paddock;
-  });
+  }).filter(Boolean);
+  if (!paddocks.length && fields.length) {
+    throw new Error(`No soil data is available for ${fields.length === 1 ? 'this field' : 'any of these fields'} yet, so there's nothing to plan`);
+  }
   const irrigated = new Set(profile?.irrigatedFieldIds || []);
   const allIrrigated = fields.length > 0 && fields.every((f) => irrigated.has(f.id));
   if (irrigated.size && !allIrrigated) gaps.push('Some fields are irrigated: the planner treats the whole farm as dryland for now.');

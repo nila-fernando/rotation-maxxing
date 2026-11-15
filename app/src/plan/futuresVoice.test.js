@@ -1,15 +1,22 @@
 // Manami's words for the plan views, on the demo farm's real plans (test/futuresDemo.mjs): the
 // exact demo lines, the voice rules on every line she can say, and a phrase for every warning and gap.
+// Money from the planner's Monte Carlo (the farm totals, the price, a mix) is built from cmp, so a
+// re-vendor only re-pins compareFutures.test.js; the wording stays pinned here word for word.
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
-import { demoData, clonedData, coverPickData, START_YEAR } from '../../test/futuresDemo.mjs';
-import { KINDS, compareFutures, mixedPlan, reelStops, viewField } from './compareFutures.js';
+import { demoData, clonedData, coverPickData, kansasLike, wheatData, START_YEAR } from '../../test/futuresDemo.mjs';
+import { KINDS, compareFutures, frostIds, mixedPlan, reelStops, viewField, waterWorry } from './compareFutures.js';
 import {
-  GAP_PHRASE, allLines, captionLine, coverLine, farmRiskLines, fieldLine, flipLine, gapLines, giveUpLine, goodFitLine, lintLine,
-  mixLine, nCarriedLine, nLine, pickedLine, priceLine, reelLine, saveLabel, seasonLabel, sevPhrase, skipHintLine, statusLine,
-  tipFor, vsProfitLine, warnCtx, warnEntry, warnLine, watchItems, watchRows, weatherLine, weightsLine,
+  GAP_PHRASE, STAGE_WORD, allLines, captionLine, coverLine, dryLine, farmRiskLines, farmWeatherLine, fieldLine, flipLine, frostCaveat, frostLine, frostPeekLine,
+  gapLines, giveUpLine, goodFitLine, lintLine, mixLine, nCarriedLine, nLine, pickedLine, priceLine, reelLine, saveLabel, seasonLabel, sevPhrase,
+  skipHintLine, statusLine, tipFor, vsProfitLine, warnCtx, warnEntry, warnLine, watchItems, watchLine, watchRows, weatherLine, weatherRiskLine,
+  weightsLine,
 } from './futuresVoice.js';
 import { ALL_ICONS } from '../ui/futureIcons.js';
+import { money, moneyAbout } from '../ui/money.js';
+
+/** Monte Carlo money as Manami says it: "$58k". */
+const k = (v) => moneyAbout(Math.abs(v));
 
 const EMOJI = /\p{Extended_Pictographic}/u;
 
@@ -24,13 +31,14 @@ describe('Manami’s lines on the demo farm (profit first)', () => {
 
   it('walks the demo word for word', () => {
     const said = Object.fromEntries(reelStops(cmp).map((s) => [s.id, reelLine(cmp, s)]));
+    const t = cmp.totals;
     assert.deepEqual(said, {
       intro: 'This is 2027 if you keep going. Home place, West 140 and East place grow corn again.',
-      flip: 'Here’s my pick. It changes 3 fields in 2027. Over 3 seasons it earns about $60k more, and beats keeping going in 98% of the weather years I tried.',
+      flip: `Here’s my pick. It changes 3 fields in 2027. Over 3 seasons it earns about ${k(t.priority.expectedGM - t.current.expectedGM)} more, and beats keeping going in ${Math.round(t.priority.probBeatsCurrent * 100)}% of the weather years I tried.`,
       gain: 'West 140 gains the most, about $25k over 3 seasons. Soybeans here in 2027 earn about $73 more an acre than more corn. The beans also leave nitrogen for the 2028 corn.',
       sameCrop: 'Same corn on Home place in 2028, but it earns about $57 more an acre. Corn after beans yields about 9 bu more than corn after corn.',
       giveUp: 'North draw is the one place my pick earns less, about $2k over 3 seasons. It ends on corn after beans, so its soil scores 70 in 2029 instead of 42. Careful: beans in 2028 leave this slope only about a quarter covered.',
-      vsProfit: 'The most-profit plan earns about $7k more than mine. A bad year is about $9k worse, and the soil ends 13 points lower.',
+      vsProfit: `The most-profit plan earns about ${k(t.maxProfit.expectedGM - t.priority.expectedGM)} more than mine. A bad year is about ${k(t.priority.p10GM - t.maxProfit.p10GM)} worse, and the soil ends 13 points lower.`,
       why: 'Profit matters most to you, so I gave it about two-thirds of the say and soil health the rest. Water’s plentiful here, so I left it out.',
       watch: 'Amber dots are what I’d watch most. In 2027, that’s rootworm on North draw and East place, where corn follows corn. Tap a field, or open Why and watch out for the full list.',
       yourTurn: 'Your turn. Tap a field to pick its plan, then press Use this plan.',
@@ -39,7 +47,7 @@ describe('Manami’s lines on the demo farm (profit first)', () => {
   });
 
   it('says the Notes lines', () => {
-    assert.equal(priceLine(cmp.price), 'Next to the most-profit plan, mine gives up about $7k of cash and $5k of nitrogen left in the ground. In return a bad year is $9k better, and the soil scores 4 points higher on average. It uses a little more water, about 0.4 in a season.');
+    assert.equal(priceLine(cmp.price), `Next to the most-profit plan, mine gives up about ${k(cmp.price.cash)} of cash and $5k of nitrogen left in the ground. In return a bad year is ${k(cmp.price.p10)} better, and the soil scores 4 points higher on average. It uses a little more water, about 0.4 in a season.`);
     assert.equal(nLine(cmp, 'priority'), 'Corn follows beans 6 times in my pick, and each time it saves about $20 an acre of nitrogen.');
     assert.equal(nCarriedLine(cmp, 'priority'), 'It also leaves about $5k of nitrogen in the ground for 2030. That isn’t cash, so I don’t count it.');
     assert.equal(weatherLine(cmp.weather), 'I tried each plan against 24 years of real weather from Ames, Iowa.');
@@ -61,9 +69,10 @@ describe('Manami’s lines on the demo farm (profit first)', () => {
     assert.equal(pickedLine('Home place', 'current'), 'Got it: Home place keeps going.');
     assert.equal(pickedLine('Home place', 'maxProfit'), 'Got it: Home place goes for the most profit.');
     assert.equal(pickedLine('Home place', 'priority'), 'Got it: Home place goes with my pick.');
-    assert.equal(mixLine(cmp, choice, mix), 'Your plan: a mix of plans, about $386k over 3 seasons.');
+    assert.equal(mixLine(cmp, choice, mix), `Your plan: a mix of plans, about ${money(mix.expectedGM)} over 3 seasons.`);
     assert.equal(seasonLabel(cmp, 'priority', 0), '2027, about $132k, $16k more than keeping going.');
-    assert.equal(statusLine(cmp, 'priority', 0), 'Manami’s pick, 2027: 3 fields change. About $407k over 3 seasons, $60k more than keeping going. The island shows soybeans on Home place and West 140, and corn on North draw, South 40 and East place.');
+    const t = cmp.totals;
+    assert.equal(statusLine(cmp, 'priority', 0), `Manami’s pick, 2027: 3 fields change. About ${money(t.priority.expectedGM)} over 3 seasons, ${k(t.priority.expectedGM - t.current.expectedGM)} more than keeping going. The island shows soybeans on Home place and West 140, and corn on North draw, South 40 and East place.`);
     assert.deepEqual(['current', 'maxProfit', 'priority', 'mix'].map(saveLabel), ['Use Keep going', 'Use Most profit', 'Use my pick', 'Use this plan']);
     const items = watchItems(cmp, 'f3', 'priority');
     assert.deepEqual(items.map((w) => `${w.year} · ${w.label}`).slice(0, 4), ['2027 · Careful', '2027 · Careful', '2027 · Note', '2028 · Careful']);
@@ -155,7 +164,7 @@ describe('the soil-first plans', () => {
     const cmp = compareFutures(demoData(['soil-health', 'profit']), { startYear: START_YEAR });
     assert.equal(coverLine(cmp, 'f3', 'priority'), 'In 2029 I’d sow cereal rye after the corn to cover the ground over winter. It costs about $37 an acre, and the soil scores 76 that season.');
     assert.equal(reelLine(cmp, { id: 'why' }), 'Soil health matters most to you, so I gave it about half of the say and profit the rest. Water’s plentiful here, so I left it out.');
-    assert.equal(priceLine(cmp.price), 'Next to the most-profit plan, mine gives up about $27k of cash and $5k of nitrogen left in the ground. In return the soil scores 6 points higher on average, but a bad year is $11k worse. It uses a little more water, about 0.4 in a season.');
+    assert.equal(priceLine(cmp.price), `Next to the most-profit plan, mine gives up about ${k(cmp.price.cash)} of cash and $5k of nitrogen left in the ground. In return the soil scores 6 points higher on average, but a bad year is ${k(cmp.price.p10)} worse. It uses a little more water, about 0.4 in a season.`);
     assert.equal(tipFor(cmp, 'f3', 'priority', 2).title, 'North draw · 2029: Corn + rye cover');
   });
 });
@@ -204,6 +213,119 @@ describe('a pick of covers alone', () => {
   });
 });
 
+describe('the weather: spring freezes on the wheat, and water', () => {
+  let cmp, ks;
+  before(() => {
+    cmp = compareFutures(wheatData(), { startYear: START_YEAR });
+    ks = kansasLike(cmp);
+  });
+
+  it('says the frost stop: 3 fields, 1 field, and under 1%', () => {
+    const frost = reelStops(cmp).find((s) => s.id === 'frost');
+    assert.equal(reelLine(cmp, frost), 'My pick sows winter wheat on Home place, West 140 and East place for the 2028 harvest. In 13 of 24 springs here, a night got cold enough to hurt it, so I take about 5% off. My frost rule comes from Kansas, so here it may count cold nights while the wheat is still dormant.');
+    assert.equal(frostLine(ks), 'My pick sows winter wheat on Home place for the 2028 harvest. In 2 of 4 springs here, a night got cold enough to hurt it, so I take about 11% off.');
+    const light = structuredClone(ks);
+    light.fields[0].byKind.priority.seasons[1].freeze.pct = 0.4;
+    assert.equal(frostLine(light), 'My pick sows winter wheat on Home place for the 2028 harvest. In 2 of 4 springs here, a night got cold enough to hurt it, so I take a little off.');
+    assert.equal(frostLine(compareFutures(demoData(['profit']), { startYear: START_YEAR })), null);
+  });
+
+  it('says the freeze as a farm risk, in her words, with the Kansas caveat', () => {
+    const r = farmRiskLines(cmp, 'priority');
+    assert.deepEqual(r.lines, ['In 13 of 24 springs here, a freeze got cold enough to hurt the wheat while it was still short and leafy. My frost rule comes from Kansas, so here it may count cold nights while the wheat is still dormant.']);
+    assert.deepEqual(r.unmatched, []);
+    assert.deepEqual(farmRiskLines(ks, 'priority').lines, ['In 2 of 4 springs here, a freeze got cold enough to hurt the wheat as its stems began to grow.']);
+    assert.equal(STAGE_WORD.tillering, 'while it was still short and leafy');
+  });
+
+  it('says the freeze on the card, the tooltip and the Notes', () => {
+    const line = 'Spring freezes can hurt the wheat. One got cold enough in 13 of 24 springs here, so I take about 5% off.';
+    assert.ok(watchItems(cmp, 'f1', 'priority').some((w) => w.lens === 'frost' && w.year === 2028 && w.label === 'Note' && w.text === line));
+    assert.equal(tipFor(cmp, 'f1', 'priority', 1).note, `Note: ${line.charAt(0).toLowerCase()}${line.slice(1)}`);
+    assert.ok(watchRows(cmp, 'priority').some((r) => r.text === 'Home place · 2028 · Note: spring freezes can hurt the wheat. One got cold enough in 13 of 24 springs here, so I take about 5% off.'));
+    const careful = watchItems(ks, 'f1', 'priority').find((w) => w.lens === 'frost');
+    assert.deepEqual([careful.label, careful.text], ['Careful', 'Spring freezes can hurt the wheat. One got cold enough in 2 of 4 springs here, so I take about 11% off.']);
+    // a season with frost as its only careful warning: the watch stop says it
+    const only = structuredClone(ks);
+    for (const f of only.fields) for (const e of Object.values(f.byKind)) for (const s of e.seasons) { s.warnings = s.warnings.filter((w) => w.lens === 'frost'); s.worst = s.warnings.length ? 2 : 0; }
+    assert.equal(watchLine(only), 'Amber dots are what I’d watch most. In 2028, that’s spring freezes on the wheat on Home place. Tap a field, or open Why and watch out for the full list.');
+  });
+
+  it('labels the season radio, and says the freeze peek', () => {
+    assert.equal(seasonLabel(cmp, 'priority', 1), '2028, about $61k, $57k less than keeping going. Frost risk on the wheat.');
+    assert.doesNotMatch(seasonLabel(cmp, 'priority', 0), /Frost/);
+    assert.doesNotMatch(seasonLabel(cmp, 'current', 1), /Frost/);
+    assert.equal(frostPeekLine(cmp, 1, frostIds(cmp, 'priority', 1)), 'A spring freeze on the farm in 2028. It could hurt the wheat on Home place, West 140 and East place.');
+  });
+
+  it('says the freeze gap, and the water line in every case', () => {
+    assert.ok(gapLines(cmp).farm.includes('I count a freeze when a night after March 1 gets colder than the wheat can take at its stage. I use weather for the wider area, so low spots may get colder, and I don’t count snow cover.'));
+    assert.deepEqual(gapLines(cmp).unmatched.filter((g) => /reeze/.test(g)), []);
+    assert.equal(weatherRiskLine(cmp.weatherRisk, { wheat: true }), 'Water isn’t the big weather worry here. Wet springs, floods and wind matter more, and I can’t count most of those yet. I do count spring freezes on wheat.');
+    assert.equal(frostCaveat('KS', 'jointing'), null);
+  });
+
+  it('says the dry stop where water is the worry', () => {
+    const dry = reelStops(ks).find((s) => s.id === 'dry');
+    assert.equal(reelLine(ks, dry), 'Water is the big weather worry here, so dry years are the ones to plan for. The drops show that my pick leaves every field short of water in 2027.');
+    assert.equal(dryLine(ks, 1), 'Water is the big weather worry here, so dry years are the ones to plan for. The drops show that my pick leaves every field short of water in 2028.');
+    assert.equal(dryLine(cmp, 1), null, 'a humid farm has no dry stop');
+  });
+
+  it('names the fields the dry stop and the season radios mean (the drops are hidden from screen readers)', () => {
+    // only two fields short of water in 2027
+    const two = structuredClone(ks);
+    for (const f of two.fields) if (!['f1', 'f3'].includes(f.id)) for (const e of Object.values(f.byKind)) e.seasons[0].waterShort = 0;
+    const [a, b] = ['f1', 'f3'].map((id) => two.fields.find((f) => f.id === id).name);
+    assert.equal(dryLine(two, 0), `Water is the big weather worry here, so dry years are the ones to plan for. The drops show ${a} and ${b}, which my pick leaves short of water in 2027.`);
+    assert.ok(seasonLabel(two, 'priority', 0).endsWith(` Short of water on ${a} and ${b}.`));
+    assert.match(seasonLabel(ks, 'priority', 0), / Short of water on every field\.$/);
+    assert.doesNotMatch(seasonLabel(cmp, 'priority', 0), /water/, 'not on a humid farm');
+  });
+
+  it('never calls water plentiful and the big worry in one walk (just under the dry line)', () => {
+    // the planner: water-limited, but its weights call water plentiful (an aridity just under 0.65)
+    const edge = { ...ks, weights: { ...ks.weights, waterPlentiful: true } };
+    assert.equal(waterWorry(edge), false);
+    assert.equal(dryLine(edge, 0), null);
+    assert.ok(!reelStops(edge).some((s) => s.id === 'dry'));
+    assert.match(farmWeatherLine(edge), /^Water isn’t the big weather worry here\./);
+    assert.match(farmWeatherLine(ks), /^Water is the big weather worry here/);
+  });
+});
+
+describe('the jar test in the gaps', () => {
+  const JAR = 'West 140: soil texture from your jar test (clay loam, a sample jar) instead of the soil survey (silty clay loam).';
+  const JAR_NO_SURVEY = 'Field 9: no soil survey yet, but soil texture from your jar test (loam), with typical drainage and water holding (0.17 in per inch) on a gentle slope.';
+  const entry = (g) => GAP_PHRASE.find((x) => x.re.test(g));
+
+  it('says a field’s jar test on its card, and for the farm', () => {
+    assert.equal(entry(JAR).key, 'jar');
+    assert.equal(entry(JAR).card(entry(JAR).re.exec(JAR)), 'Your jar test says clay loam here, so I planned with that instead of the soil map’s silty clay loam.');
+    assert.equal(entry(JAR_NO_SURVEY).key, 'jarNoSurvey', 'not the plain no-survey line (“a typical loam”)');
+    assert.equal(entry(JAR_NO_SURVEY).card(entry(JAR_NO_SURVEY).re.exec(JAR_NO_SURVEY)), 'I don’t have a soil survey here, so I used your jar test: loam.');
+    assert.equal(entry(JAR).card(entry(JAR).re.exec('West 140: soil texture from your jar test (clay loam, adjusted by you) instead of the soil survey (silty clay loam).')), 'Your jar test says clay loam here, so I planned with that instead of the soil map’s silty clay loam.');
+  });
+
+  it('puts them on the right fields, in her voice', () => {
+    const base = compareFutures(demoData(['profit']), { startYear: START_YEAR });
+    const cmp = { ...base, gaps: [...base.gaps, JAR], notes: structuredClone(base.notes) };
+    cmp.notes.byField.f2.gaps.push(JAR);
+    const g = gapLines(cmp);
+    assert.ok(g.byField.f2.includes('Your jar test says clay loam here, so I planned with that instead of the soil map’s silty clay loam.'));
+    assert.ok(g.farm.includes('I’ve used your jar test for West 140 instead of the soil map.'));
+    // a field the comparison doesn't know (Field 9) keeps its line farm-wide
+    const lone = gapLines({ ...cmp, gaps: [...cmp.gaps, JAR_NO_SURVEY] });
+    assert.ok(lone.farm.includes('I’ve used your jar test for Field 9 instead of the soil map.'));
+    for (const line of [...g.farm, ...Object.values(g.byField).flat(), ...lone.farm]) assert.deepEqual(lintLine(line), [], line);
+    for (const raw of [JAR, JAR_NO_SURVEY]) {
+      const e = entry(raw), m = e.re.exec(raw);
+      assert.deepEqual(lintLine(e.card(m)), []);
+      assert.deepEqual(lintLine(e.farm([m])), []);
+    }
+  });
+});
+
 describe('the voice rules', () => {
   it('lintLine catches what Manami wouldn’t say', () => {
     assert.deepEqual(lintLine('Here’s my pick.'), []);
@@ -221,11 +343,14 @@ describe('the voice rules', () => {
     const goodFit = { ...profit, result: { ...profit.result, plans: { ...profit.result.plans, priority: { ...profit.result.plans.current, kind: 'priority', probBeatsCurrent: 0.5 } } } };
     const farms = [profit, demoData(['soil-health', 'profit']), goodFit, clonedData(profit, 1), clonedData(profit, 15)];
     let n = 0;
-    for (const d of farms) {
-      const cmp = compareFutures(d, { startYear: START_YEAR });
+    const wheat = wheatData();
+    const cmps = [...farms, wheat].map((d) => ({ d, cmp: compareFutures(d, { startYear: START_YEAR }) }));
+    // the Kansas-like copy has no planner to score a mix with
+    cmps.push({ d: null, cmp: kansasLike(cmps[cmps.length - 1].cmp) });
+    for (const { d, cmp } of cmps) {
       const choice = { [cmp.fields[0].id]: 'current', [cmp.fields[cmp.fields.length - 1].id]: 'maxProfit' };
       // the cloned farms can't be scored by the planner (their fields aren't the demo farm's)
-      const mixScore = d.farm === profit.farm || d === farms[1] ? d.evaluate(mixedPlan(d.result.plans, choice)) : null;
+      const mixScore = d && (d.farm === profit.farm || d === farms[1] || d === wheat) ? d.evaluate(mixedPlan(d.result.plans, choice)) : null;
       for (const line of [...allLines(cmp), ...allLines(cmp, { choice, mixScore }), ...reelStops(cmp).map((s) => reelLine(cmp, s))]) {
         if (line == null) continue;
         n++;
@@ -236,8 +361,11 @@ describe('the voice rules', () => {
   });
 
   it('every warning has a phrase', () => {
-    for (const d of [demoData(['profit']), demoData(['soil-health', 'profit']), clonedData(demoData(['profit']), 15)]) {
-      const cmp = compareFutures(d, { startYear: START_YEAR });
+    const cmps = [demoData(['profit']), demoData(['soil-health', 'profit']), clonedData(demoData(['profit']), 15), wheatData()]
+      .map((d) => compareFutures(d, { startYear: START_YEAR }));
+    cmps.push(kansasLike(cmps[3]));
+    let frost = 0;
+    for (const cmp of cmps) {
       const ids = cmp.fields.map((f) => f.id);
       const choice = { [ids[0]]: 'current', [ids[2]]: 'maxProfit' };
       for (const view of [...KINDS, 'mix']) {
@@ -245,6 +373,7 @@ describe('the voice rules', () => {
           viewField(cmp, f.id, view, choice).seasons.forEach((s, y) => {
             for (const w of s.warnings) {
               assert.ok(warnEntry(w), `no phrase for ${w.lens}: ${w.reason}`);
+              if (w.lens === 'frost') { frost++; assert.notEqual(warnEntry(w).re.source, '(?:)', 'the freeze has its own phrase'); }
               const ctx = warnCtx(cmp, f.id, view, y, choice);
               assert.doesNotMatch(warnLine(w, ctx), /fine print/);
               assert.match(sevPhrase(w, ctx), /^(Note|Careful|Avoid): /);
@@ -253,6 +382,7 @@ describe('the voice rules', () => {
         }
       }
     }
+    assert.ok(frost > 0, 'the wheat farms have freeze warnings');
   });
 
   it('phrases the warnings the demo doesn’t have', () => {
@@ -273,6 +403,15 @@ describe('the voice rules', () => {
     assert.equal(say('land', 'Drainage: poor, tolerated but not optimal for Corn (grain): about 10% yield loss.', corn), 'This ground doesn’t suit corn well.');
     for (const l of ['Corn needs a buyer lined up first, since few local buyers take it.', 'Alfalfa needs hay equipment, which you don’t have yet.']) assert.deepEqual(lintLine(l), []);
     assert.equal(warnLine({ lens: 'mystery', severity: 1, reason: 'Something new.' }), 'A planner note here. The details are in the fine print.');
+    // the freeze's other shapes: one weather year's event (with its cut, or without), and anything else on the frost lens
+    const event = 'Spring freeze at jointing (23 F on 04-12, injury below 24 F, K-State C646: moderate to severe; design range x0.5-0.9)';
+    const frostSaid = [
+      [say('frost', event, { ...ctx, freeze: { pct: 12 } }), 'A spring freeze can hurt the wheat here, so I take about 12% off.'],
+      [say('frost', event), 'A spring freeze can hurt the wheat here, so I take a little off.'],
+      [say('frost', 'Freeze risk: in 2 of 4 years, temperatures fell below the boot threshold (K-State C646); average effect'), 'Spring freezes can hurt the wheat. One got cold enough in 2 of 4 springs here.'],
+      [say('frost', 'Something new about frost.'), 'Spring freezes can hurt the wheat here.'],
+    ];
+    for (const [got, want] of frostSaid) { assert.equal(got, want); assert.deepEqual(lintLine(got), [], got); }
   });
 
   it('no emoji in any icon or line', () => {

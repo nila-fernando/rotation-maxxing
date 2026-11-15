@@ -55,20 +55,20 @@ describe('SSURGO soil for any field', () => {
     assert.deepEqual(await fillSoil([{ id: 'd', geometry: ell }], { fetchFn: fakeSda(503).fetchFn }), {});
   });
 
-  test('the report and the planner use the field\'s own survey over the demo stand-in', async () => {
+  test('the report and the planner use the field\'s own survey, and nothing else', async () => {
     const { fetchFn } = fakeSda();
     const [field] = withSoil([{ id: 'a', name: 'North', acres: 40, geometry: square }], await fillSoil([{ id: 'a', geometry: square }], { fetchFn }));
     const demo = { soil: { texture: 'clay loam', drainage: 'somewhat poorly drained', organicMatterPct: 4.4, waterHoldingIn: 10.6 }, slopePct: 3 };
-    const r = buildFieldReport(field, { demo, placeholder: { soil: true } });
-    assert.equal(r.soil.texture, 'sandy loam');
-    assert.equal(r.placeholder.soil, false); // a real survey: no dotted "stand-in" chip
-    const { land, known } = landFor(demo, field);
+    const r = buildFieldReport(field, { demo });
+    assert.equal(r.soil.texture, 'sandy loam'); // the survey, not the demo record
+    assert.equal(r.slope, null); // no elevation slope fetched: none shown, the demo's 3% isn't used
+    const { land, known } = landFor(field);
     assert.equal(known, true);
     assert.equal(land.texture, 'loam'); // the planner's bucket for 65% sand, 15% clay
-    assert.equal(land.slopePct, 1); // SSURGO's map-unit slope, not the demo's 3
+    assert.equal(land.slopePct, 1); // the survey's map-unit slope, with no elevation slope
+    assert.equal(landFor({ ...field, slopePct: 4.2 }).land.slopePct, 4.2); // the field's own slope wins
     assert.equal(land.ph, 6.5);
     assert.ok(land.awcInPerIn > 0.16 && land.awcInPerIn < 0.18);
-    // without a survey, the demo soil as before
-    assert.equal(landFor(demo, { id: 'x' }).land.slopePct, 3);
+    assert.equal(buildFieldReport({ id: 'x', name: 'X' }, { demo }).soil, null); // no survey: no soil
   });
 });
