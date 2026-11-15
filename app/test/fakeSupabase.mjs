@@ -6,6 +6,7 @@
 //   db.client.from('farms').select('id').eq('owner_id', id)    (thenable: { data, error })
 //   db.tables.farms   db.requests   db.missing = true (PGRST205)   db.failNext(n) (network errors)
 //   db.noColumns = { fields: ['crop_edits'] }   a column a later migration adds isn't there yet (PGRST204)
+//   db.noTables = ['season_reports']               a table a later migration adds isn't there yet (PGRST205)
 
 const KEYS = {
   farms: ['id'],
@@ -14,8 +15,9 @@ const KEYS = {
   jar_tests: ['id'],
   plans: ['id'],
   profiles: ['id'],
+  season_reports: ['farm_id', 'season'],
 };
-const CHILDREN = { farms: [['fields', 'farm_id'], ['plans', 'farm_id']], fields: [['field_data', 'field_id'], ['jar_tests', 'field_id']] };
+const CHILDREN = { farms: [['fields', 'farm_id'], ['plans', 'farm_id'], ['season_reports', 'farm_id']], fields: [['field_data', 'field_id'], ['jar_tests', 'field_id']] };
 let seq = 0;
 const uuid = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`;
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -27,8 +29,8 @@ function parseIn(list) {
 }
 
 export function createFakeSupabase({ userId = 'user-1' } = {}) {
-  const tables = { farms: [], fields: [], field_data: [], jar_tests: [], plans: [], profiles: [{ id: userId, priorities: ['profit'], excluded_crops: [] }] };
-  const db = { tables, requests: [], missing: false, failures: 0, clock: 0, noColumns: {} };
+  const tables = { farms: [], fields: [], field_data: [], jar_tests: [], plans: [], season_reports: [], profiles: [{ id: userId, priorities: ['profit'], excluded_crops: [] }] };
+  const db = { tables, requests: [], missing: false, failures: 0, clock: 0, noColumns: {}, noTables: [] };
   db.failNext = (n = 1) => { db.failures = n; };
   const now = () => new Date(Date.UTC(2026, 10, 15, 12, 0, db.clock++)).toISOString();
 
@@ -58,7 +60,7 @@ export function createFakeSupabase({ userId = 'user-1' } = {}) {
     function run() {
       db.requests.push({ table, op: q.op });
       if (db.failures > 0) { db.failures--; return { data: null, error: { message: 'TypeError: Failed to fetch', code: '' } }; }
-      if (db.missing) return { data: null, error: { code: 'PGRST205', message: `Could not find the table 'public.${table}' in the schema cache` } };
+      if (db.missing || db.noTables.includes(table)) return { data: null, error: { code: 'PGRST205', message: `Could not find the table 'public.${table}' in the schema cache` } };
       const rows = tables[table];
       const match = () => rows.filter((r) => q.filters.every((f) => f(r)));
       if (q.op === 'select') {
@@ -73,7 +75,7 @@ export function createFakeSupabase({ userId = 'user-1' } = {}) {
         const keys = q.onConflict ? q.onConflict.split(',') : KEYS[table];
         const out = [];
         // foreign keys (and RLS's owns_farm / owns_field, which fail the same way for a deleted farm)
-        const parent = { fields: ['farms', 'farm_id'], plans: ['farms', 'farm_id'], field_data: ['fields', 'field_id'], jar_tests: ['fields', 'field_id'] }[table];
+        const parent = { fields: ['farms', 'farm_id'], plans: ['farms', 'farm_id'], field_data: ['fields', 'field_id'], jar_tests: ['fields', 'field_id'], season_reports: ['farms', 'farm_id'] }[table];
         if (parent && q.rows.some((r) => !tables[parent[0]].some((p) => p.id === r[parent[1]]))) {
           return { data: null, error: { code: '42501', message: `new row violates row-level security policy for table "${table}"` } };
         }

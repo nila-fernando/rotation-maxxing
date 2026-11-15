@@ -9,6 +9,23 @@
 //   result: generatePlans' output (see src/vendor/rotation-maxxing/docs/API.md):
 //     result.plans.current / .maxProfit / .priority, result.priceOfPriorities, result.exclusions
 import { plannerFarm, plannerMarket, plannerPriorities } from './farmInput.js';
+import { fieldsBefore, plannerReports, tunedLine } from './seasons.js';
+
+/**
+ * What the season reports give the worker: the farm as it stood before the first reported season,
+ * and the reports in the planner's shape (null when there's nothing to learn from).
+ */
+function learnInput({ fields, place, profile, market, seasons }) {
+  const reports = plannerReports(seasons).filter((r) => r.paddocks.length);
+  if (!reports.length) return null;
+  const first = reports[0].season;
+  try {
+    const { farm: farmBefore } = plannerFarm({ fields: fieldsBefore(fields, first), place, profile, firstSeason: first, market });
+    return { farmBefore, reports };
+  } catch {
+    return null; // (no soil yet, say: the plans are made without the reports)
+  }
+}
 
 /**
  * What a set of plans is remembered by. The gap lines are in it: a jar test changes them (and the
@@ -53,24 +70,29 @@ export function createPlanner() {
    * Three plans for the next 3 seasons: keep going, most profit, and the best fit for the farmer's
    * priorities. Repeat calls with the same inputs return the same answer without re-running.
    */
-  async function plans({ fields, place, profile, market: marketData, firstSeason = null, seed = 1 }) {
+  async function plans({ fields, place, profile, market: marketData, firstSeason = null, seed = 1, seasons = [] }) {
     const { farm, gaps } = plannerFarm({ fields, place, profile, firstSeason, market: marketData });
     const priorities = plannerPriorities(profile);
     const market = plannerMarket(marketData);
-    const key = plansKey(farm, gaps, priorities, market, seed);
+    const learn = learnInput({ fields, place, profile, market: marketData, seasons });
+    const key = plansKey(farm, gaps, priorities, market, seed) + JSON.stringify(learn?.reports ?? null);
     if (cache.key === key) return cache.value;
-    const reply = await ask({ type: 'plans', farm, priorities, market, demo: !!place?.demo, options: { seed } });
+    const reply = await ask({ type: 'plans', farm, priorities, market, demo: !!place?.demo, learn, options: { seed } });
     lastWeather = reply.weather.fallback ? (reply.weather.source === 'none' ? 'none' : 'ames') : null;
-    const value = { result: reply.result, weather: reply.weather, gaps: [...gaps, ...reply.weather.gaps], farm, priorities, market, marketData };
+    // the seasons the plans were tuned with, said first in the notes
+    const tuned = reply.result?.learned ? tunedLine(learn.reports) : null;
+    const value = { result: reply.result, weather: reply.weather, gaps: [...(tuned ? [tuned] : []), ...gaps, ...reply.weather.gaps], farm, priorities, market, marketData, learned: reply.result?.learned ?? null };
     // an answer on stand-in weather (NASA POWER unreachable) isn't kept, so the next ask tries again
     cache = reply.weather.fallback ? { key: null, value: null } : { key, value };
     return value;
   }
 
   /** Scores a plan the farmer put together (planner Plan shape: { sequences: { id: [{ main, cover? }] } }). */
-  async function evaluate({ fields, place, profile, market: marketData, plan, firstSeason = null, seed = 1 }) {
+  async function evaluate({ fields, place, profile, market: marketData, plan, firstSeason = null, seed = 1, seasons = [] }) {
     const { farm } = plannerFarm({ fields, place, profile, firstSeason, market: marketData });
-    const reply = await ask({ type: 'evaluate', farm, plan, priorities: plannerPriorities(profile), market: plannerMarket(marketData), demo: !!place?.demo, weatherHint: lastWeather, options: { seed } });
+    // (scored on the same tuned farm as the plans it's set beside)
+    const learn = learnInput({ fields, place, profile, market: marketData, seasons });
+    const reply = await ask({ type: 'evaluate', farm, plan, priorities: plannerPriorities(profile), market: plannerMarket(marketData), demo: !!place?.demo, weatherHint: lastWeather, learn, options: { seed } });
     return reply.result;
   }
 

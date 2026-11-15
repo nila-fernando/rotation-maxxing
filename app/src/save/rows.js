@@ -163,7 +163,14 @@ export const irrigatedOf = (snap) => new Set(snap.profile?.irrigatedFieldIds || 
  * @param {{ farm: object, fields: object[], fieldData?: object[], jarTests?: object[], plan?: object|null,
  *   profile?: object|null, localId: string, ownerId: string }} o
  */
-export function snapshotFromRows({ farm, fields, fieldData = [], jarTests = [], plan = null, profile = null, localId, ownerId }) {
+/** The farm's season reports as season_reports rows (one per season; the same season updates its row). */
+export function seasonRows(snap, farmId) {
+  return (snap.seasons || []).filter((r) => isObj(r) && Number.isInteger(r.season)).map((r) => ({
+    id: idFrom(`season|${farmId}|${r.season}`), farm_id: farmId, season: r.season, report: r,
+  }));
+}
+
+export function snapshotFromRows({ farm, fields, fieldData = [], jarTests = [], plan = null, profile = null, seasons = [], localId, ownerId }) {
   const byField = new Map();
   for (const d of fieldData) {
     if (!byField.has(d.field_id)) byField.set(d.field_id, {});
@@ -236,5 +243,6 @@ export function snapshotFromRows({ farm, fields, fieldData = [], jarTests = [], 
     plan: savedPlan,
     picks: savedPlan?.choice ? { ...savedPlan.choice } : null,
     cloud: { [ownerId]: { id: farm.id, synced: true } },
+    seasons: [...seasons].filter((r) => isObj(r?.report)).sort((a, b) => a.season - b.season).map((r) => r.report),
   };
 }

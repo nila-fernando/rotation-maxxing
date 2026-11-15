@@ -9,7 +9,7 @@
 // The tables may not exist yet (PGRST205): then nothing is sent again until sync.recheck(), and the
 // farm keeps saving on this device. The demo farm is never stored in the database (the team's rule,
 // supabase/README.md): it stays on this device.
-import { farmRow, fieldRow, fieldDataRows, jarRow, planRow, profilePatch, irrigatedOf, snapshotFromRows, stableJson, newId } from './rows.js';
+import { farmRow, fieldRow, fieldDataRows, jarRow, planRow, profilePatch, irrigatedOf, seasonRows, snapshotFromRows, stableJson, newId } from './rows.js';
 import { createScheduler } from './scheduler.js';
 
 /** PostgREST / Postgres codes for "that table isn't there". */
@@ -43,6 +43,7 @@ const inList = (vals) => `(${vals.map((v) => `"${String(v).replace(/\\/g, '\\\\'
 export function createCloud(client) {
   const from = (t) => client.from(t);
   let noCropEdits = false; // the fields table has no crop_edits column (yet): send fields without it
+  let noSeasons = false; // the season_reports table (a later migration) isn't there yet
 
   /** Whether the tables are there (a cheap read; RLS returns nothing to others). */
   async function probe() {
@@ -78,7 +79,10 @@ export function createCloud(client) {
       : [[], []];
     const [plan] = must(await from('plans').select('*').eq('farm_id', farmId).eq('is_current', true).limit(1));
     const [profile] = must(await from('profiles').select('priorities,excluded_crops').eq('id', userId).limit(1));
-    return snapshotFromRows({ farm, fields, fieldData, jarTests, plan: plan || null, profile: profile || null, localId, ownerId: userId });
+    // (season_reports is a later table: an account whose database doesn't have it yet still opens)
+    let seasons = [];
+    try { seasons = must(await from('season_reports').select('season,report').eq('farm_id', farmId)); } catch (e) { if (!isTablesMissing(e)) throw e; }
+    return snapshotFromRows({ farm, fields, fieldData, jarTests, plan: plan || null, profile: profile || null, seasons, localId, ownerId: userId });
   }
 
   /** Whether the farm is still in the account. */
@@ -181,6 +185,21 @@ export function createCloud(client) {
         must(await from('plans').update({ is_current: false }).eq('farm_id', farmId).eq('is_current', true));
       }
       memo.set('plan', ps);
+    }
+
+    // the season reports (a later table: if it isn't there yet they stay on this device, and the rest
+    // of the farm still goes up)
+    const sr = seasonRows(snap, farmId);
+    const ss = stableJson(sr);
+    if (!noSeasons && sr.length && memo.get('seasons') !== ss) {
+      try {
+        must(await from('season_reports').upsert(sr, { onConflict: 'farm_id,season' }));
+        memo.set('seasons', ss);
+      } catch (e) {
+        if (!isTablesMissing(e)) throw e;
+        console.warn('season_reports is missing: run supabase/migrations/20261116010000_season_reports.sql');
+        noSeasons = true;
+      }
     }
 
     // the check-in's answers (per person; the profile row is made when they sign up)

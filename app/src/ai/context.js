@@ -51,7 +51,21 @@ export function buildFarmContext(host) {
     fields,
     plans_ready: !!safe(() => host.plansData()),
     saved_plan: savedOf(host),
+    // how past seasons really went, in the farmer's words (src/plan/seasons.js); the plans learn from them
+    season_reports: seasonsOf(host),
   };
+}
+
+/** The farmer's season reports, by field name: crop, yield, what went wrong, their notes. */
+function seasonsOf(host) {
+  const reports = safe(() => host.seasons?.()) || [];
+  const names = new Map((safe(() => host.fields()) || []).map((f) => [f.id, f.name]));
+  return reports.slice(-3).map((r) => ({
+    season: r.season,
+    fields: Object.entries(r.fields || {}).map(([id, f]) => ({
+      field: names.get(id) || id, crop: f.crop ?? null, yield_per_acre: f.yield ?? null, problems: f.events || [], notes: f.notes || null,
+    })),
+  }));
 }
 
 /** One field's check-up for get_field (from the app's own field report). */
