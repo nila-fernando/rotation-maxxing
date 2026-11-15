@@ -35,6 +35,32 @@ Boone IA and McPherson KS are held out: never used while building the model. See
 - **Kansas summer-crop skill holds on the held-out county** (r ≈ 0.8).
 - **Iowa fails on typical upland cropland too** (Clarion, Nicollet, Canisteo). So the earlier "bottomland water table" explanation was wrong, or a minor factor. Iowa is humid (aridity index 0.90), and its bad years are mostly not drought: 2008 floods, a wet 2013 spring, the August 2020 derecho. Meanwhile the model caps every unstressed year at the same multiplier.
 
+## Wheat freeze model (2026-11-15)
+
+The damage ranges and the "bad year" threshold (< 0.8 of trend) were fixed before this run. Full tables: `backtest-2026-11-15-freeze.md`.
+
+**(a) Detection, sourced parts only**
+
+| County | Hits | Misses | False alarms |
+|---|---|---|---|
+| Saline | 3 | 0 | 20 |
+| McPherson* | 3 | 0 | 20 |
+
+- Almost every false alarm is a **January–February night below 12 F counted as "tillering"**. C646's thresholds are for *spring* growth stages, after the wheat breaks winter dormancy, and counting from 1 January treats dormant wheat as tillering. This is a flaw in the design, not in the data.
+- **Jointing-or-later events:**
+  - Saline: 2007 (17 F, actual 0.35), 2013 (22 F, 1.22), 2018 (22 F, 0.71), 2020 (24 F, 1.05)
+  - McPherson: 2005 heading (30 F, 1.08), 2006 (21 F, 0.99), 2007 (17 F, 0.29), 2013 (22 F, 1.21), 2018 (23 F, 0.91)
+- **2007 is detected in both counties.**
+
+**(b) Correlation and error, point soils, before → after**
+
+| County | r | Mean error | 2007 model (actual) |
+|---|---|---|---|
+| Saline wheat | 0.02 → 0.19 | 21% → 23% | 1.31 → 0.89 (0.35) |
+| McPherson* wheat | 0.03 → 0.13 | 22% → 26% | 1.27 → 0.85 (0.29) |
+
+The correlation improves, mainly from 2007, but the error gets worse because of the midwinter false alarms.
+
 **Reading this**
 
 **Kansas summer crops: the model tracks the dry years well** (r ≈ 0.9), but its swings are about half the real ones.

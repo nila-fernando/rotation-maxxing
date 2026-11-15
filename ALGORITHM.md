@@ -455,6 +455,38 @@ With `NASS_API_KEY` set, it also pulls QuickStats county yields, detrends them l
 
 Without a key it lists the model's worst years. 2012 is the worst for every county and crop.
 
+## Spring freeze injury to winter wheat (`frost.ts`)
+
+```
+growing degrees (F) = max(0, (Tmax + Tmin)/2 − 32), summed from 1 January       Kansas Mesonet formula
+stage               = < 800 tillering | 800–1200 jointing | 1200–1400 boot | 1400–1600 heading |
+                      1600–2000 flowering | 2000–2400 milk | 2400–2800 dough | ≥ 2800 mature
+freeze event        = a night with NASA POWER Tmin ≤ the C646 injurious temperature for the stage:
+                      tillering 12 F, jointing 24, boot 28, heading 30, flowering 30, milk 28, dough 28
+season damage       = the worst event's C646 yield effect → design range:
+                      slight-to-moderate U(0.80, 1.00), moderate-to-severe U(0.50, 0.85), severe U(0.20, 0.60)
+```
+
+**Sourced:** the freeze thresholds and the qualitative yield effects (K-State C646, Table 1), and the growing-degree formula (Kansas Mesonet).
+
+**Design or assumption:**
+- The damage ranges are **unsourced design values**, chosen before validation. Midpoints are used in the search; Monte Carlo draws within the range with common random numbers.
+- Assigning each overlapping Mesonet stage band to one C646 stage is a design choice.
+- The 1 January start is an **assumption**. The Mesonet page doesn't state it, but it's corroborated: Tribune KS 2026 has a Mesonet season total of 4,346 F, and NASA POWER from 1 January to 30 June gives 4,443 F.
+
+**Limits:**
+- the daily minimum temperature is for a ~50 km grid cell
+- C646's thresholds assume two hours of exposure, which daily data can't resolve
+- snow cover isn't modelled
+
+**Check:** Saline KS on 6–8 April 2007 reached 17–20 F at about 900 GDD (jointing), so it is flagged. K-State SRP 982 reports 46% of the crop jointed by 2 April, then record cold in early April.
+
+Plans with wheat say, for example, "Freeze risk: in 3 of 24 years, temperatures fell below the jointing threshold (K-State C646)."
+
+## Is weather risk about water here? (`PlanResult.weatherRisk`)
+
+`waterLimited` is true when the aridity index is below 0.65 (drier than humid). For humid farms, `message` says weather risk is mostly not about water: wet springs, floods, wind and frost matter more, and most of those aren't modelled. The backtest supports this: Iowa yields barely track the water balance, while Kansas summer crops do (r ≈ 0.8–0.9).
+
 ## Fallow and the water score (FAO-56 bare-soil evaporation)
 
 Fallow isn't free on water: bare soil evaporates. With daily weather, fallow follows FAO-56 Ch. 11 for non-growing periods. That is the Ch. 7 evaporation balance with Kcb = Kc min = 0:
@@ -516,6 +548,7 @@ Fallow is scored over the same May–Sep window as summer crops. The surface sta
 | `CALIBRATION_PRIOR_SD` / `CALIBRATION_OBS_SD` | 0.15 / 0.20 | Field calibration shrinkage |
 | `CALIBRATION_EXCLUDED_EVENTS` | hail, flood, replant | One-off seasons not learned from |
 | `SWITCHING_PENALTY_WEIGHT` | 0.05 | Re-planning stability |
+| `FREEZE_DAMAGE_FACTORS`, `WHEAT_GDD_STAGES` (`croptraits.ts`) | ranges above | Freeze damage (unsourced design); stage mapping (design) |
 | `SCARCITY_CURVE` (`waterParams.ts`) | 0 at AI 0.65 → 1 at AI 0.20 | Water weight vs aridity (design; anchors are UNEP classes) |
 
 Also:

@@ -18,7 +18,8 @@
  * The key is read from the environment only and never written anywhere.
  */
 import { scenariosFromDailyWeather } from '../src/algorithm/climate';
-import type { Farm, Land, Paddock } from '../src/algorithm/types';
+import { freezeFactor } from '../src/algorithm/frost';
+import type { Farm, FreezeEventSummary, Land, Paddock } from '../src/algorithm/types';
 import { fetchCountyOutline, sampleCroplandSoils } from '../src/data/countySample';
 import { fetchPowerDaily } from '../src/data/power';
 import { fetchSoilAtPoint } from '../src/data/ssurgo';
@@ -51,6 +52,8 @@ const FIRST = 2001;
 const LAST = 2024;
 const SAMPLE_N = 15;
 const CDL_YEAR = 2020;
+/** Evaluation choice, fixed before the freeze run: a "bad wheat year" is below 80% of trend. */
+const BAD_YEAR = 0.8;
 
 async function quickStatsYields(key: string, c: County, commodity: string, util?: string): Promise<Map<number, number>> {
   const q = new URLSearchParams({
@@ -123,6 +126,7 @@ async function main(): Promise<void> {
   const key = process.env['NASS_API_KEY'];
   const lines: string[] = [`# Backtest: NASA POWER water balance vs county yields (${FIRST}-${LAST})`, ''];
   if (!key) lines.push('> **No `NASS_API_KEY` set: only model series are shown.**', '');
+  const detection: string[] = [];
   const summary: string[] = ['| County | Crop | Soils | r | Mean abs. error | Spread model / actual | Worst real year (actual / model) |', '|---|---|---|---|---|---|---|'];
 
   for (const c of COUNTIES) {
@@ -150,11 +154,13 @@ async function main(): Promise<void> {
       ['sample', sample.points.map((p) => p.soil.land)],
     ];
     const models: Record<string, Map<string, Map<number, number>>> = {};
+    const freezeByYear = new Map<number, FreezeEventSummary | null>();
     for (const [mode, lands] of modes) {
       const climate = scenariosFromDailyWeather(farmFrom(c, lat, lands), power.weather, { crops: c.crops.map((x) => x.cropId) });
       const byCrop = new Map<string, Map<number, number>>();
       for (const s of climate.scenarios) {
         const y = Number(s.label!.slice(0, 4));
+        if (s.freeze && 'winter-wheat' in s.freeze) freezeByYear.set(y, s.freeze['winter-wheat'] ?? null);
         for (const crop of c.crops) {
           const m = s.multipliers[crop.cropId];
           if (m === undefined) continue;
@@ -163,9 +169,20 @@ async function main(): Promise<void> {
         }
       }
       models[mode] = byCrop;
+      // Wheat with the freeze factor (design midpoints, fixed before this run).
+      const wheat = byCrop.get('winter-wheat');
+      if (wheat) {
+        const withFreeze = new Map<number, number>();
+        for (const [y, m] of wheat) {
+          const ev = freezeByYear.get(y);
+          withFreeze.set(y, m * (ev ? freezeFactor(ev.effect) : 1));
+        }
+        byCrop.set('winter-wheat+freeze', withFreeze);
+      }
     }
 
-    for (const crop of c.crops) {
+    const cropList = c.crops.flatMap((x) => (x.cropId === 'winter-wheat' ? [x, { ...x, cropId: 'winter-wheat+freeze' }] : [x]));
+    for (const crop of cropList) {
       lines.push(`### ${crop.cropId}`, '');
       if (!key) {
         for (const mode of ['point', 'sample']) {
@@ -177,6 +194,23 @@ async function main(): Promise<void> {
         continue;
       }
       const actual = detrend(await quickStatsYields(key, c, crop.commodity, crop.util));
+      if (crop.cropId === 'winter-wheat+freeze') {
+        // (a) Detection, sourced parts only: flagged years, stage, minimum temperature, actual yield.
+        const det: string[] = ['| Year | Freeze flagged | Stage | Min temp (F) / threshold | Date | Actual / trend | Outcome |', '|---|---|---|---|---|---|---|'];
+        let hits = 0, misses = 0, falseAlarms = 0;
+        for (const y of [...freezeByYear.keys()].sort()) {
+          const ev = freezeByYear.get(y) ?? null;
+          const a = actual.get(y);
+          if (a === undefined) continue;
+          const bad = a < BAD_YEAR;
+          const outcome = ev && bad ? 'hit' : ev && !bad ? 'false alarm' : !ev && bad ? 'miss' : '';
+          if (outcome === 'hit') hits++;
+          if (outcome === 'miss') misses++;
+          if (outcome === 'false alarm') falseAlarms++;
+          if (ev || bad) det.push(`| ${y} | ${ev ? 'yes' : 'no'} | ${ev?.stage ?? ''} | ${ev ? `${Math.round(ev.tminF)} / ${ev.thresholdF}` : ''} | ${ev?.date ?? ''} | ${a.toFixed(2)} | ${outcome} |`);
+        }
+        detection.push(`**${outline.name}**: ${hits} hits, ${misses} misses, ${falseAlarms} false alarms (bad year = actual < ${BAD_YEAR} of trend).`, '', ...det, '');
+      }
       const rows: string[] = ['| Year | Actual / trend | Model (point) | Model (sample) |', '|---|---|---|---|'];
       for (const mode of ['point', 'sample']) {
         const model = models[mode]!.get(crop.cropId) ?? new Map<number, number>();
@@ -202,7 +236,9 @@ async function main(): Promise<void> {
       lines.push(...rows, '');
     }
   }
-  if (key) lines.splice(2, 0, '## Summary (* = held-out county)', '', ...summary, '');
+  if (key) {
+    lines.splice(2, 0, '## Summary (* = held-out county)', '', ...summary, '', '## Wheat freeze detection (K-State C646 thresholds, NASA POWER Tmin)', '', ...detection, '');
+  }
   console.log(lines.join('\n'));
 }
 

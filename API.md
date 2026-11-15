@@ -22,11 +22,33 @@ All functions are synchronous and pure except `buildFarm`, which fetches data. I
 | Function names and argument order below | Wording of every `label`, `reason`, `reasons[]`, `risks[]`, `informationGaps[]`, `localReview[]` (treat as display text) |
 | `Farm`, `Paddock`, `Land`, `Priorities`, `Market`, `Plan` / `SeasonSlot` shapes | Order and number of `terms` and `objectiveTerms` |
 | `Warning` shape `{ lens, severity, reason }` and the 8 lens names | Thresholds behind warning severities |
-| `PlanResult` top-level numbers: `expectedGM`, `p10GM`, `probBeatsCurrent`, `nitrogenCarriedForward`, `riskAdjustedProfit`, `soilHealth`, `endSoilHealth`, `soilHealthRange`, `waterUse`, `objective`, `rankStability` | Scale of `soilHealth` and `objective` (composite indices; their weights are design choices). The water weight is scaled by the farm's aridity (last `objectiveTerms` entry). |
+| `PlanResult.weatherRisk` shape. `PlanResult` top-level numbers: `expectedGM`, `p10GM`, `probBeatsCurrent`, `nitrogenCarriedForward`, `riskAdjustedProfit`, `soilHealth`, `endSoilHealth`, `soilHealthRange`, `waterUse`, `objective`, `rankStability` | Scale of `soilHealth` and `objective` (composite indices; their weights are design choices) |
 | `paddocks[].years[]`: `cropId`, `yieldPerAcre`, `yieldUnit`, `grossMarginPerAcre`, `soilHealthIndex`, `erosionTonsPerAcre`, `waterUseIndex` | Units of `waterUseIndex`: inches with NASA POWER data, a unitless kc index without it |
 | `exclusions[paddockId][]`: `{ cropId, kind, reason }` | New `Exclusion.kind` values may be added |
 | `FarmState` and `SeasonReport` shapes | `WeatherScenario` internals (`byPaddock`, `byPaddockAfter`, `water`): treat as opaque and pass through |
 | | `GenerateResult.stats`, `referenceBounds` and `replanning` details; `buildFarm` provenance strings |
+
+## Changes since the first version of this page
+
+| Field | Change | Stability |
+|---|---|---|
+| `PlanResult.weatherRisk` | **New.** `{ waterLimited, aridityIndex, aridityClass, message }`. Use `message` for the "is weather risk about water here?" note. | Shape stable; message wording may change |
+| `objectiveTerms` | The last entry now explains the water weight, e.g. "Water is plentiful here (aridity index 0.90, humid), so water use counts for little" | Display text |
+| `years[].terms` for winter wheat | May include "Freeze risk: in 3 of 24 years, temperatures fell below the jointing threshold (K-State C646); average effect" | Display text |
+| `risks[]` | Plans with winter wheat may include a freeze-risk line | Display text |
+| `waterUseIndex` (NASA POWER farms) | Dryland now means water **used** (crop ET or fallow evaporation), not the shortfall | Number stable; meaning documented |
+| `WeatherScenario` | New internal fields `climate`, `freeze` (per year) and `freezeRisk` (pool average) | Opaque: pass through |
+
+Example `weatherRisk` for a humid Iowa farm:
+
+```json
+{
+  "waterLimited": false,
+  "aridityIndex": 0.9,
+  "aridityClass": "humid",
+  "message": "Weather risk here is mostly not about water (humid, aridity index 0.90): wet springs, floods, wind and frost matter more, and the model doesn't capture most of those yet."
+}
+```
 
 ## generatePlans(farm, priorities, market, scenarios, options?)
 
@@ -151,12 +173,12 @@ This returns three plans: the current rotation continued, max profit, and the pl
         {
           "year": 0,
           "cropId": "soybeans",
-          "yieldPerAcre": 49.75,
+          "yieldPerAcre": 49.616,
           "yieldUnit": "bu",
-          "grossMarginPerAcre": 253.434,
+          "grossMarginPerAcre": 252.006,
           "soilHealthIndex": 0.342,
-          "erosionTonsPerAcre": 5.078,
-          "waterUseIndex": 17.119,
+          "erosionTonsPerAcre": 5.09,
+          "waterUseIndex": 18.246,
           "terms": [
             {
               "label": "US average Soybeans yield",
@@ -194,14 +216,14 @@ This returns three plans: the current rotation continued, max profit, and the pl
       ]
     }
   ],
-  "expectedGM": 63324.586,
-  "p10GM": 40853.901,
+  "expectedGM": 63174.322,
+  "p10GM": 42907.346,
   "probBeatsCurrent": 0,
   "nitrogenCarriedForward": 812,
   "marginBreakdown": [
     {
       "label": "Cash margin, expected over the plan",
-      "value": 63324.586,
+      "value": 63174.322,
       "unit": "$",
       "basis": "input"
     },
@@ -218,25 +240,25 @@ This returns three plans: the current rotation continued, max profit, and the pl
       "basis": "sourced"
     }
   ],
-  "riskAdjustedProfit": 55148.312,
-  "soilHealth": 0.562,
-  "endSoilHealth": 0.553,
+  "riskAdjustedProfit": 55879.531,
+  "soilHealth": 0.561,
+  "endSoilHealth": 0.552,
   "soilHealthRange": {
     "p10": 0.558,
-    "p90": 0.587
+    "p90": 0.586
   },
-  "waterUse": 18.413,
-  "objective": 0.788,
+  "waterUse": 19.41,
+  "objective": 0.846,
   "objectiveTerms": [
     {
-      "label": "Profit (risk-adjusted, lambda 0.40): 87% of the way from worst to best, weight 43%",
-      "value": 0.371,
+      "label": "Profit (risk-adjusted, lambda 0.40): 88% of the way from worst to best, weight 55%",
+      "value": 0.482,
       "unit": "score",
       "basis": "design"
     },
     {
-      "label": "Soil health: 80% of the way from worst to best, weight 36%",
-      "value": 0.285,
+      "label": "Soil health: 80% of the way from worst to best, weight 45%",
+      "value": 0.363,
       "unit": "score",
       "basis": "design"
     }
@@ -245,9 +267,15 @@ This returns three plans: the current rotation continued, max profit, and the pl
     "Yields start from US averages: compare them with your own records or county yields before trusting the dollar figures.",
     "Pest and disease penalties (white mold, nematodes, repeats) are estimates: check local pressure with your agronomist."
   ],
-  "rankStability": 0.75,
+  "weatherRisk": {
+    "waterLimited": false,
+    "aridityIndex": 0.898,
+    "aridityClass": "humid",
+    "message": "Weather risk here is mostly not about water (humid, aridity index 0.90): wet springs, floods, wind and frost matter more, and the model doesn't capture most of those yet."
+  },
+  "rankStability": 0.735,
   "reasons": [
-    "Best match for your priorities: profit 43%, soil health 36%, water 21%; risk lambda 0.40.",
+    "Best match for your priorities: profit 55%, soil health 45%, water 0%; risk lambda 0.40.",
     "North 40, year 2: N credit from Soybeans (35 lb N/ac x $0.58/lb) saves $20/ac of fertiliser."
   ],
   "risks": [
@@ -348,13 +376,13 @@ This scores a plan the farmer built. It uses the same numbers as `generatePlans`
 ```json
 {
   "kind": "custom",
-  "expectedGM": 52470.125,
-  "p10GM": 31953.664,
+  "expectedGM": 52539.029,
+  "p10GM": 34757.619,
   "probBeatsCurrent": 0,
   "nitrogenCarriedForward": 0,
-  "soilHealth": 0.562,
-  "waterUse": 19.759,
-  "objective": 0.649,
+  "soilHealth": 0.561,
+  "waterUse": 20.619,
+  "objective": 0.719,
   "rankStability": null,
   "risks": [
     "North 40, year 1: White mold risk: Soybeans after 1 recent host year(s).",
@@ -487,7 +515,7 @@ const again = replan(next, priorities, market);            // stays close to the
 
 ```json
 [
-  "North 40: Soybeans yielded 61.0 vs 53.9 predicted (+13%). Field factor now +5% from 1 season(s).",
+  "North 40: Soybeans yielded 61.0 vs 54.2 predicted (+13%). Field factor now +4% from 1 season(s).",
   "South 40: Corn (grain) yield recorded but not used to calibrate (hail)."
 ]
 ```
@@ -497,15 +525,15 @@ The field's learned yield factor is stored on the paddock (`paddock.yieldCalibra
 ```json
 {
   "soybeans": {
-    "factor": 1.046,
-    "logMean": 0.045,
+    "factor": 1.044,
+    "logMean": 0.043,
     "logSd": 0.12,
     "seasons": 1,
     "records": [
       {
         "season": 2026,
         "reported": 61,
-        "predicted": 53.885,
+        "predicted": 54.19,
         "used": true
       }
     ]
