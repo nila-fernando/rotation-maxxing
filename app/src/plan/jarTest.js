@@ -303,6 +303,7 @@ export const JAR_LINES = {
   onlyTexture: 'I only use the sand, silt and clay. Drainage and organic matter stay with the soil map.',
   used: (name, cls, placed = null) => `Done. By your jar, ${name} is ${String(cls).toLowerCase()}, and I’ll plan with that.${placed === 'gate' ? ' I’ve left the jar by its gate.' : placed === 'beside' ? ' I’ve left the jar beside it.' : placed === 'none' ? ' There’s no clear grass by it just now, so I’ll set the jar out when there’s room.' : ''}`,
   same: (name) => `Done. Your jar agrees with the soil map on ${name}, so your plans won’t change.`,
+  noSurvey: (name, cls) => `Done. By your jar, ${name} is ${String(cls).toLowerCase()}. There’s no soil survey for it though, so I still can’t plan it: I need the survey’s drainage and water holding too.`,
   undone: (name) => `Okay, ${name} is back on the soil map.`,
   earlier: 'Here’s your jar from earlier. I didn’t keep the photo, so take a new one to change it.',
   replanned: 'I’ve worked the plans out again with your jar test.',

@@ -1741,3 +1741,100 @@ body.jar-open .hub-tip { display: none; }
   #jar .linkish { min-height: 44px; }
   .jar-more summary { min-height: 44px; padding: 12px 0; box-sizing: border-box; }
 }
+
+/* ------------------------------------------------------------------ the guided walkthrough (src/ui/walkthrough.js) */
+/* "?" on Your fields: plays the tour again */
+.hub-panel__help {
+  position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%;
+  color: var(--ink-soft); background: var(--tile); border: 2px solid var(--tile-line); box-shadow: 0 2px 0 var(--tile-line);
+}
+.hub-panel__help:hover { color: var(--ink); background: var(--tile-hover); }
+.hub-panel__help:active { transform: translateY(1px); box-shadow: none; }
+.hub-panel__help svg { width: 18px; height: 18px; }
+.hub .hub-panel__help:focus-visible { outline: 3px solid var(--green-dark); outline-offset: 2px; box-shadow: none; }
+@media (max-width: 900px) and (min-height: 521px) {
+  .hub-panel__help { top: 8px; right: 10px; width: 30px; height: 30px; }
+}
+
+/* The spotlight dims everything around its target with a huge shadow and never takes the pointer,
+   so the farm stays usable during the tour. */
+.tour-spot {
+  position: fixed; z-index: 80; border-radius: 20px; pointer-events: none;
+  box-shadow: 0 0 0 3px var(--cream), 0 0 0 6px var(--wood), 0 0 0 100vmax rgb(14 10 32 / .55);
+  transition: left .3s ease, top .3s ease, width .3s ease, height .3s ease;
+}
+.tour-spot.is-none { box-shadow: 0 0 0 100vmax rgb(14 10 32 / .55); }
+.tour-card {
+  position: fixed; z-index: 81; left: 0; top: 0; width: min(340px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px); max-height: calc(100dvh - 24px); display: flex; flex-direction: column; overflow: hidden;
+  padding: 12px 16px 14px; color: var(--ink);
+  background: var(--cream); border: 4px solid var(--wood); border-radius: 22px;
+  box-shadow: 0 0 0 2px var(--wood-deep), 0 6px 0 -1px var(--wood-deep), 0 18px 40px rgb(0 0 0 / .45);
+  outline: none; transition: left .3s ease, top .3s ease; animation: tour-in .3s var(--spring);
+}
+.tour-card.is-still { transition: none; animation: none; }
+/* the head and the buttons stay put; the words scroll when the card is cut down to fit beside its spot */
+.tour-card__head, .tour-card__bar, .tour-card__foot { flex: none; }
+.tour-card__main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+/* more words below the fold: they fade out at the bottom, and a little arrow says to scroll */
+.tour-card__main.has-more {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 34px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 34px), transparent);
+}
+.tour-card__more { flex: none; display: none; justify-content: center; height: 0; position: relative; pointer-events: none; }
+.tour-card__main.has-more + .tour-card__more { display: flex; }
+.tour-card__more svg { position: absolute; bottom: 0; width: 20px; height: 20px; color: var(--ink-soft); animation: tour-more 1.6s ease-in-out infinite; }
+@keyframes tour-more { 50% { transform: translateY(3px); } }
+/* out of the way while an app dialog (the jar test, the time of day) is open over the hub */
+.tour-spot.is-aside, .tour-card.is-aside { visibility: hidden; opacity: 0; transition: none; animation: none; }
+.tour-card:focus-visible { box-shadow: 0 0 0 2px var(--wood-deep), 0 0 0 6px var(--green-dark), 0 18px 40px rgb(0 0 0 / .45); }
+.tour-card[data-quiet]:focus-visible { box-shadow: 0 0 0 2px var(--wood-deep), 0 6px 0 -1px var(--wood-deep), 0 18px 40px rgb(0 0 0 / .45); outline: none; }
+@keyframes tour-in { from { opacity: 0; transform: translateY(6px) scale(.97); } }
+.tour-card__head { display: flex; align-items: center; gap: 10px; }
+.tour-card__face {
+  flex: none; width: 44px; height: 44px; padding: 6px 5px 5px; border-radius: 50%; object-fit: contain;
+  background: var(--paper); border: 3px solid var(--wood);
+}
+.tour-card__who { flex: 1; min-width: 0; display: grid; line-height: 1.2; }
+.tour-card__name { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #9a4a43; }
+.tour-card__count { font-size: 13px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.tour-card__close {
+  flex: none; align-self: flex-start; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 11px;
+  color: var(--ink-soft); background: var(--tile); border: 2px solid var(--tile-line);
+}
+.tour-card__close:hover { color: var(--ink); background: var(--tile-hover); }
+.tour-card__close svg { width: 15px; height: 15px; }
+.tour-card__bar { height: 6px; margin: 10px 0 10px; border-radius: 99px; background: #ead8c0; overflow: hidden; }
+.tour-card__bar span { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--green-dark); transition: width .3s ease; }
+.tour-card__title { font-size: 19px; font-weight: 700; line-height: 1.2; margin-bottom: 4px; }
+.tour-card__body { font-size: 16px; line-height: 1.42; }
+.tour-card__src { display: grid; gap: 4px; margin-top: 10px; font-size: 13px; line-height: 1.3; color: var(--ink-soft); }
+.tour-card__src[hidden] { display: none; }
+.tour-card__src-label { font-size: 11.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.tour-card__src-item { display: flex; align-items: baseline; gap: 6px; }
+.tour-card__src-item .src-chip { flex: none; }
+.tour-card__try {
+  display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; padding: 8px 11px; border-radius: 13px;
+  background: #fffaf0; border: 2px dashed #e6cfa9; font-size: 15px; line-height: 1.35;
+}
+.tour-card__try[hidden] { display: none; }
+.tour-card__try.is-done { background: #e6f6ea; border: 2px solid var(--green); color: var(--green-ink); }
+.tour-card__try-icon { flex: none; display: grid; width: 18px; height: 18px; margin-top: 1px; color: #d4a52c; }
+.tour-card__try.is-done .tour-card__try-icon { color: var(--green-dark); }
+.tour-card__try-icon svg { width: 18px; height: 18px; }
+.tour-card__foot { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+.tour-card__spacer { flex: 1; }
+.tour-card__skip { padding: 6px 4px; color: var(--ink-soft); font-size: 14px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.tour-card__skip:hover { color: var(--ink); }
+.tour-card__skip[hidden], .tour-card__back[hidden] { display: none; }
+.tour-card .btn--small { height: 38px; padding: 0 16px; }
+/* Manami is in the card while the tour is on */
+body.is-touring .manami { opacity: 0; pointer-events: none; transform: translateY(24px) scale(.7); }
+@media (max-width: 520px) {
+  .tour-card { padding: 10px 14px 12px; }
+  .tour-card__body { font-size: 15px; }
+  .tour-card__face { width: 38px; height: 38px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tour-spot, .tour-card, .tour-card__bar span, .tour-card__more svg { transition: none; animation: none; }
+}
