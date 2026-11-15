@@ -1,6 +1,6 @@
-# Team Sheeeep
+# Rotation-Maxxing
 
-A cozy 3D farm-island app for US farmers. Find your farm on the globe, pick your fields from USDA
+A cozy 3D farm-island app (made by Team Sheeeep) for US farmers. Find your farm on the globe, pick your fields from USDA
 outlines, answer three quick questions, and your farm appears as an island. "Plan my next seasons"
 runs the crop-rotation planner (`src/vendor/rotation-maxxing`), and "See them on the farm" plays
 the plans out on the island.

@@ -138,7 +138,22 @@ export function createFlock({ heightAt, field, fields, obstacles, minHeight = 0.
     if (!(dt > 0)) return;
     for (const sh of sheep) {
       const w = sh.walker, g = sh.g, p = g.position;
-      if (w.mode === 'idle') {
+      if (w.spin) {
+        // turning on the spot (spin()): stays put, head up, then goes back to idling
+        const s = w.spin;
+        s.t += dt;
+        const k = Math.min(1, s.t / s.duration);
+        const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2; // eases in and out
+        w.heading = s.from + s.turns * Math.PI * 2 * e;
+        w.graze = false;
+        if (k >= 1) {
+          w.spin = null;
+          w.heading = s.from;
+          w.mode = 'idle';
+          w.timer = 1.5 + rnd() * 2;
+          s.onDone?.();
+        }
+      } else if (w.mode === 'idle') {
         w.timer -= dt;
         if (w.timer < 0) {
           for (let k = 0; k < 14; k++) {
@@ -177,5 +192,16 @@ export function createFlock({ heightAt, field, fields, obstacles, minHeight = 0.
     }
   }
 
-  return { add, update, walkable, findSpot, get sheep() { return sheep; } };
+  /**
+   * Turns a sheep on the spot: `turns` full turns over `duration` seconds, then back to idling.
+   * It stays where it is (the same footprint), so it can't bump into anything.
+   */
+  function spin(sh, { turns = 2, duration = 4, onDone } = {}) {
+    if (!sh?.walker) return;
+    const w = sh.walker;
+    w.mode = 'idle';
+    w.spin = { t: 0, from: w.heading, turns, duration, onDone };
+  }
+
+  return { add, update, spin, walkable, findSpot, get sheep() { return sheep; } };
 }

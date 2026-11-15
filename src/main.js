@@ -23,6 +23,7 @@ import { createHub } from './screens/hub.js';
 import { createReveal } from './screens/reveal.js';
 import { createTimeTravel } from './screens/timeTravel.js';
 import { createManami } from './ui/manami.js';
+import { createFarmSpins } from './ui/rotateManami.js';
 import { createSearchBox } from './ui/searchBox.js';
 import { warmUpLiveOutlines } from './fields/liveOutlines.js';
 
@@ -278,6 +279,8 @@ const reveal = createReveal({
     hub.show(island); // the farm's home screen from here on
     paintStatuses();
     timeTravel.show(island, { history: cropHistories(), today: today(), hour: hourParam(), liveDate: !params.has('today') });
+    farmSpins?.dispose();
+    farmSpins = createFarmSpins(island.view); // now and then Manami turns on the spot: "When they see me rotate…"
     // dev shortcut: ?hub=5&futures=1 opens the plans on the island with Manami's walk, &futures=explore without
     if (import.meta.env.DEV && params.has('futures') && !app.futuresShown) {
       app.futuresShown = true;
@@ -286,7 +289,11 @@ const reveal = createReveal({
   },
 });
 
+let farmSpins = null;
+
 function startReveal({ instant = false } = {}) {
+  farmSpins?.dispose();
+  farmSpins = null;
   document.body.classList.remove('reveal-done');
   fieldPanel.close();
   openSeq++;
@@ -356,6 +363,8 @@ function handle(event) {
       fieldsStep.start(event.place);
       break;
     case 'returned':
+      farmSpins?.dispose();
+      farmSpins = null;
       app.farm = null;
       app.fields = [];
       app.farmProfile = null;
@@ -404,7 +413,7 @@ function testFields(n) {
   return out;
 }
 
-if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures }; // for poking at in the console
+if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, rotateManami: () => farmSpins?.now() }; // for poking at in the console
 
 // ---------------------------------------------------------------- the first five seconds
 (async function intro() {

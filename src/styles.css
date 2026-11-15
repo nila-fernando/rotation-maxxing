@@ -1497,3 +1497,34 @@ body.fut-card-open .manami { visibility: hidden; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ------------------------------------------------------------------ "When they see me rotate…" */
+/* (src/ui/rotateManami.js) Manami turning on top of the data checklist, and now and then on the farm */
+.rotate-bubble {
+  position: relative; margin: 0; padding: 7px 12px; border-radius: 14px;
+  background: var(--cream); border: 3px solid var(--wood); box-shadow: 0 4px 0 var(--wood-dark);
+  font: 600 14px/1.2 var(--font); color: var(--ink); white-space: nowrap; pointer-events: none;
+}
+.rotate-bubble::after { /* the tail */
+  content: ""; position: absolute; width: 12px; height: 12px; background: var(--cream);
+  border: solid var(--wood); border-width: 0 3px 3px 0;
+}
+.rotate-manami {
+  position: absolute; left: 50%; bottom: calc(100% - 22px); width: 128px; height: 128px;
+  transform: translateX(-50%); pointer-events: none;
+}
+.rotate-manami__stage { display: block; width: 100%; height: 100%; }
+.rotate-manami .rotate-bubble { position: absolute; right: calc(100% - 6px); top: 18px; animation: rotate-pop .5s var(--spring) .6s both; }
+.rotate-manami .rotate-bubble::after { right: -8px; top: 50%; transform: translateY(-50%) rotate(-45deg); }
+@keyframes rotate-pop { from { opacity: 0; transform: scale(.6) translateX(10px); } }
+/* phones and tablets: the checklist is along the top, so she sits in its corner */
+@media (max-width: 900px) {
+  .rotate-manami { left: auto; right: -4px; bottom: auto; top: -36px; width: 84px; height: 84px; transform: none; }
+  .rotate-manami .rotate-bubble { top: 10px; font-size: 12.5px; padding: 5px 10px; }
+}
+.rotate-bubble--farm {
+  position: fixed; left: 0; top: 0; z-index: 24; opacity: 0; margin-top: -10px;
+  transition: opacity .25s ease;
+}
+.rotate-bubble--farm.is-on { opacity: 1; }
+.rotate-bubble--farm::after { left: 50%; bottom: -8px; transform: translateX(-50%) rotate(45deg); }
