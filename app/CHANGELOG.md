@@ -4,6 +4,17 @@
 
 ### What's new
 
+- **Ask Manami.** Tap "Ask me" by Manami (or "Ask about this field" in a check-up) and ask anything
+  about your farm, your fields or the plans. She looks at your real field data before she answers.
+  It runs on Anthropic's Claude (Sonnet 5.5), through a small server, so no key is ever in the website.
+- **The jar test reads your photo with AI.** Pick a photo of your settled jar and Manami reads the
+  layers with Claude's vision. If she can't read it, or AI is off, the app reads it on your device
+  as before. The app tells you before a photo leaves your device, and photos are never stored.
+- **Plans, rotation first.** "Plan my next seasons" now leads with the rotation, why it's good for
+  the soil, then the money. Each field shows its next three seasons as a simple strip, and every
+  crop icon shows its name when you point at it or tap it.
+- **When to sow.** A new tab gives the best sowing and harvest windows for each crop, from USDA's
+  usual planting and harvest dates and its crop progress reports, with each source named.
 - **The real weather on your farm.** The island now shows the weather at your farm right now:
   rain, snow, fog, storms, clouds and wind, on top of the season and the time of day. It checks
   again every 20 minutes, and when you're offline the farm just has a fair day. The time-of-day
