@@ -239,3 +239,33 @@
 .rib__row.is-lit > th, .rib__row.is-lit > td { animation: rib-lit 1.8s ease-out; }
 @keyframes rib-lit { 0%, 35% { background: #d6f0dc; } 100% { background: var(--paper); } }
 @media (prefers-reduced-motion: reduce) { .rib__row.is-lit > th, .rib__row.is-lit > td { animation: none; background: #e4f5e8; } }
+
+/* ---- a phone: each field a strip (name, acres and verdict across the top, its seasons below),
+   and each plan's money a small card, instead of squeezing a five-column table into 360 px ---- */
+@media (max-width: 640px) {
+  .rib, .rib > thead, .rib > tbody { display: block; }
+  .rib > thead > tr, .rib > tbody > tr.rib__row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; }
+  .rib > thead .rib__fieldh, .rib .rib__y--old { display: none; }
+  .rib > tbody > tr.rib__row { margin-top: 6px; padding-bottom: 6px; border-radius: 14px; background: var(--paper); }
+  .rib__row > td, .rib__row > th { background: none !important; border-radius: 0 !important; }
+  .rib__row > th.rib__fieldc { grid-column: 1 / -1; }
+  .rib__row .rib__open { border-radius: 14px 14px 0 0; padding: 7px 10px; grid-template-columns: auto 1fr auto; grid-template-areas: "name acres chev" "verdict verdict chev"; column-gap: 8px; }
+  .rib__row.is-open > th, .rib__row.is-open > td { background: none; }
+  .rib > tbody > tr.rib__row.is-open { background: #fff3dd; border-radius: 14px 14px 0 0; }
+  .rib__name { font-size: 15px; }
+  .rib__verdict { font-size: 11.5px; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+  .rib > tbody > tr.rib__story { display: block; }
+  .rib > tbody > tr.rib__story[hidden] { display: none; }
+  .rib > tbody > tr.rib__story > td { display: block; }
+
+  .rot-money__wrap { overflow: visible; }
+  .rot-money__table, .rot-money__table tbody { display: block; min-width: 0; }
+  .rot-money__table thead { display: none; }
+  .rot-money__table tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 10px; margin-top: 8px; padding: 8px 12px; border-radius: 14px; background: var(--paper); }
+  .rot-money__table tr.is-on { background: #eef8ec; box-shadow: inset 0 0 0 2px #a9d6b4; }
+  .rot-money__table tr.is-on th, .rot-money__table tr.is-on td { background: none; }
+  .rot-money__table th, .rot-money__table td { border: 0; padding: 0; text-align: left; }
+  .rot-money__table tbody th { grid-column: 1 / -1; font-size: 14px; }
+  .rot-money__table td { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .rot-money__table td::before { content: attr(data-label); display: block; font-size: 11.5px; font-weight: 600; color: var(--ink-soft); }
+}

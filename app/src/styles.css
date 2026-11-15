@@ -1278,13 +1278,15 @@ body.plan-futures .manami { bottom: calc(var(--fut-dock-h, 200px) + 30px); }
 
 .fut-dock {
   position: fixed; z-index: 26; bottom: 16px; left: calc(var(--gutter) * 2 + var(--hub-w, 0px)); right: var(--gutter);
-  max-width: 920px; margin-inline: auto; display: flex; flex-direction: column; gap: 8px; padding: 10px 14px;
+  /* one spacing step (--fut-gap) between the rows, inside them and between the tiles */
+  --fut-gap: 10px;
+  max-width: 920px; margin-inline: auto; display: flex; flex-direction: column; gap: var(--fut-gap); padding: 12px 14px;
   background: var(--cream); border: 3px solid var(--wood); border-radius: 22px; color: var(--ink);
   box-shadow: 0 0 0 2px var(--wood-deep), 0 4px 0 -1px var(--wood-deep), 0 12px 26px rgb(60 40 80 / .25);
   animation: hub-in-bottom-dock .45s var(--spring) both;
 }
 .fut-dock[hidden] { display: none; }
-.fut-dock__row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.fut-dock__row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--fut-gap); }
 .fut-dock__row--top { flex-wrap: nowrap; }
 .fut-dock__title { flex: none; font-size: 11.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft); max-width: 130px; line-height: 1.25; }
 .fut-dock__title:focus { outline: none; }
@@ -1304,7 +1306,7 @@ body.plan-futures .manami { bottom: calc(var(--fut-dock-h, 200px) + 30px); }
   position: relative; display: flex; align-items: center; gap: 7px; min-height: 40px; padding: 4px 10px; border-radius: 13px;
   color: var(--ink-soft); font-size: 14px; font-weight: 700; text-align: left; line-height: 1.15;
 }
-.fut-plan { flex: 1; min-width: 0; }
+.fut-plan { flex: 1; min-width: 0; justify-content: center; } /* (its icon and words in the middle, not stuck to the left of a wide button) */
 .fut-plan:hover, .fut-season:hover { background: var(--tile-hover); color: var(--ink); }
 .fut-plan[aria-checked="true"], .fut-season[aria-checked="true"] { background: var(--green); color: var(--green-ink); box-shadow: inset 0 0 0 2px var(--green-dark); }
 .fut-plan__icon { flex: none; width: 20px; height: 20px; display: grid; place-items: center; }
@@ -1315,7 +1317,7 @@ body.plan-futures .manami { bottom: calc(var(--fut-dock-h, 200px) + 30px); }
 .fut-plan__subrow { display: flex; align-items: center; gap: 5px; min-width: 0; }
 .fut-plan__sub { font-size: 12px; font-weight: 600; opacity: .85; font-variant-numeric: tabular-nums; }
 .fut-plan__badge { flex: none; padding: 1px 6px; border-radius: 999px; background: var(--green-dark); color: #fff; font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; }
-.fut-season { flex-direction: column; align-items: flex-start; gap: 1px; padding: 4px 12px; font-variant-numeric: tabular-nums; }
+.fut-season { flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 4px 12px; font-variant-numeric: tabular-nums; } /* (centred both ways, with or without its money line) */
 .fut-season__year { display: flex; align-items: center; gap: 5px; font-size: 14.5px; }
 .fut-season__year svg { width: 15px; height: 15px; }
 .fut-season__cash { font-size: 11.5px; font-weight: 600; opacity: .85; white-space: nowrap; }
@@ -1332,6 +1334,19 @@ body.plan-futures .manami { bottom: calc(var(--fut-dock-h, 200px) + 30px); }
 .fut-tile__diff.is-up { background: #eef8ec; color: var(--green-dark); }
 .fut-tile__diff.is-down { background: #fbe9e5; color: var(--rose-dark); }
 .fut-more { display: none; }
+/* wider screens: the dock in three calm rows (the plan picker; the season picker with the money
+   switch; the score tiles across the full width), so every tile's label sits on one line. The
+   "Your next 3 seasons" eyebrow repeated what the season picker shows: it stays for screen readers. */
+@media (min-width: 901px) {
+  .fut-dock__title { position: absolute; width: 1px; height: 1px; max-width: none; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .fut-dock__row--mid { display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "seasons . money" "score score score"; gap: var(--fut-gap); align-items: stretch; }
+  .fut-seasons { grid-area: seasons; }
+  .fut-money { grid-area: money; height: auto; min-height: 46px; } /* as tall as the season picker beside it */
+  .fut-score { grid-area: score; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--fut-gap); }
+  .fut-tile { padding: 8px 12px; border-radius: 13px; }
+  .fut-tile__label, .fut-tile__num { white-space: nowrap; }
+  .fut-tile__num { flex-wrap: nowrap; }
+}
 
 /* round icon buttons: the dock's X, the card's steps */
 .fut-close, .fut-step {

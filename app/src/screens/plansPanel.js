@@ -418,8 +418,9 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
       const [cash, bad, soil, beats] = cf.tiles(cmp, kind, mixScore, choice);
       const on = kind === selected;
       return `<tr${on ? ' class="is-on"' : ''}><th scope="row">${esc(planName(kind))}${on ? '<span class="sr-only"> (on show)</span>' : ''}</th>`
-        + `<td>${cell(cash.value, money)}</td><td>${cell(bad.value, money)}</td><td>${cell(soil.value, (v) => `${v}/100`)}</td>`
-        + `<td>${kind === 'current' ? '–' : cell(beats.value, (v) => `${v}% of years`)}</td></tr>`;
+        // (data-label: a phone shows each plan as a small card, its numbers labelled one by one)
+        + `<td data-label="Cash margin, 3 seasons">${cell(cash.value, money)}</td><td data-label="In a bad year">${cell(bad.value, money)}</td><td data-label="Soil score in ${cmp.years[2]}">${cell(soil.value, (v) => `${v}/100`)}</td>`
+        + `<td data-label="Beats keeping going">${kind === 'current' ? '–' : cell(beats.value, (v) => `${v}% of years`)}</td></tr>`;
     }).join('');
     const lines = [fv.priceLine(cmp.price), fv.vsProfitLine(cmp), fv.nCarriedLine(cmp, selected, mixScore, choice)].filter(Boolean);
     return `<div class="rot-money__wrap"><table class="rot-money__table"><caption class="sr-only">Money for each plan, over 3 seasons</caption>
