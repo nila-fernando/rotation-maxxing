@@ -19,7 +19,7 @@ import { fillSlope, withSlope } from './data/terrain.js';
 import { farmRain, withRain } from './data/rain.js';
 import { fillNdvi, withNdvi } from './data/greenness.js';
 import { centroid, featureCollection, feature as turfFeature } from '@turf/turf';
-import { demoRecordFor, fieldReportFor, HISTORY_YEARS } from './data/fieldReport.js';
+import { demoRecordFor, fieldReportFor, HISTORY_YEARS, SOURCES } from './data/fieldReport.js';
 import { createPlanner } from './plan/planner.js';
 import { JAR_LINES } from './plan/jarTest.js';
 import { fieldWeatherNote, weatherKey } from './plan/weatherWords.js';
@@ -36,6 +36,7 @@ import { createHub } from './screens/hub.js';
 import { createReveal } from './screens/reveal.js';
 import { createTimeTravel } from './screens/timeTravel.js';
 import { createManami } from './ui/manami.js';
+import { createWalkthrough } from './ui/walkthrough.js';
 import { createFarmSpins } from './ui/rotateManami.js';
 import { createSearchBox } from './ui/searchBox.js';
 import { warmUpLiveOutlines } from './fields/liveOutlines.js';
@@ -515,6 +516,27 @@ function today() {
   return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12) : new Date();
 }
 
+// ---------------------------------------------------------------- the guided walkthrough
+// Manami shows the farmer round the hub the first time it appears (src/ui/walkthrough.js); the "?"
+// on Your fields plays it again. It opens a field's check-up and the plans to show them, and closes
+// what it opened.
+const tour = createWalkthrough({
+  sources: SOURCES,
+  say: (line) => { if (app.island) manami.say(line); },
+  ctx: {
+    isOpen: (need) => (need === 'checkup' ? !!app.openFieldId : need === 'plans' ? plansPanel.isOpen : false),
+    openField: () => {
+      const id = document.querySelector('#hubList .hub-field')?.dataset.id || app.fields[0]?.id;
+      if (id) hub.select(id);
+    },
+    closeField: () => hub.overview(),
+    openPlans: () => plansPanel.open(),
+    closePlans: () => plansPanel.close(),
+  },
+});
+$('hubHelp').addEventListener('click', () => tour.start());
+const TOUR_AFTER_MS = 1400; // Manami's hello on the island first
+
 const reveal = createReveal({
   map: globe.map,
   manami,
@@ -529,6 +551,11 @@ const reveal = createReveal({
     ambience.attach({ getScene: () => sceneOf(timeTravel.session), hasWindmill: () => !!island.view.spinners?.length });
     farmSpins?.dispose();
     farmSpins = createFarmSpins(island.view); // now and then Manami turns on the spot: "When they see me rotate…"
+    // the first time the hub appears, Manami shows the farmer round (not over a dialog, nor a dev shortcut's plans)
+    setTimeout(() => {
+      const busy = plansPanel.isOpen || planFutures?.active || islandPlanner.active || document.body.classList.contains('jar-open');
+      if (app.island === island && !busy) tour.maybeAutoStart();
+    }, TOUR_AFTER_MS);
     // dev shortcut: ?hub=5&futures=1 opens the plans on the island with Manami's walk, &futures=explore without
     if (import.meta.env.DEV && params.has('futures') && !app.futuresShown) {
       app.futuresShown = true;
@@ -543,6 +570,7 @@ const ambience = createAmbience();
 bindSoundToggle($('hubSound'), ambience);
 
 function startReveal({ instant = false } = {}) {
+  tour.stop();
   farmSpins?.dispose();
   farmSpins = null;
   jarPanel.close({ restore: false });
@@ -620,6 +648,7 @@ function handle(event) {
       fieldsStep.start(event.place);
       break;
     case 'returned':
+      tour.stop();
       farmSpins?.dispose();
       farmSpins = null;
       jarPanel.close({ restore: false });
@@ -674,7 +703,7 @@ function testFields(n) {
   return out;
 }
 
-if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, jarPanel, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now(), ambience }; // for poking at in the console
+if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, jarPanel, tour, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now(), ambience }; // for poking at in the console
 
 // ---------------------------------------------------------------- the first five seconds
 (async function intro() {

@@ -38,6 +38,7 @@ demo farm's weather and planner run offline, from data in the repo.
 | `&hour=21.5` | a time of day (21.5 is 9:30 pm) |
 | `&today=2026-12-24` | a date, for the season and festival on the island |
 | `?demo=land` | lands on the demo farm at once, to pick fields yourself |
+| `&tour=1` / `&tour=0` | always / never start Manami's tour of the hub (it starts by itself only the first time; the ? on Your fields plays it again) |
 
 To try the soil jar test, open a field on `?hub=5` (West 140, say), then "Try a jar test" in its
 check-up (or "Test your soil" under the field list), and "Try a sample jar". "Use for West 140"
