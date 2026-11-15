@@ -3,6 +3,18 @@
 @import './styles/calendar.css';
 @import './styles/futures-rotation.css';
 /* Team Sheeeep: the cozy kit from the island prototype, plus the find-your-farm screen. */
+/*
+ * Layers, bottom to top (z-index). Keep new things on one of these, and the rules in main.js
+ * ("how the panels share the screen") for what may be open together.
+ *    1-18   the world: the map, the globe, the island
+ *    20-25  the header (logo, search, year bar, "Plan my next seasons") and the field-picking tools
+ *    24-27  the farm's own overlays: field badges, the field list and docks, tooltips, your-farms button
+ *    27-28  side sheets: a field's check-up, the plan view's field card and notes
+ *    29     workspaces: the plans, the jar test (one at a time)
+ *    30-32  Manami and Ask Manami (the chat sits above a check-up it was opened from)
+ *    60     popovers: your farms, the crop and badge tips (they close when anything else opens)
+ *    80-81  the tour's spotlight and card
+ */
 :root {
   --cream: #fdf4e6;
   --cream-2: #f7e8d3;
@@ -985,6 +997,8 @@ body.checkup-open .manami { opacity: 0; pointer-events: none; transform: transla
 }
 .plans[hidden] { display: none; }
 body.plans-open .manami { opacity: 0; pointer-events: none; transform: translateY(24px) scale(.7); }
+/* the farm's year bar waits under a workspace (inert in main.js): dimmed so it reads as not now */
+body.plans-open .timebar, body.jar-open .timebar { opacity: .5; filter: saturate(.6); transition: opacity .2s; }
 .plans__top { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 16px 12px 22px; border-bottom: 2px solid #ead8c0; }
 .plans__kicker { font-size: 11.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft); }
 .plans__title { font-size: 24px; font-weight: 700; color: var(--ink); }
@@ -1864,7 +1878,8 @@ body.is-hub { --acct-w: 56px; }
 .acct-btn__dot { position: absolute; right: -2px; top: -2px; width: 14px; height: 14px; border-radius: 50%; background: var(--green); border: 3px solid var(--green-dark); display: none; }
 .acct-btn.is-in .acct-btn__dot { display: block; }
 body.finder-on .acct-btn, body.reveal-done .acct-btn { display: grid; }
-body.plans-open .acct-btn, body.jar-open .acct-btn, body.plan-futures .acct-btn, body.isle-planning .acct-btn { display: none; }
+/* the header's own button: there over the plans, the jar test and the plan view too (rules in main.js) */
+body.isle-planning .acct-btn { display: none; }
 
 .acct {
   position: fixed; z-index: 60; top: 72px; right: var(--gutter); width: min(380px, calc(100vw - 2 * var(--gutter)));
@@ -1948,6 +1963,8 @@ body.is-hub .manami__ask {
 body.is-hub .manami__ask:hover { background: var(--paper); }
 .manami__ask svg { width: 18px; height: 18px; flex: none; }
 body.ask-open .manami { opacity: 0; pointer-events: none; }
+/* over the plan view, the chat stops above its dock */
+@media (min-width: 641px) { body.plan-futures .ask { bottom: calc(var(--fut-dock-h, 200px) + 32px); } }
 .checkup__ask { margin-top: 10px; height: 36px; padding: 0 14px; font-size: 14.5px; }
 .checkup__ask svg { width: 18px; height: 18px; }
 
