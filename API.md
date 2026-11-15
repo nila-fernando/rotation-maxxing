@@ -47,6 +47,7 @@ All functions are synchronous and pure except `buildFarm`, which fetches data. I
 | `SeasonObservations.daily` | New optional field: the season's daily NASA POWER weather, appended to the weather source | Stable |
 | `reasons[]` | With present-climate adjustment, includes e.g. "Weather shifted to the model-projected 2027 climate using NASA NEX-GDDP-CMIP6 (5 climate models); older years shifted more. 2001 replayed ~3.0 F warmer in Jul (daily highs, model-projected change)." | Display text |
 | `buildFarm` input | New `baseYields` (precomputed `src/data/baseYields/<site>.json`) and `nassApiKey` | Stable |
+| `buildFarm` field input | New optional `jarTest` (jar-test payload): replaces the mapped texture for that field | Stable |
 | `Farm.baseYields` | **New** optional field: local base yield per crop (NASS county, then state; else the US average). Set by `buildFarm`; editable | Stable |
 | `years[].terms` (first yield term) | With local base yields the label changes from "US average Corn (grain) yield" to e.g. "Saline County, KS Corn (grain) yield, non-irrigated (NASS 2021-2025 average, x0.72 non-irrigated/all-practice ratio (county))", basis `design` when a practice ratio is applied | Display text |
 | `isEnsemble(weather)` | New helper export | Stable |
@@ -436,6 +437,8 @@ Drag-and-drop feedback. Rules only (no Monte Carlo), so a call takes well under 
 ## buildFarm(input, fetch?)  (`src/data/buildFarm`)
 
 Draw fields and get a planner-ready farm. It calls NASA POWER, SSURGO and CropScape, all keyless. It is async and can take a few seconds. Anything the farmer enters wins over fetched data.
+
+**Jar test.** Pass a field's `jarTest` (`toPlannerPayload(computeResult(...))` from `src/jar-test/jar_test.ts`) and its sand/clay % replace the mapped SSURGO texture. A `land.texture` typed by the farmer still wins. Low-confidence results and jars where silt and clay settled together are ignored, with a gap. Only texture is used: drainage, AWC, pH and organic matter stay from SSURGO. `provenance[fieldId].soil` notes it.
 
 **Base yields (NASS).** Pass `baseYields` (the precomputed `src/data/baseYields/<site>.json` for the demo counties) so yields start from the county average instead of the US average. The non-irrigated or irrigated set is picked from `constraints.irrigation`. Alternatively `nassApiKey` fetches them live from USDA NASS Quick Stats (server or script use only; never ship a key to the browser). With neither, yields stay at US averages and `gaps` says so.
 
