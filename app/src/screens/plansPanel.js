@@ -550,6 +550,23 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
     } catch { /* keep the line without a number */ }
   }
 
+  /**
+   * A field picked in the field list while the plans are open: its row on "Your rotation", brought
+   * into view and lit for a moment (the list stays live beside the plans for this).
+   */
+  function showField(id) {
+    if (root.hidden || !id) return;
+    if (view !== 'rotation') { view = 'rotation'; render(); }
+    const row = body.querySelector(`.rib__row[data-field="${attrSel(id)}"]`);
+    if (!row) return;
+    const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    row.scrollIntoView({ block: 'center', behavior: calm ? 'auto' : 'smooth' });
+    row.classList.remove('is-lit');
+    void row.offsetWidth; // (so the light plays again on a second pick)
+    row.classList.add('is-lit');
+    row.querySelector('.rib__open')?.focus({ preventScroll: true });
+  }
+
   /** Switches tab (and focuses the new one). */
   function goTo(v) {
     if (!v) return;
@@ -633,5 +650,5 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
   /** Saves a plan picked elsewhere (the plans on the island), the same way "Use this plan" does. */
   const saveChosen = (plan, info) => onSave?.(plan, info);
 
-  return { open, openBuild, close, saveBuilt, saveChosen, ensureData, getChoice, setChoice, get isOpen() { return !root.hidden; }, get data() { return data; } };
+  return { open, openBuild, close, saveBuilt, saveChosen, ensureData, getChoice, setChoice, showField, get isOpen() { return !root.hidden; }, get data() { return data; } };
 }
