@@ -137,7 +137,7 @@ export function planRow(snap, farmId) {
   const row = {
     farm_id: farmId,
     start_year: p.startYear,
-    source: p.source === 'built' ? 'built' : 'saved',
+    source: p.source === 'built' || p.source === 'ai' ? p.source : 'saved',
     choice: p.choice || {},
     sequences: p.plan.sequences,
     scores: p.scores || {},
@@ -216,7 +216,7 @@ export function snapshotFromRows({ farm, fields, fieldData = [], jarTests = [], 
     ? {
       plan: { sequences: plan.sequences },
       startYear: plan.start_year,
-      ...(plan.source === 'built' ? { source: 'built' } : {}),
+      ...(plan.source === 'built' || plan.source === 'ai' ? { source: plan.source } : {}),
       ...(isObj(plan.choice) && Object.keys(plan.choice).length ? { choice: plan.choice } : {}),
       ...(isObj(plan.scores) && Object.keys(plan.scores).length ? { scores: plan.scores } : {}),
     }

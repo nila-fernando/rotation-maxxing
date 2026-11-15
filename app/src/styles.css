@@ -2000,3 +2000,24 @@ body.ask-open .manami { opacity: 0; pointer-events: none; }
   .ask { --ask-w: auto; left: 8px; right: 8px; top: auto; bottom: 8px; height: min(78vh, 620px); border-radius: 22px; }
 }
 @media (prefers-reduced-motion: reduce) { .ask { animation: none; } }
+
+/* ---------------------------------------------------------------- Manami's take (plans) and read (check-up): AI, src/screens/planTake.js */
+.plans__take { margin-top: 12px; padding: 4px 14px 12px; border: 2px dashed #e6cfa9; border-radius: 16px; background: #fffdf7; font-size: 15px; line-height: 1.45; }
+.plans__take .plans__h { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.plans__take .plans__h svg, .plans__take-ask svg, .ck-read svg { width: 18px; height: 18px; flex: none; }
+.plans__take-line { margin: 8px 0; }
+.plans__take-ask { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; }
+.plans__take-wait, .ck-read__wait { display: flex; align-items: center; gap: 10px; margin: 10px 0; color: var(--ink-soft); }
+.plans__take-list li { margin: 6px 0; }
+.plans__take-own { display: block; margin-top: 2px; color: var(--ink-soft); }
+.plans__take-nums { margin: 10px 0 0; }
+.plans__take-nums--vs { margin-top: 4px; color: var(--ink-soft); font-size: 14px; }
+.plans__take-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.plans__take-note, .ck-read__note { margin: 8px 0 0; color: var(--ink-soft); font-size: 13px; }
+.ck-read { margin-top: 10px; }
+.ck-read__ask { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; font-size: 14px; }
+.ck-read__box { padding-top: 10px; border-top: 2px solid #ead8c0; font-size: 14.5px; line-height: 1.45; }
+.ck-read__box p { margin: 4px 0; }
+.ck-read__h { display: flex; align-items: center; gap: 6px; font-weight: 700; }
+.ck-read__sub { margin-top: 8px !important; font-weight: 700; font-size: 13.5px; }
+.ck-read__list { margin: 2px 0 0; padding-left: 18px; }
