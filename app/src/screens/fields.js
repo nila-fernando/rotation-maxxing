@@ -188,7 +188,7 @@ export function createFieldsStep({ map, manami, onContinue, onChangeLocation }) 
       await setOutlines('usda', { quiet: true });
       if (!alive()) return;
       if (hasOutlinesHere(usda)) manami.say(introLine(place, usda));
-      else noOutlinesHere('none');
+      else noOutlinesHere('none', alive);
     } else if (first === 'slow') {
       await setOutlines('off', { quiet: true });
       autoOff = true;
@@ -202,11 +202,12 @@ export function createFieldsStep({ map, manami, onContinue, onChangeLocation }) 
       await setOutlines('usda', { quiet: true });
       if (alive() && outlines) manami.say(hasOutlinesHere(usda) ? `The outlines are here! ${introLine(place, usda)}` : 'The outlines arrived, but there are none right here. Drawing is the way to go.');
     } else {
-      noOutlinesHere('failed');
+      noOutlinesHere('failed', alive);
     }
   }
 
-  async function noOutlinesHere(why) {
+  /** No outlines here (or none could be fetched): drawing instead. alive: start()'s check for the same visit. */
+  async function noOutlinesHere(why, alive) {
     const place = farm;
     await setOutlines('off', { quiet: true });
     if (!alive()) return;

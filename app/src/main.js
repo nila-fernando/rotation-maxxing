@@ -315,11 +315,9 @@ const plansPanel = createPlansPanel({
     planFutures?.stop(); // back from the plans on the island
     islandPlanner.stop(); // back from planning on the island, or opened over it
     hub.overview(); // the whole farm behind it, any field check-up closed
-    document.getElementById('hubPanel').inert = true; // the field list waits while the plans are open
     queueMicrotask(syncManami);
   },
   onClose: () => {
-    document.getElementById('hubPanel').inert = false;
     syncManami();
   },
   onPreview: (info) => showPlanOnIsland(info, 0),
@@ -461,7 +459,7 @@ const jarPanel = createJarPanel({
     jarInert.clear();
     // the field list from how things are now, not as they were at open (the plans may have shut since)
     const list = $('hubPanel');
-    if (list) list.inert = plansPanel.isOpen || !!planFutures?.active || islandPlanner.active;
+    if (list) list.inert = !!planFutures?.active || islandPlanner.active;
     syncManami();
   },
   onUse: (record, { from }) => useJar(record, from),
@@ -973,6 +971,47 @@ function takeNote(key) {
     return null;
   }
 }
+
+// ---------------------------------------------------------------- how the panels share the screen
+// The layers are listed at the top of styles.css. The rules, kept here in one place:
+//   1. One workspace at a time: the plans, the jar test, the plans on the farm, planning on the island
+//      (each one closes the others when it opens).
+//   2. A workspace covers the farm, so the farm's own controls under it wait (the year bar, inert and
+//      dimmed). The header (the logo, "Plan my next seasons", your farms) stays live.
+//   3. Popovers (the time of day, your farms) close as soon as anything else opens.
+//   4. Ask Manami is a side panel: a workspace opening closes it (Ask me / Ask about this field bring
+//      it back, on top of the check-up if one is open).
+const WORKSPACES = ['plans-open', 'jar-open', 'plan-futures', 'isle-planning'];
+const SHEETS = ['checkup-open', 'ask-open'];
+let surfacesWere = new Set();
+function syncSurfaces() {
+  const cl = document.body.classList;
+  const now = new Set([...WORKSPACES, ...SHEETS, 'acct-open'].filter((c) => cl.contains(c)));
+  const opened = [...now].filter((c) => !surfacesWere.has(c));
+  surfacesWere = now;
+  if (opened.length) timeTravel.closeDay();
+  if (opened.some((c) => c !== 'acct-open') && account?.isOpen) account.close({ restoreFocus: false });
+  if (opened.some((c) => WORKSPACES.includes(c)) && askManami.isOpen) askManami.close();
+  const busy = cl.contains('plans-open') || cl.contains('jar-open');
+  const bar = $('timebar');
+  if (bar && bar.inert !== busy) bar.inert = busy;
+}
+new MutationObserver(syncSurfaces).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+// While the plans are open the field list stays live beside them: a field picked there shows its row
+// in the plans (instead of opening its check-up under them). "Test your soil" switches to the jar test.
+for (const type of ['click', 'keydown']) {
+  $('hubList').addEventListener(type, (e) => {
+    if (!plansPanel.isOpen || (type === 'keydown' && e.key !== 'Enter' && e.key !== ' ')) return;
+    const row = e.target.closest?.('[data-id]');
+    if (!row) return;
+    e.preventDefault();
+    e.stopPropagation();
+    plansPanel.showField(row.dataset.id);
+  }, true);
+}
+// the time-of-day popover has no class on <body>: watch it, so the two popovers never show together
+new MutationObserver(() => { if (!$('dayPop').hidden && account?.isOpen) account.close({ restoreFocus: false }); })
+  .observe($('dayPop'), { attributes: true, attributeFilter: ['hidden'] });
 
 account = createAccountPanel({
   auth,

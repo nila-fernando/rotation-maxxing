@@ -586,6 +586,8 @@ export function createTimeTravel({ hub, onYear } = {}) {
 
     return {
       select,
+      /** Shuts the time-of-day popover (something else opened over the farm). */
+      closeDay: () => setDayOpen(false, { focus: false }),
       play,
       pause,
       preview,
@@ -625,6 +627,7 @@ export function createTimeTravel({ hub, onYear } = {}) {
     show,
     hide,
     select: (y) => session?.select(y),
+    closeDay: () => session?.closeDay(),
     preview: (info, i, opts) => session?.preview(info, i, opts),
     prebuild: (keyMaps) => session?.prebuild(keyMaps),
     play: () => session?.play(),

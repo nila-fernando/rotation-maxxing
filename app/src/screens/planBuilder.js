@@ -16,6 +16,17 @@
 import { cropBadge, hideCropTip } from '../ui/cropTip.js';
 import { placeOf, tipSubFor } from '../plan/cropCalendar.js';
 
+/**
+ * A planner note in plainer words: "Corn (grain) again after Corn (grain): about 5.5% yield drag."
+ * -> "Corn again after corn: about 5.5% less yield."
+ */
+export function plainReason(text) {
+  return String(text || '')
+    .replace(/\s*\((grain|silage|forage)\)/gi, '')
+    .replace(/\b(again after|after|follow|follows) ([A-Z])/g, (m, w, c) => `${w} ${c.toLowerCase()}`)
+    .replace(/\byield drag\b/g, 'less yield');
+}
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ERASER = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16.5l8.5-8.5 6 6-5 5H8z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M12.5 8l-4 4M8 19.5h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
 const CROP_NAME = {
@@ -193,7 +204,7 @@ export function createPlanBuilder({ evaluate, onPreview, onSave, onIsland, money
   }
 
   function chip(w, where = '') {
-    return `<li class="bchip sev-${w.severity}"><span class="bchip__tag">${esc(mod.LENS_LABEL[w.lens] || w.lens)} · ${esc(mod.SEVERITY_LABEL[w.severity])}</span>${where ? `<span class="bchip__where">${esc(where)}</span>` : ''}<span class="bchip__why">${esc(w.reason)}</span></li>`;
+    return `<li class="bchip sev-${w.severity}"><span class="bchip__tag">${esc(mod.LENS_LABEL[w.lens] || w.lens)} · ${esc(mod.SEVERITY_LABEL[w.severity])}</span>${where ? `<span class="bchip__where">${esc(where)}</span>` : ''}<span class="bchip__why">${esc(plainReason(w.reason))}</span></li>`;
   }
 
   // ---------------------------------------------------------------- totals (the planner's worker)
