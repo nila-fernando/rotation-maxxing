@@ -8,7 +8,7 @@ import { adoptPlan, createFarmState, replan } from '../update';
 import { dailyEt0 } from '../waterBalance';
 import { isEnsemble, type DailyWeather } from '../types';
 import { createContext } from '../farmModel';
-import { drawSamples } from '../montecarlo';
+import { drawSamples, freezeRngFor } from '../montecarlo';
 import { createRng } from '../rng';
 import { gridFarm, land, NEUTRAL } from './fixtures';
 
@@ -109,7 +109,7 @@ describe('ensemble in planning', () => {
     const r2 = generatePlans(farm, NEUTRAL, {}, b.weather, opts);
     expect(JSON.stringify(r1)).toBe(JSON.stringify(r2));
     expect(r1.plans.priority.reasons.join()).toMatch(/model-projected \d{4} climate/);
-    const draws = drawSamples(createContext(farm, {}, b.weather), 150, createRng(5));
+    const draws = drawSamples(createContext(farm, {}, b.weather), 150, createRng(5), freezeRngFor(5));
     expect(new Set(draws.samples.map((s) => s.member))).toEqual(new Set(['M0', 'M1', 'M2']));
     if (!isEnsemble(b.weather)) return;
     // Every year in a sample comes from that sample's model pool.

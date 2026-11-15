@@ -520,7 +520,8 @@ Reference ET, the water balance, carryover, freeze detection and erosivity are t
 growing degrees (F) = max(0, (Tmax + Tmin)/2 − 32), summed from 1 January       Kansas Mesonet formula
 stage               = < 800 tillering | 800–1200 jointing | 1200–1400 boot | 1400–1600 heading |
                       1600–2000 flowering | 2000–2400 milk | 2400–2800 dough | ≥ 2800 mature
-freeze event        = a night ON OR AFTER 1 MARCH with NASA POWER Tmin ≤ the C646 injurious temperature for the stage:
+green-up            = after the first 5 days in a row with mean ≥ 41 F, not before 1 March (design)
+freeze event        = a night AFTER GREEN-UP with NASA POWER Tmin ≤ the C646 injurious temperature for the stage:
                       tillering 12 F, jointing 24, boot 28, heading 30, flowering 30, milk 28, dough 28
 season damage       = the worst event's C646 yield effect → design range:
                       slight-to-moderate U(0.80, 1.00), moderate-to-severe U(0.50, 0.85), severe U(0.20, 0.60)
@@ -529,7 +530,7 @@ season damage       = the worst event's C646 yield effect → design range:
 **Sourced:** the freeze thresholds and the qualitative yield effects (K-State C646, Table 1), and the growing-degree formula (Kansas Mesonet).
 
 **Design or assumption:**
-- The damage ranges are **unsourced design values**, chosen before validation. Midpoints are used in the search; Monte Carlo draws within the range with common random numbers.
+- The damage ranges are **unsourced design values**, chosen before validation. Midpoints are used in the search; Monte Carlo draws within the range, one draw per weather year, shared by every plan and field.
 - Assigning each overlapping Mesonet stage band to one C646 stage is a design choice.
 - The 1 January start is an **assumption**. The Mesonet page doesn't state it, but it's corroborated: Tribune KS 2026 has a Mesonet season total of 4,346 F, and NASA POWER from 1 January to 30 June gives 4,443 F.
 
@@ -544,7 +545,13 @@ The flaw was found during validation: 20 false alarms per county, nearly all Jan
 
 **Check:** Saline KS on 6–8 April 2007 reached 17–20 F at about 900 GDD (jointing), so it is flagged. K-State SRP 982 reports 46% of the crop jointed by 2 April, then record cold in early April.
 
-Plans with wheat say, for example, "Freeze risk: in 3 of 24 years, temperatures fell below the jointing threshold (K-State C646)."
+**Green-up from warmth, not the calendar (review fix, Nov 2026).** The 1 March date comes from a Kansas sentence, so on its own it raised false alarms further north. On the Ames, Iowa record it flagged "tillering" freezes in 13 of 24 years, all between 1 and 21 March, when the wheat had only 1–187 growing degrees and was still dormant. Events now count only after the **first run of 5 days in a row averaging 41 F (5 °C) or more**, and still never before 1 March, which guards against winter thaws. The 5-day, 41 F rule is a **design value**. Ames now flags no freezes. In Kansas it also removes the 2–5 March tillering flags that came right after the old cut-off.
+
+**Missing days** (non-finite Tmax or Tmin) are skipped: they add no growing degrees and raise no event. Before this fix, one missing value made the season's growing-degree total NaN and switched detection off.
+
+**Monte Carlo:** each sample draws one damage value per horizon (weather) year, from a separate seeded stream (`freezeRngFor(seed)`). Every plan and field shares those draws (common random numbers), but seasons aren't tied together. Because the stream is separate, runs without freeze data are bit-identical to runs before the freeze model existed.
+
+Plans with wheat say, for example, "Freeze risk: in 3 of 24 years, temperatures fell to or below the jointing threshold (K-State C646)." The stage is the most common one, with ties going to the more severe C646 effect. When the single worst freeze was at a different stage, the text adds it, e.g. "(worst: heading)".
 
 ## Is weather risk about water here? (`PlanResult.weatherRisk`)
 

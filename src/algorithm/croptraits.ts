@@ -748,6 +748,7 @@ export const DATA_GAPS = [
   'Wet springs and excess water (planting delays, ponding, flooding) are not modelled; in humid states these drive many bad years.',
   'Freeze injury uses NASA POWER daily minimum air temperature for a ~50 km grid cell; low spots and the canopy get colder, and daily data cannot resolve the two-hour exposure C646 assumes. Snow cover protection is not modelled.',
   'Wheat freeze damage sizes (yield factor ranges for C646 qualitative effects) are unsourced design values.',
+  'Wheat spring green-up (start of freeze counting) is a design rule: 5 days in a row averaging 5 C (41 F) or more, not before 1 March; C646 and its 1 March wording are about Kansas, so freeze risk elsewhere is less certain.',
   'Present-climate adjustment (NEX-GDDP-CMIP6) shifts monthly averages only, not changes in extremes or variability.',
   'The present-climate-adjusted weather pool cannot be backtested; the backtest uses raw NASA POWER.',
   'NEX-GDDP-CMIP6 grid is ~0.25 degree, so local climate trends are smoothed.',
@@ -1039,6 +1040,17 @@ export const WHEAT_FREEZE_INJURY: Record<WheatStage, { injuriousF: number; sympt
  * Growing degrees still accumulate from 1 January for staging.
  */
 export const FREEZE_COUNT_FROM_MMDD = { value: '03-01', source: 'ksuC646' as SourceId, basis: 'derived' } as const;
+
+/**
+ * Green-up from the crop's own warmth: freeze events count only after the
+ * first run of `days` consecutive days with mean air temperature >= `meanAtLeastF`
+ * (5 C, a common base for winter wheat spring regrowth), and never before
+ * FREEZE_COUNT_FROM_MMDD (which guards against winter thaws). DESIGN VALUES,
+ * added after review (Nov 2026): with the calendar date alone, Ames IA flagged
+ * "tillering" freezes in 13 of 24 years while the wheat was still dormant
+ * (1-187 growing degrees since 1 January).
+ */
+export const WHEAT_GREENUP = { meanAtLeastF: 41, days: 5, basis: 'design' } as const;
 
 /**
  * UNSOURCED DESIGN VALUES: yield factor ranges for C646's qualitative yield

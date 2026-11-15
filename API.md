@@ -36,7 +36,7 @@ All functions are synchronous and pure except `buildFarm`, which fetches data. I
 |---|---|---|
 | `PlanResult.weatherRisk` | **New.** `{ waterLimited, aridityIndex, aridityClass, message }`. Use `message` for the "is weather risk about water here?" note. | Shape stable; message wording may change |
 | `objectiveTerms` | The last entry now explains the water weight, e.g. "Water is plentiful here (aridity index 0.90, humid), so water use counts for little" | Display text |
-| `years[].terms` for winter wheat | May include "Freeze risk: in 3 of 24 years, temperatures fell below the jointing threshold (K-State C646); average effect" | Display text |
+| `years[].terms` for winter wheat | May include "Freeze risk: in 3 of 24 years, temperatures fell to or below the jointing threshold (worst: heading) (K-State C646); average effect". The "(worst: …)" part appears only when the worst freeze was at a different stage | Display text |
 | `risks[]` | Plans with winter wheat may include a freeze-risk line | Display text |
 | `waterUseIndex` (NASA POWER farms) | Dryland now means water **used** (crop ET or fallow evaporation), not the shortfall | Number stable; meaning documented |
 | `WeatherScenario` | New internal fields `climate`, `freeze` (per year) and `freezeRisk` (pool average) | Opaque: pass through |

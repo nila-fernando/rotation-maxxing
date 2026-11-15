@@ -336,8 +336,10 @@ export interface FreezeRisk {
   years: number;
   /** Years checked. */
   of: number;
-  /** Most common stage at the time of damage. */
+  /** Most common stage at the time of damage (ties: the more severe C646 effect). */
   typicalStage: string | null;
+  /** Stage of the single worst freeze across the years (most severe effect, then furthest below threshold). */
+  worstStage: string | null;
   /** Average yield factor over all years (1 in years without a freeze; design midpoints otherwise). */
   meanFactor: number;
 }

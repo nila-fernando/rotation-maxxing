@@ -280,7 +280,7 @@ async function main(): Promise<void> {
       '',
       ...combined,
       '',
-      '## Wheat freeze detection by year (K-State C646 thresholds from 1 March, NASA POWER Tmin)',
+      '## Wheat freeze detection by year (K-State C646 thresholds after green-up, NASA POWER Tmin)',
       '',
       ...detection,
       '',

@@ -70,12 +70,16 @@ This flaw was found **during validation**. It is a scope correction, not tuning:
 | County | Set | Hits | Misses | False alarms | Wheat r: water only → + freeze | Mean error | Soils |
 |---|---|---|---|---|---|---|---|
 | Saline | development | 3 | 0 | 6 | 0.02 → 0.24 | 21% → 22% | sample |
-| McPherson | held out | 2 | 1 | 6 | 0.00 → 0.18 | 23% → 26% | sample |
+| McPherson | held out (not for this fix†) | 2 | 1 | 6 | 0.00 → 0.18 | 23% → 26% | sample |
 | Sumner | new | 3 | 2 | 5 | −0.19 → 0.05 | 30% → 29% | sample |
 | Reno | new | 2 | 2 | 7 | 0.02 → 0.18 | 26% → 27% | sample |
 | Thomas | new | 1 | 1 | 4 | 0.46 → 0.56 | 22% → 23% | sample |
 
 Before the fix, Saline and McPherson each had 20 false alarms; now they have 6.
+
+† McPherson was held out for the water model, but its false alarms in the first freeze run are part of what led to this fix. So for the freeze fix only **Sumner, Reno and Thomas** are independent tests. Their correlation gains (−0.19 → 0.05, 0.02 → 0.18, 0.46 → 0.56, over about 24 seasons each) are small enough to be noise.
+
+**Without the 2014 tillering events:** 7 hits (not 11), 3 misses, 28 false alarms. Those 4 "hits" all came from 2–3 March tillering flags in a drought year.
 
 **Hits**
 - **2007:** detected in every central and southern county: jointing or boot, 17–23 F on 7 April.
@@ -91,6 +95,24 @@ Before the fix, Saline and McPherson each had 20 false alarms; now they have 6.
 **Overall:** wheat correlation rises in all five counties (by 0.10–0.24); mean error is roughly unchanged (−1 to +3 points).
 
 **Summer crops on the three new counties:** sorghum r = 0.86 / 0.98 / 0.66 (Sumner / Reno / Thomas); soybeans 0.71 / 0.82 / −0.01. Thomas soybeans has little data and is far western.
+
+## Wheat freeze with green-up from warmth: 5 Kansas counties (2026-11-15, after review)
+
+**The fix.** The 1 March date comes from a Kansas sentence in C646. On the Ames, Iowa record it flagged "tillering" freezes in 13 of 24 years while the wheat had only 1–187 growing degrees (dormant). Green-up now also needs **5 days in a row averaging 41 F (5 °C) or more**. That rule is a **design value**, and green-up is still never before 1 March. Thresholds, damage ranges and the bad-year cut-off are unchanged. Full tables: `backtest-2026-11-15-thermal-greenup.md`.
+
+| County | Set | Hits | Misses | False alarms | Wheat r: water only → + freeze | Mean error | Soils |
+|---|---|---|---|---|---|---|---|
+| Saline | development | 2 | 1 | 2 | 0.02 → 0.23 | 21% → 22% | sample |
+| McPherson | held out (not for the freeze fixes) | 1 | 2 | 4 | 0.00 → 0.15 | 23% → 26% | sample |
+| Sumner | new | 2 | 3 | 3 | −0.19 → 0.01 | 30% → 30% | sample |
+| Reno | new | 1 | 3 | 5 | 0.02 → 0.15 | 26% → 28% | sample |
+| Thomas | new | 1 | 1 | 3 | 0.46 → 0.57 | 22% → 22% | sample |
+
+- **No tillering flags remain** in any county. Every flag is now at jointing or later (17–30 F, 23 March to 2 May).
+- **Hits 11 → 7, false alarms 28 → 17.** The 4 lost hits are exactly the 2014 tillering ones, so against the run without them, hits are unchanged and false alarms fall by 11.
+- **2007 is still detected in all four central and southern counties**, plus 2018 (Saline), 2009 (Sumner) and 2004 (Thomas).
+- **Correlation gains are smaller** (by 0.01–0.04 against the 1 March run), because 2014 no longer earns credit. On the three independent counties they stay small (+0.20, +0.13, +0.11), so treat freeze risk as a plausible signal, not a validated one.
+- **Ames, Iowa now flags no freezes** in 2001–2024.
 
 **Model frozen (2026-11-15).** No new modelling features after this; remaining limitations are listed in `ALGORITHM.md` and `DATA_GAPS`.
 
