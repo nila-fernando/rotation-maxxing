@@ -1,18 +1,22 @@
 // One field's check-up: what the field panel (Part 3.5) shows and what colours its status dot.
 //
-//   fieldReportFor(field, { profile, farmIsDemo, planWeather })   field = an app field (from the field step)
+//   fieldReportFor(field, { profile, planWeather })   field = an app field (from the field step)
 //   buildFieldReport(field, { demo, weather, profile, planWeather })   the same, with the data passed in (tests)
 //
 // A field with a jar test (field.jar, src/plan/jarTest.js toRecord) gets report.jar: the record, the
 // soil map's texture beside it, and whether the two fall in the same planner texture bucket.
 // planWeather ({ water, frost } lines from the latest plans) is passed through for the captions.
 //
-// Crop history comes from the field's own outline (USDA CSB years) or the demo data. Soil, slope,
-// rain and greenness come from the demo data for now (realistic placeholders for Story County;
-// the live sources come later), so other farms show "not available yet" for those.
+// Every section is the field's own fetched data, never a stand-in; a section with no data says so.
+//   crop history  the outline's USDA CSB years, then CDL for the rest (src/data/cdlHistory.js); the
+//                 demo farm's records are real CSB too
+//   soil          SSURGO at a point in the field (src/data/soilSurvey.js)
+//   slope         mean slope over the field from elevation tiles (src/data/terrain.js)
+//   rain          NASA POWER growing-season rain at the farm (src/data/rain.js)
+//   greenness     last season's NDVI from NASA HLS (src/data/greenness.js)
 
 import { CROP_STYLE, cropKeyFor } from '../island/crops.js';
-import { findFieldBySourceId, getField, getMeta, getWeather } from './farmData.js';
+import { findFieldBySourceId, getField } from './farmData.js';
 import { FLAG_CONFIG, erosionRisk, flagsFor, shownFlags, statusFor } from './flags.js';
 import { mapTexture } from '../vendor/rotation-maxxing/data/ssurgo.ts';
 import { textureBucket } from '../plan/farmInput.js';
@@ -26,9 +30,10 @@ export const RAIN_YEARS = 10;
 export const SOURCES = {
   CSB: { label: 'CSB', name: 'USDA NASS Crop Sequence Boundaries' },
   SSURGO: { label: 'SSURGO', name: 'USDA NRCS SSURGO soil survey' },
-  SRTM: { label: 'SRTM', name: 'NASA SRTM elevation (1 arc-second)' },
-  POWER: { label: 'POWER', name: 'NASA POWER daily weather' },
-  Landsat: { label: 'Landsat', name: 'NASA Harmonized Landsat Sentinel-2 (HLS)' },
+  CDL: { label: 'CDL', name: 'USDA NASS Cropland Data Layer (CropScape)' },
+  DEM: { label: '3DEP', name: 'USGS 3DEP elevation (NASA SRTM outside the US), via AWS Terrain Tiles' },
+  POWER: { label: 'POWER', name: 'NASA POWER monthly rainfall' },
+  HLS: { label: 'HLS', name: 'NASA Harmonized Landsat Sentinel-2 (HLS), via Microsoft Planetary Computer' },
 };
 
 /** The demo data record behind an app field, or null (a field on any other farm). */
@@ -38,30 +43,17 @@ export function demoRecordFor(field) {
   return field.sourceIds?.length === 1 ? findFieldBySourceId(field.sourceIds[0]) : null;
 }
 
-/** Which demo values are stand-ins (from demo-farm.json's meta), by section. */
-function placeholders() {
-  const p = getMeta()?.placeholder || [];
-  return {
-    soil: p.includes('fields[].soil'),
-    slope: p.includes('fields[].slopePct'),
-    ndvi: p.includes('fields[].ndvi'),
-    rain: p.includes('weather.growingSeasonRainMm'),
-    history: p.includes('fields[].cropHistory'),
-  };
-}
-
 const titleCase = (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1);
 
 /**
- * @param {object} field  app field: { id, name, acres, crops?: {year: crop}, sourceIds?, demoId? }
+ * @param {object} field  app field: { id, name, acres, crops?, cdlYears?, soil?, slopePct?, rain?, ndvi?, jar?, sourceIds?, demoId? }
  * @param {object} [o]
- * @param {object|null} [o.demo]     the demo record (soil, slopePct, ndvi, cropHistory)
- * @param {object|null} [o.weather] { growingSeasonRainMm: [{year, value}], avg30yrRainMm }
+ * @param {object|null} [o.demo]     the demo record (only its real CSB cropHistory and acres are used)
+ * @param {object|null} [o.weather] { growingSeasonRainMm: [{year, value}], avg30yrRainMm } (field.rain)
  * @param {object|null} [o.profile] farmProfile ({ irrigatedFieldIds })
- * @param {object} [o.placeholder]  which sections are demo stand-ins
  * @param {object|null} [o.planWeather] { water, frost } lines from the latest plans, passed through
  */
-export function buildFieldReport(field, { demo = null, weather = null, profile = null, placeholder = {}, cfg = FLAG_CONFIG, planWeather = null } = {}) {
+export function buildFieldReport(field, { demo = null, weather = null, profile = null, cfg = FLAG_CONFIG, planWeather = null } = {}) {
   // crop history: the outline's own years first, the demo record's for any it lacks
   const byYear = new Map();
   for (const c of demo?.cropHistory || []) if (c?.crop != null) byYear.set(Number(c.year), c.crop);
@@ -74,10 +66,11 @@ export function buildFieldReport(field, { demo = null, weather = null, profile =
   });
   const known = history.filter((h) => h.crop != null).map(({ year, crop }) => ({ year, crop }));
 
-  const soil = demo?.soil
-    ? { texture: demo.soil.texture ?? null, drainage: demo.soil.drainage ?? null, organicMatterPct: demo.soil.organicMatterPct ?? null, waterHoldingIn: demo.soil.waterHoldingIn ?? null }
+  const s = field.soil?.display || null;
+  const soil = s
+    ? { texture: s.texture ?? null, drainage: s.drainage ?? null, organicMatterPct: s.organicMatterPct ?? null, waterHoldingIn: s.waterHoldingIn ?? null }
     : null;
-  const slopePct = Number.isFinite(demo?.slopePct) ? demo.slopePct : null;
+  const slopePct = Number.isFinite(field.slopePct) ? field.slopePct : null;
   const slope = slopePct == null ? null : { pct: slopePct, risk: erosionRisk(slopePct, cfg) };
 
   let rain = null;
@@ -93,12 +86,12 @@ export function buildFieldReport(field, { demo = null, weather = null, profile =
     };
   }
 
-  const ndvi = Array.isArray(demo?.ndvi) && demo.ndvi.length ? demo.ndvi : null;
+  const ndvi = Array.isArray(field.ndvi) && field.ndvi.length ? field.ndvi : null;
   const flags = flagsFor({ cropHistory: known, slopePct, rain: rain && { years: [...series], avg30: rain.avg30 } }, cfg);
   const irrigated = !!profile?.irrigatedFieldIds?.includes(field.id);
   const jar = field.jar
-    ? { ...field.jar, mapTexture: demo?.soil?.texture ?? null,
-        sameAsMap: textureBucket(demo?.soil?.texture) === mapTexture(field.jar.sandPct, field.jar.clayPct) }
+    ? { ...field.jar, mapTexture: soil?.texture ?? null,
+        sameAsMap: soil?.texture ? textureBucket(soil.texture) === mapTexture(field.jar.sandPct, field.jar.clayPct) : false }
     : null;
   return {
     id: field.id,
@@ -114,18 +107,16 @@ export function buildFieldReport(field, { demo = null, weather = null, profile =
     shown: shownFlags(flags, cfg),
     // nothing known about it (no crop years, soil, slope or rain): grey, not a green "all clear"
     status: known.length || soil || slope || rain ? statusFor(flags, cfg) : 'unknown',
-    placeholder: { ...placeholder, history: false },
+    placeholder: {}, // nothing is a stand-in any more
+    cdlYears: field.cdlYears || [],
     jar,
     planWeather: planWeather ?? null,
   };
 }
 
 /**
- * The report for an app field, resolving its demo data. farmIsDemo: the farm is the demo farm, so
- * the demo farm's rain applies even to fields that aren't one of the five demo records.
+ * The report for an app field: its demo record (for real CSB crop years only) and its fetched rain.
  */
-export function fieldReportFor(field, { profile = null, farmIsDemo = false, planWeather = null } = {}) {
-  const demo = demoRecordFor(field);
-  const weather = demo || farmIsDemo ? getWeather() : null;
-  return buildFieldReport(field, { demo, weather, profile, placeholder: placeholders(), planWeather });
+export function fieldReportFor(field, { profile = null, planWeather = null } = {}) {
+  return buildFieldReport(field, { demo: demoRecordFor(field), weather: field.rain || null, profile, planWeather });
 }

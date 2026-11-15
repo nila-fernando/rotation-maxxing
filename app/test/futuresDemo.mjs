@@ -10,13 +10,14 @@ import { cropIdsFor } from '../src/plan/cropIds.js';
 import { plannerFarm, plannerMarket, plannerPriorities } from '../src/plan/farmInput.js';
 import { frostWarning } from '../src/plan/weatherWords.js';
 import { worst } from '../src/plan/builder.js';
+import { fieldData } from './fieldData.mjs';
 
 export const START_YEAR = 2027; // the plans made on 2026-11-15
 
 // the ?hub=5 demo fields, as main.js testFields(5) hands them on
 const appFields = () => getFields().map((f) => ({
   id: f.id, demoId: f.id, name: f.name, geometry: f.geometry, acres: f.acres, sourceIds: [f.sourceId],
-  crops: Object.fromEntries(f.cropHistory.map((c) => [c.year, c.crop])), source: 'usda',
+  crops: Object.fromEntries(f.cropHistory.map((c) => [c.year, c.crop])), ...fieldData(f), source: 'usda',
 }));
 const ames = () => JSON.parse(readFileSync(new URL('../src/vendor/rotation-maxxing/fixtures/power_ames_2000_2024.daily.json', import.meta.url), 'utf8'));
 

@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { getFields } from './farmData.js';
 import { buildFieldReport, demoRecordFor, fieldReportFor } from './fieldReport.js';
+import { fieldData } from '../../test/fieldData.mjs';
 
 // a demo field as the field step hands it on
 const appField = (id) => {
   const f = getFields().find((x) => x.id === id);
-  return { id: f.id, name: f.name, acres: f.acres, geometry: f.geometry, sourceIds: [f.sourceId], crops: Object.fromEntries(f.cropHistory.map((c) => [c.year, c.crop])) };
+  return { id: f.id, name: f.name, acres: f.acres, geometry: f.geometry, sourceIds: [f.sourceId], crops: Object.fromEntries(f.cropHistory.map((c) => [c.year, c.crop])), ...fieldData(f) };
 };
 // a saved jar test (src/plan/jarTest.js toRecord): the sample jar's clay loam
 const JAR = {

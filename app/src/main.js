@@ -13,7 +13,13 @@ import './styles.css';
 import { INTRO, LANDING_URL } from './config.js';
 import { DEMO_FARM } from './data/demoFarm.js';
 import * as farmData from './data/farmData.js';
-import { fieldReportFor } from './data/fieldReport.js';
+import { fillCropHistory, withCdlYears } from './data/cdlHistory.js';
+import { fillSoil, withSoil } from './data/soilSurvey.js';
+import { fillSlope, withSlope } from './data/terrain.js';
+import { farmRain, withRain } from './data/rain.js';
+import { fillNdvi, withNdvi } from './data/greenness.js';
+import { centroid, featureCollection, feature as turfFeature } from '@turf/turf';
+import { demoRecordFor, fieldReportFor, HISTORY_YEARS } from './data/fieldReport.js';
 import { createPlanner } from './plan/planner.js';
 import { JAR_LINES } from './plan/jarTest.js';
 import { fieldWeatherNote, weatherKey } from './plan/weatherWords.js';
@@ -74,6 +80,7 @@ const fieldsStep = createFieldsStep({
         maxZoom: 16, duration: 0.9,
       });
     }
+    startFieldFill(fields);
     checkIn.start({ fields });
   },
   onChangeLocation: () => {
@@ -81,6 +88,36 @@ const fieldsStep = createFieldsStep({
     globe.backToGlobe();
   },
 });
+
+// Each field's own data, fetched while the check-in runs. Nothing here is a stand-in: what doesn't
+// arrive stays missing and the check-up says so.
+//   crop history  USDA Cropland Data Layer (live USDA outlines have 2023 only; AI and drawn: none)
+//   soil          USDA NRCS SSURGO at a point in each field
+//   slope         elevation tiles (USGS 3DEP in the US)
+//   rain          NASA POWER at the middle of the farm
+//   greenness     NASA HLS via Planetary Computer: slow (one request per field per pass), so the
+//                 reveal doesn't wait for it; the check-up shows it once it's in
+const FIELD_FILL_GRACE_MS = 8000;
+let fieldFill = null;
+function startFieldFill(fields) {
+  const known = (f) => Object.fromEntries((demoRecordFor(f)?.cropHistory || []).map((c) => [c.year, c.crop]));
+  const apply = (merge) => (filled) => {
+    if (fieldFill !== job || !filled || !Object.keys(filled).length) return; // a newer pick replaced this one
+    app.fields = merge(app.fields, filled);
+    if (app.island) paintStatuses(); // landed after the reveal: the flags can use it
+    if (fieldPanel.openId) fieldPanel.update(reportFor(fieldPanel.openId));
+  };
+  const warn = (what) => (err) => console.warn(what, err);
+  const middle = fields.length ? centroid(featureCollection(fields.map((f) => turfFeature(f.geometry)))).geometry.coordinates : null;
+  const job = Promise.all([
+    fillCropHistory(fields, { years: HISTORY_YEARS, known }).then(apply(withCdlYears)).catch(warn('CDL crop history')),
+    fillSoil(fields).then(apply(withSoil)).catch(warn('SSURGO soil')),
+    fillSlope(fields).then(apply(withSlope)).catch(warn('Slope')),
+    middle ? farmRain(middle).then(apply(withRain)).catch(warn('NASA POWER rain')) : null,
+  ]);
+  fieldFill = job;
+  fillNdvi(fields).then(apply(withNdvi)).catch(warn('HLS greenness'));
+}
 
 // the rotation planner (src/vendor/rotation-maxxing), in a Web Worker
 const planner = createPlanner();
@@ -131,7 +168,7 @@ function reportFor(id) {
     const irrigated = !!app.farmProfile?.irrigatedFieldIds?.includes(f.id);
     planWeather = data ? fieldWeatherNote(data, f.id, { startYear: firstSeason(today()), irrigated }) : null;
   } catch (e) { console.error('weather note', e); }
-  return fieldReportFor(f, { profile: app.farmProfile, farmIsDemo: !!app.farm?.demo, planWeather });
+  return fieldReportFor(f, { profile: app.farmProfile, planWeather });
 }
 /** Colours every status dot in the hub's list from Manami's flags. */
 function paintStatuses() {
@@ -514,9 +551,11 @@ function startReveal({ instant = false } = {}) {
 
 const checkIn = createCheckIn({
   manami,
-  onDone: (profile) => {
+  onDone: async (profile) => {
     app.farmProfile = profile;
     console.log('farmProfile', profile);
+    // the island shows each field's newest crop and how many years we checked: give CDL a moment
+    if (fieldFill) await Promise.race([fieldFill, new Promise((r) => setTimeout(r, FIELD_FILL_GRACE_MS))]);
     startReveal();
   },
 });
@@ -639,6 +678,7 @@ if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsSt
     introDone = true;
     await wait(600);
     app.fields = testFields(Number(params.get(key)) || 5);
+    startFieldFill(app.fields);
     app.farmProfile = { priorities: ['profit'], irrigatedFieldIds: [], excludedCrops: noCropsParam() };
     fieldsStep.hold();
     startReveal({ instant: key === 'hub' });

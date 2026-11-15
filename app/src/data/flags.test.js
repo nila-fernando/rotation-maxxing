@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import { getFields, getMeta, getWeather } from './farmData.js';
 import { buildFieldReport, fieldReportFor, HISTORY_YEARS } from './fieldReport.js';
 import { FLAG_CONFIG, erosionRisk, flagsFor, longestRun, shownFlags, statusFor } from './flags.js';
+import { fieldData } from '../../test/fieldData.mjs';
 
 const hist = (...crops) => crops.map((crop, i) => ({ year: 2018 + i, crop }));
 const ids = (flags) => flags.map((f) => f.id).sort();
@@ -94,7 +95,7 @@ describe('flag rules', () => {
 describe('the demo fields (Part 3.1 cases)', () => {
   const cases = getMeta().requiredCases;
   const reports = Object.fromEntries(getFields().map((f) => {
-    const app = { id: f.id, name: f.name, acres: f.acres, sourceIds: [f.sourceId], crops: Object.fromEntries(f.cropHistory.map((c) => [c.year, c.crop])) };
+    const app = { id: f.id, name: f.name, acres: f.acres, sourceIds: [f.sourceId], crops: Object.fromEntries(f.cropHistory.map((c) => [c.year, c.crop])), ...fieldData(f) };
     return [f.id, fieldReportFor(app, { profile: { irrigatedFieldIds: ['f2'] } })];
   }));
   it('every field that had corn 3 years running says so', () => {

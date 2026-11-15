@@ -3,10 +3,11 @@ import { describe, it } from 'node:test';
 import { getCounty, getFields } from '../data/farmData.js';
 import { copyPlan, createChecker, emptyCount, emptyPlan, isComplete, setCell, setCover, summarise, worst } from './builder.js';
 import { plannerFarm, plannerMarket } from './farmInput.js';
+import { fieldData } from '../../test/fieldData.mjs';
 
 const fields = getFields().map((f) => ({
   id: f.id, name: f.name, acres: f.acres, geometry: f.geometry, sourceIds: [f.sourceId],
-  crops: Object.fromEntries(f.cropHistory.map((c) => [c.year, c.crop])),
+  crops: Object.fromEntries(f.cropHistory.map((c) => [c.year, c.crop])), ...fieldData(f),
 }));
 const { farm } = plannerFarm({ fields, place: { lat: 42.03, demo: true }, firstSeason: 2027 });
 const market = plannerMarket(getCounty());
