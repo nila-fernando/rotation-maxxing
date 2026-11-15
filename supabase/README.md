@@ -11,6 +11,21 @@ This sets up sign-in and a database, so farmers keep their farm, fields, plans a
 
 ---
 
+## Keep the demo separate from login (important)
+
+Anyone must be able to try Rotation-Maxxing **without signing in**. That includes judges, curious farmers, and anyone opening the live site for the first time.
+
+- **No login needed for:** "Try a demo farm", searching any farm, picking fields, the island, the field check-ups, "Plan my next seasons", the walkthrough, the jar test and the sample jar. All of it works exactly as today, with nothing saved.
+- **Login only adds:**
+  - saving a farm, its fields, jar tests and plans, to come back to later;
+  - Ask Manami on the live site, once the AI function is deployed.
+
+  The app offers sign-in at those moments, e.g. "Sign in to keep this farm". It never asks before showing anything.
+- **The demo farm is never stored in the database.** It's bundled with the app and is the same for everyone.
+- **Signed-out visitors can't reach the database at all.** The schema grants nothing to the `anon` role, so the website must handle "not signed in" by simply not saving. Never by blocking the page.
+- **When setting up Authentication** (step 3), keep "Allow new users to sign up" ON. Don't turn on anything that forces sign-in before the site loads.
+- **Testing:** after setup, open the live site in a private window. "Try a demo farm" must work all the way through without any sign-in prompt.
+
 ## 1. Create the project
 
 1. Go to https://supabase.com/dashboard, then **New project**.
