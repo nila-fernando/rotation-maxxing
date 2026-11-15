@@ -61,6 +61,39 @@ The damage ranges and the "bad year" threshold (< 0.8 of trend) were fixed befor
 
 The correlation improves, mainly from 2007, but the error gets worse because of the midwinter false alarms.
 
+## Wheat freeze after the green-up scope fix: 5 Kansas counties (2026-11-15)
+
+**The fix.** The first freeze run flagged January–February nights as "tillering" injury. But C646 Table 1 covers *spring* stages. C646 p. 5: "Spring tillering of wheat in Kansas usually begins during late February and continues through March". So freezes now count only from 1 March, a date derived from that wording.
+
+This flaw was found **during validation**. It is a scope correction, not tuning: the thresholds, damage ranges and bad-year cut-off were not changed. Full tables: `backtest-2026-11-15-greenup.md`.
+
+| County | Set | Hits | Misses | False alarms | Wheat r: water only → + freeze | Mean error | Soils |
+|---|---|---|---|---|---|---|---|
+| Saline | development | 3 | 0 | 6 | 0.02 → 0.24 | 21% → 22% | sample |
+| McPherson | held out | 2 | 1 | 6 | 0.00 → 0.18 | 23% → 26% | sample |
+| Sumner | new | 3 | 2 | 5 | −0.19 → 0.05 | 30% → 29% | sample |
+| Reno | new | 2 | 2 | 7 | 0.02 → 0.18 | 26% → 27% | sample |
+| Thomas | new | 1 | 1 | 4 | 0.46 → 0.56 | 22% → 23% | sample |
+
+Before the fix, Saline and McPherson each had 20 false alarms; now they have 6.
+
+**Hits**
+- **2007:** detected in every central and southern county: jointing or boot, 17–23 F on 7 April.
+- **Also:** 2018 (Saline), 2009 (Sumner), 2004 (Thomas).
+- **2014 counts as a hit in four counties,** via a 3 March tillering freeze. 2014 was also a drought year, so that credit may be partly coincidental.
+
+**False alarms (28)** fit the documented limitations rather than a scoring flaw:
+- **20 of the 28 are within 3 F of the threshold.** A ~50 km grid-cell *daily* minimum can't tell a brief dip from the **two hours** of exposure C646 assumes.
+- **Low spots and the canopy** also differ from the grid-cell air temperature.
+
+**Misses** (2006, 2011, 2015, 2023) are years with no freeze flag at all, and they are drought years. That's the water model's job, not the freeze detector's.
+
+**Overall:** wheat correlation rises in all five counties (by 0.10–0.24); mean error is roughly unchanged (−1 to +3 points).
+
+**Summer crops on the three new counties:** sorghum r = 0.86 / 0.98 / 0.66 (Sumner / Reno / Thomas); soybeans 0.71 / 0.82 / −0.01. Thomas soybeans has little data and is far western.
+
+**Model frozen (2026-11-15).** No new modelling features after this; remaining limitations are listed in `ALGORITHM.md` and `DATA_GAPS`.
+
 **Reading this**
 
 **Kansas summer crops: the model tracks the dry years well** (r ≈ 0.9), but its swings are about half the real ones.

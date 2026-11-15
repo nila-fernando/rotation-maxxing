@@ -1,5 +1,7 @@
 # API for the 3D frontend
 
+> The model is frozen as of 2026-11-15: field names and shapes below won't change for modelling reasons. Wording of labels and messages may still be polished.
+
 How to call the rotation planner from the frontend. For how it works inside, see [ALGORITHM.md](ALGORITHM.md).
 
 All functions are synchronous and pure except `buildFarm`, which fetches data. Import from `src/algorithm` (planner) and `src/data/buildFarm` (data).

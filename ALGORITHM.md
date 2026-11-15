@@ -1,5 +1,7 @@
 # How the rotation algorithm works
 
+> **Model frozen on 2026-11-15.** No new modelling features; validation is in `reports/`. Remaining limitations are listed below and in `DATA_GAPS`.
+
 This is the scoring engine behind Field Shift's rotation planner. It takes a farm (paddocks, land, the last 3 years of crops), the farmer's priorities, local market prices and a pool of weather years. It returns three 3-year plans, every number in them explained.
 
 All code is in `src/algorithm/`. Every function is pure: there is no I/O, no clock and no global state. All randomness comes from one seeded RNG, so the same inputs and seed always give the same answer.
