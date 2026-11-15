@@ -2,6 +2,7 @@
  * Public API: generatePlans and evaluatePlan. checkPlacement lives in placement.ts.
  */
 import { localReviewFor } from './evidence';
+import { weatherRiskFrom } from './aridity';
 import {
   SWITCHING_PENALTY_WEIGHT,
   CANDIDATE_WEIGHT_SHIFT,
@@ -203,6 +204,10 @@ function buildResult(
       risks.push(`${name}, year ${s.year + 1}: ${(s.fraction * 100).toFixed(1)}% of the paddock is in noon shade from a taller crop to the south.`);
     }
   }
+  const fr = ctx.expectedWeather.freezeRisk?.['winter-wheat'];
+  if (fr && fr.years > 0 && c.seqs.some((s) => s.includes('winter-wheat'))) {
+    risks.push(`Freeze risk: in ${fr.years} of ${fr.of} years, temperatures fell below the ${fr.typicalStage ?? 'growth-stage'} threshold (K-State C646).`);
+  }
   if (mc.p10 < 0) risks.push(`In a bad run of years (P10) this plan loses ${money(-mc.p10)} over ${ctx.horizon} years.`);
 
   const reasons = [...extra.reasons];
@@ -248,6 +253,7 @@ function buildResult(
       usesMarketInput: Object.keys(ctx.market).length > 0,
       steepPaddocks: ctx.paddocks.filter((p) => p.land.slopePct >= EROSION_WARNING_LEVELS[1]).map((p) => p.name),
     }),
+    weatherRisk: weatherRiskFrom(ctx.water),
     rankStability: extra.rankStability,
     reasons,
     risks: [...new Set(risks)],

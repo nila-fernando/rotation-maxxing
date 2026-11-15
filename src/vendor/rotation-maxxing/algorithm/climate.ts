@@ -15,6 +15,7 @@ import { typicalYield } from './cropData';
 import { DEFAULT_TILLAGE, RESIDUE_FACTORS, residueRetention } from './soilData';
 import { residueLb, residueToCover } from './soilHealth';
 import { seasonFor } from './seasons';
+import { springFreeze } from './frost';
 import { FALLBACK_SEASONS } from './seasons';
 import { dailyEt0, indexOfDate, simulateBareSoil, simulateOffSeason, simulateSeason } from './waterBalance';
 import { BARE_SOIL_EVAPORATION, DAILY_EROSIVITY, KC_MAX_BARE_SOIL, R_SI_TO_US, waterParamsFor } from './waterParams';
@@ -264,6 +265,14 @@ export function scenariosFromDailyWeather(farm: Farm, weather: DailyWeather, opt
 
   const erosivity = annualErosivity(weather);
   const annualClimate = annualTotals(weather, et0);
+  const wheatGrown = cropIds.includes('winter-wheat');
+  const freezeFor = (year: number): { freeze?: WeatherScenario['freeze'] } => {
+    if (!wheatGrown) return {};
+    const f = springFreeze(weather, year);
+    if (!f) return {};
+    const w = f.worst;
+    return { freeze: { 'winter-wheat': w ? { date: w.date, stage: w.stage, tminF: w.tminF, thresholdF: w.thresholdF, effect: w.effect } : null } };
+  };
   const totalAcres = fieldsWithSoil.reduce((a, p) => a + p.acres, 0);
   const scenarios: WeatherScenario[] = usableYears.map((year) => {
     const byPaddock: Record<PaddockId, Record<CropId, number>> = {};
@@ -307,6 +316,7 @@ export function scenariosFromDailyWeather(farm: Farm, weather: DailyWeather, opt
       water,
       ...(r !== undefined ? { erosivityR: r } : {}),
       ...(annualClimate[year] ? { climate: annualClimate[year]! } : {}),
+      ...freezeFor(year),
       sources: [weather.source, 'fao56Tables', 'fao66', 'fao56Ch7', 'fao56Ch11'],
     };
   });

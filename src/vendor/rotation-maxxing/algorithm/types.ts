@@ -255,8 +255,32 @@ export interface WeatherScenario {
   erosivityR?: number;
   /** That calendar year's precipitation and FAO-56 reference ET0, mm (for the aridity index). */
   climate?: { precipMm: number; et0Mm: number };
+  /** Worst spring freeze event that season, per crop (winter wheat only), or null if checked and none. */
+  freeze?: Record<CropId, FreezeEventSummary | null>;
+  /** On the MEAN scenario only: how often freezes happened and their average yield factor. */
+  freezeRisk?: Record<CropId, FreezeRisk>;
   /** Evidence for this year, e.g. ['nasaPower', 'fao56', 'fao33']. */
   sources?: string[];
+}
+
+export interface FreezeEventSummary {
+  date: string;
+  stage: string;
+  tminF: number;
+  thresholdF: number;
+  /** C646 qualitative yield effect. */
+  effect: 'slight to moderate' | 'moderate to severe' | 'severe';
+}
+
+export interface FreezeRisk {
+  /** Years with a damaging freeze. */
+  years: number;
+  /** Years checked. */
+  of: number;
+  /** Most common stage at the time of damage. */
+  typicalStage: string | null;
+  /** Average yield factor over all years (1 in years without a freeze; design midpoints otherwise). */
+  meanFactor: number;
 }
 
 export interface FieldWater {
@@ -367,11 +391,22 @@ export interface PlanResult {
   objectiveTerms: Term[];
   /** Things a farmer or extension agent should check locally before acting on this plan. */
   localReview: string[];
+  /** Is weather risk on this farm mainly about water? From the aridity index (NASA POWER). */
+  weatherRisk: WeatherRisk;
   /** Share of priority jitters (+/-15) where this plan ranks first. Null for custom plans. */
   rankStability: number | null;
   reasons: string[];
   risks: string[];
   informationGaps: string[];
+}
+
+export interface WeatherRisk {
+  /** true when the climate is drier than humid (aridity index < 0.65); null if unknown. */
+  waterLimited: boolean | null;
+  aridityIndex: number | null;
+  aridityClass: string | null;
+  /** Ready-to-show sentence, e.g. "Weather risk here is mostly not about water ...". */
+  message: string;
 }
 
 export interface PriceOfPriorities {
