@@ -86,7 +86,7 @@ describe('ensemble in planning', () => {
     expect(isEnsemble(b.weather)).toBe(true);
     if (!isEnsemble(b.weather)) return;
     expect(b.weather.members.map((m) => m.model)).toEqual(['M0', 'M1', 'M2']);
-    expect(b.weather.adjustment.summary).toMatch(/Weather adjusted to today's climate using NASA NEX-GDDP-CMIP6 \(3 models\); older years shifted more\. 2001 replayed ~1\.6 F warmer in Jul/); // mean 0.0333 C/yr x 26 yr = 0.87 C
+    expect(b.weather.adjustment.summary).toMatch(/Weather shifted to the model-projected \d{4} climate using NASA NEX-GDDP-CMIP6 \(3 climate models\); older years shifted more\. 2001 replayed ~1\.6 F warmer in Jul/); // mean 0.0333 C/yr x 26 yr = 0.87 C
     expect(meanTrends(f).tasmax.slope[6]).toBeCloseTo((0.01 + 0.03 + 0.06) / 3);
     expect(b.gaps.join()).toMatch(/cannot be backtested/);
   });
@@ -108,7 +108,7 @@ describe('ensemble in planning', () => {
     const r1 = generatePlans(farm, NEUTRAL, {}, b.weather, opts);
     const r2 = generatePlans(farm, NEUTRAL, {}, b.weather, opts);
     expect(JSON.stringify(r1)).toBe(JSON.stringify(r2));
-    expect(r1.plans.priority.reasons.join()).toMatch(/adjusted to today's climate/);
+    expect(r1.plans.priority.reasons.join()).toMatch(/model-projected \d{4} climate/);
     const draws = drawSamples(createContext(farm, {}, b.weather), 150, createRng(5));
     expect(new Set(draws.samples.map((s) => s.member))).toEqual(new Set(['M0', 'M1', 'M2']));
     if (!isEnsemble(b.weather)) return;
@@ -122,6 +122,6 @@ describe('ensemble in planning', () => {
     state = adoptPlan(state, generatePlans(farm, NEUTRAL, {}, b.weather, { seed: 1, mcSamples: 30, rankJitterSamples: 5 }).plans.priority.plan);
     const r = replan(state, NEUTRAL, {}, { seed: 1, mcSamples: 30, rankJitterSamples: 5 });
     // Built for 2026 (25 yr -> 1.5 F); replan rebuilds for nextSeason 2027 (26 yr -> 1.6 F).
-    expect(r.plans.priority.reasons.join()).toMatch(/adjusted to today's climate.*2001 replayed ~1\.6 F warmer/);
+    expect(r.plans.priority.reasons.join()).toMatch(/model-projected \d{4} climate.*2001 replayed ~1\.6 F warmer/);
   });
 });

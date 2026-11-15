@@ -187,8 +187,8 @@ export function buildWeather(farm: Farm, daily: DailyWeather, o: BuildWeatherOpt
     gridCell: file.gridCell,
     shifts,
     summary:
-      `Weather adjusted to today's climate using NASA NEX-GDDP-CMIP6 (${file.models.length} models); older years shifted more. ` +
-      `${oldestYear} replayed ~${((julyTmax.shift * 9) / 5).toFixed(1)} F ${julyTmax.shift >= 0 ? 'warmer' : 'cooler'} in ${MONTHS[6]} (daily highs).`,
+      `Weather shifted to the model-projected ${targetYear} climate using NASA NEX-GDDP-CMIP6 (${file.models.length} climate models); older years shifted more. ` +
+      `${oldestYear} replayed ~${((julyTmax.shift * 9) / 5).toFixed(1)} F ${julyTmax.shift >= 0 ? 'warmer' : 'cooler'} in ${MONTHS[6]} (daily highs, model-projected change).`,
   };
   return {
     weather: { mean: meanPool, members, adjustment },
