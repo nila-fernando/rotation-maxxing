@@ -13,12 +13,14 @@ import './styles.css';
 import { INTRO, LANDING_URL } from './config.js';
 import { DEMO_FARM } from './data/demoFarm.js';
 import * as farmData from './data/farmData.js';
-import { fillCropHistory, withCdlYears } from './data/cdlHistory.js';
-import { fillSoil, withSoil } from './data/soilSurvey.js';
-import { fillSlope, withSlope } from './data/terrain.js';
-import { farmRain, withRain } from './data/rain.js';
-import { fillNdvi, withNdvi } from './data/greenness.js';
-import { createMarkets } from './data/market.js';
+import { withCdlYears } from './data/cdlHistory.js';
+import { withSoil } from './data/soilSurvey.js';
+import { withSlope } from './data/terrain.js';
+import { withRain } from './data/rain.js';
+import { withNdvi } from './data/greenness.js';
+import { createMarkets, standInMarket } from './data/market.js';
+import { startFarmLoad } from './data/farmLoad.js';
+import { farmRunners } from './data/farmSources.js';
 import { centroid, featureCollection, feature as turfFeature } from '@turf/turf';
 import { demoRecordFor, fieldReportFor, HISTORY_YEARS, SOURCES } from './data/fieldReport.js';
 import { createPlanner } from './plan/planner.js';
@@ -98,8 +100,7 @@ const fieldsStep = createFieldsStep({
         maxZoom: 16, duration: 0.9,
       });
     }
-    startFieldFill(fields);
-    checkIn.start({ fields });
+    checkIn.start({ fields, load: startFieldFill(fields) });
   },
   onChangeLocation: () => {
     fieldsStep.stop();
@@ -107,35 +108,35 @@ const fieldsStep = createFieldsStep({
   },
 });
 
-// Each field's own data, fetched while the check-in runs. Nothing here is a stand-in: what doesn't
-// arrive stays missing and the check-up says so.
-//   crop history  USDA Cropland Data Layer (live USDA outlines have 2023 only; AI and drawn: none)
-//   soil          USDA NRCS SSURGO at a point in each field
-//   slope         elevation tiles (USGS 3DEP in the US)
-//   rain          NASA POWER at the middle of the farm
-//   greenness     NASA HLS via Planetary Computer: slow (one request per field per pass), so the
-//                 reveal doesn't wait for it; the check-up shows it once it's in
-const FIELD_FILL_GRACE_MS = 8000;
-let fieldFill = null;
+// The farm's own data, fetched while the check-in runs, each source within its own time limit and
+// with a live status the checklist and the check-up show (src/data/farmLoad.js, farmSources.js).
+// Nothing here is a stand-in: what doesn't arrive stays missing and the check-up says so.
+//   crops      USDA Cropland Data Layer (live USDA outlines have 2023 only; AI and drawn: none)
+//   soil       USDA NRCS SSURGO at a point in each field
+//   slope      elevation tiles (USGS 3DEP in the US)
+//   rain       NASA POWER at the middle of the farm
+//   greenness  NASA HLS via Planetary Computer (one request per field per pass)
+//   market     the county's crops, yields and prices from USDA NASS (src/data/market.js)
+const MERGE = { crops: withCdlYears, soil: withSoil, slope: withSlope, rain: withRain, greenness: withNdvi };
+let farmLoad = null;
 function startFieldFill(fields) {
+  farmLoad?.cancel(); // a newer pick replaces the last one's late answers
   const known = (f) => Object.fromEntries((demoRecordFor(f)?.cropHistory || []).map((c) => [c.year, c.crop]));
-  const apply = (merge) => (filled) => {
-    if (fieldFill !== job || !filled || !Object.keys(filled).length) return; // a newer pick replaced this one
-    app.fields = merge(app.fields, filled);
-    if (app.island) paintStatuses(); // landed after the reveal: the flags can use it
-    if (fieldPanel.openId) fieldPanel.update(reportFor(fieldPanel.openId));
-  };
-  const warn = (what) => (err) => console.warn(what, err);
-  const middle = farmPoint(fields);
-  markets.warm(middle); // the county's NASS crops, yields and prices, ready by the time the plans are asked for
-  const job = Promise.all([
-    fillCropHistory(fields, { years: HISTORY_YEARS, known }).then(apply(withCdlYears)).catch(warn('CDL crop history')),
-    fillSoil(fields).then(apply(withSoil)).catch(warn('SSURGO soil')),
-    fillSlope(fields).then(apply(withSlope)).catch(warn('Slope')),
-    middle ? farmRain(middle).then(apply(withRain)).catch(warn('NASA POWER rain')) : null,
-  ]);
-  fieldFill = job;
-  fillNdvi(fields).then(apply(withNdvi)).catch(warn('HLS greenness'));
+  const load = startFarmLoad({
+    fields,
+    point: farmPoint(fields),
+    runners: farmRunners({ markets, known }),
+    current: () => app.fields,
+    onData: (key, filled) => {
+      if (farmLoad !== load || !MERGE[key] || !filled) return;
+      app.fields = MERGE[key](app.fields, filled);
+      if (app.island) paintStatuses(); // landed after the reveal: the flags can use it
+    },
+  });
+  // the check-up's "Still checking…", "Couldn't reach…" and the data itself, as each source settles
+  load.tracker.subscribe(() => { if (farmLoad === load && fieldPanel.openId) fieldPanel.update(reportFor(fieldPanel.openId)); });
+  farmLoad = load;
+  return load;
 }
 
 /** The middle of the farm ([lng, lat]), or null with no fields. */
@@ -144,9 +145,19 @@ function farmPoint(fields) {
 }
 
 // the farm's market data: its county (FCC), the crops grown there and their USDA NASS yields and
-// prices, fetched for where the farm really is (src/data/market.js); { ok: false, reason } if not
+// prices, fetched for where the farm really is (src/data/market.js). When NASS or the county lookup
+// can't be reached (or this site has no NASS connection), the bundled late-2025 Iowa price levels
+// stand in, and every gap line says so; when NASS answers that it has nothing here, no plans.
 const markets = createMarkets({ thisYear: () => today().getFullYear() });
-const farmMarket = () => markets.forFarm(farmPoint(app.fields), { practice: farmIrrigation(app.fields, app.farmProfile) === 'irrigated' ? 'irrigated' : 'non-irrigated' });
+async function farmMarket() {
+  const point = farmPoint(app.fields);
+  const practice = farmIrrigation(app.fields, app.farmProfile) === 'irrigated' ? 'irrigated' : 'non-irrigated';
+  // the load already found NASS out of reach: don't keep the plans waiting on it again
+  const known = farmLoad?.tracker.get('market');
+  if (known?.state === 'failed' && String(farmLoad.point) === String(point)) return standInMarket(known.reason, { practice });
+  const m = await markets.forFarm(point, { practice });
+  return !m.ok && m.failed ? standInMarket(m.reason, { practice }) : m;
+}
 
 // the rotation planner (src/vendor/rotation-maxxing), in a Web Worker
 const planner = createPlanner();
@@ -197,7 +208,8 @@ function reportFor(id) {
     const irrigated = !!app.farmProfile?.irrigatedFieldIds?.includes(f.id);
     planWeather = data ? fieldWeatherNote(data, f.id, { startYear: firstSeason(today()), irrigated }) : null;
   } catch (e) { console.error('weather note', e); }
-  return fieldReportFor(f, { profile: app.farmProfile, planWeather });
+  const status = farmLoad ? Object.fromEntries(['crops', 'soil', 'slope', 'rain', 'greenness'].map((k) => [k, farmLoad.tracker.fieldState(k, id)])) : {};
+  return fieldReportFor(f, { profile: app.farmProfile, planWeather, status });
 }
 /** Colours every status dot in the hub's list from Manami's flags. */
 function paintStatuses() {
@@ -228,6 +240,8 @@ const fieldPanel = createFieldPanel({
   },
   onAsk: (id, opener) => askManami.open({ focus: { kind: 'field', field_id: id, name: nameOf(id) }, opener }),
   onCrops: (id, edits) => setCrops(id, edits),
+  // "Try again" on a source that couldn't be reached: ask it again for whatever failed
+  onRetry: (id, source) => { farmLoad?.retry(source).then(() => { if (fieldPanel.openId) fieldPanel.update(reportFor(fieldPanel.openId)); }); },
   onJar: (id, mode) => {
     if (mode === 'remove') removeJar(id, { from: 'checkup' });
     else jarPanel.open({ fieldId: id, step: mode === 'open' ? 'result' : 'howto', from: 'checkup' });
@@ -736,8 +750,7 @@ const checkIn = createCheckIn({
   onDone: async (profile) => {
     app.farmProfile = profile;
     console.log('farmProfile', profile);
-    // the island shows each field's newest crop and how many years we checked: give CDL a moment
-    if (fieldFill) await Promise.race([fieldFill, new Promise((r) => setTimeout(r, FIELD_FILL_GRACE_MS))]);
+    // (the check-in only ends once every data source has settled, so the island has the crop years)
     startReveal();
   },
 });
@@ -873,10 +886,12 @@ if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsSt
     introDone = true;
     await wait(600);
     app.fields = testFields(Number(params.get(key)) || 5);
-    startFieldFill(app.fields);
+    const load = startFieldFill(app.fields);
     app.farmProfile = { priorities: ['profit'], irrigatedFieldIds: [], excludedCrops: noCropsParam() };
     fieldsStep.hold();
-    startReveal({ instant: key === 'hub' });
+    // ?hub goes straight in (the data fills in behind); ?reveal shows the checklist until it's all in
+    if (key === 'hub') startReveal({ instant: true });
+    else if (await checkIn.wait({ load })) startReveal();
     return;
   }
   if (params.has('demo')) { // dev shortcut: ?demo flies to the demo farm, ?demo=land lands at once

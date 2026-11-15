@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { costLine, createMarkets, loadMarketRows, marketFor, priceText } from './market.js';
+import { costLine, createMarkets, loadMarketRows, marketFor, marketPriceLine, marketSummary, priceText, standInMarket } from './market.js';
+import { gapLines } from '../plan/futuresVoice.js';
 import { countyUrl, parseCounty } from './countyLookup.js';
 import { plannerFarm, plannerMarket, NoMarketData } from '../plan/farmInput.js';
 
@@ -114,18 +115,19 @@ describe('the farm\'s market data', () => {
   });
 });
 
+/** A fake network: the FCC answer, and NASS answers by what's asked for. */
+function network({ fcc = FCC_OK, nass = (url) => ({ data: [] }), status = () => 200 } = {}) {
+  const calls = [];
+  const fetchFn = async (url) => {
+    calls.push(url);
+    if (url.startsWith('https://geo.fcc.gov/')) return fcc instanceof Error ? Promise.reject(fcc) : new Response(JSON.stringify(fcc));
+    const s = status(url);
+    return new Response(s === 200 ? JSON.stringify(nass(url)) : '{"error":["no data"]}', { status: s });
+  };
+  return { calls, fetchFn };
+}
+
 describe('fetching it', () => {
-  /** A fake network: the FCC answer, and NASS answers by what's asked for. */
-  function network({ fcc = FCC_OK, nass = (url) => ({ data: [] }), status = () => 200 } = {}) {
-    const calls = [];
-    const fetchFn = async (url) => {
-      calls.push(url);
-      if (url.startsWith('https://geo.fcc.gov/')) return fcc instanceof Error ? Promise.reject(fcc) : new Response(JSON.stringify(fcc));
-      const s = status(url);
-      return new Response(s === 200 ? JSON.stringify(nass(url)) : '{"error":["no data"]}', { status: s });
-    };
-    return { calls, fetchFn };
-  }
 
   it('asks the county, then NASS through the proxy (never with a key), all at once', async () => {
     const rows = salineRows();
@@ -178,5 +180,67 @@ describe('fetching it', () => {
     const n = net.calls.length;
     await markets.forFarm([-97.6, 38.8], { practice: 'irrigated' }); // another practice: worked out again, not fetched again
     assert.equal(net.calls.length, n);
+  });
+});
+
+describe('when the farm’s NASS data can’t be had: the stand-in, named as one', () => {
+  const gapsOnly = (gaps) => gapLines({ fields: [], gaps, notes: { byField: {}, farm: { informationGaps: [], localReview: [] } } });
+
+  it('out of reach or not set up is "failed" (the stand-in may step in); NASS having nothing is not', async () => {
+    assert.equal((await createMarkets({ base: '', fetchFn: network().fetchFn }).forFarm([-97.6, 38.8])).failed, true);
+    assert.equal((await createMarkets({ base: '/nass', fetchFn: network({ status: () => 503 }).fetchFn }).forFarm([-97.6, 38.8])).failed, true);
+    assert.equal((await createMarkets({ base: '/nass', fetchFn: network({ fcc: new Error('offline') }).fetchFn }).forFarm([-97.6, 38.8])).failed, true);
+    const abroad = await createMarkets({ base: '/nass', fetchFn: network({ fcc: { County: { FIPS: null }, State: {}, status: 'OK' } }).fetchFn }).forFarm([2.35, 48.85]);
+    assert.equal(abroad.failed, false);
+  });
+
+  it('plans with the bundled late-2025 Iowa price levels, and every line says they are stand-ins', () => {
+    const m = standInMarket('USDA NASS could not be reached');
+    assert.equal(m.ok, true);
+    assert.equal(m.standIn, true);
+    assert.equal(m.source, 'stand-in');
+    assert.deepEqual(m.crops, ['corn', 'soybeans', 'oats', 'winter-wheat', 'alfalfa']);
+    assert.deepEqual(m.prices.corn, { price: 4.2, unit: 'bu', year: 2025, level: 'stand-in', place: 'Iowa', source: 'stand-in' });
+    assert.equal(m.prices.alfalfa.unit, 'ton');
+    assert.deepEqual(m.baseYields, {}); // the planner's own US base yields (it says so itself)
+    assert.equal(m.gaps[0], 'Prices: I couldn’t get this farm’s USDA NASS prices (USDA NASS could not be reached), so these are stand-ins: late-2025 Iowa cash price levels bundled with the app (corn $4.20/bu, soybeans $10.50/bu, oats $3.10/bu, winter wheat $5.30/bu, alfalfa $210/ton), not your local market.');
+    assert.match(m.gaps[1], /^Crops to choose from: the demo county’s usual crops/);
+    assert.match(m.gaps[2], /^Costs: /);
+    const fields = [{ id: 'f', name: 'F', acres: 40, crops: { 2025: 'Corn' }, soil: { land: { texture: 'loam', drainage: 'well', slopePct: 2, organicMatterPct: 3, waterHoldingMm: 200 }, gaps: [] }, slopePct: 2, geometry: { type: 'Polygon', coordinates: [[[-93.6, 42], [-93.59, 42], [-93.59, 42.01], [-93.6, 42.01], [-93.6, 42]]] } }];
+    const { farm, gaps } = plannerFarm({ market: m, fields, place: { lat: 42, lon: -93.6, detail: 'Iowa, United States' } });
+    assert.ok(farm.paddocks[0]?.availableCrops.includes('soybeans'));
+    assert.equal(gaps[0], m.gaps[0]);
+    assert.equal(plannerMarket(m).corn.localPrice, 4.2);
+  });
+
+  it('says where the prices are from in the Money detail and to Ask Manami', () => {
+    const nass = marketFor({ county: SALINE, rows: salineRows(), thisYear: 2026 });
+    assert.equal(marketPriceLine(nass), 'Priced with USDA NASS prices received, Kansas marketing year 2025: corn $4.00/bu, winter wheat $5.10/bu, sorghum $3.81/bu.');
+    assert.deepEqual(marketSummary(nass), {
+      source: 'usda-nass', said: 'USDA NASS prices received, Kansas marketing year 2025', county: 'Saline County, KS',
+      prices: [{ crop: 'corn', price: '$4.00/bu', year: 2025, where: 'Kansas' }, { crop: 'winter wheat', price: '$5.10/bu', year: 2025, where: 'Kansas' }, { crop: 'sorghum', price: '$3.81/bu', year: 2025, where: 'Kansas' }],
+    });
+    const stand = standInMarket('this site has no connection to USDA NASS set up');
+    assert.match(marketPriceLine(stand), /^Priced with stand-ins: late-2025 Iowa cash price levels bundled with the app \(corn \$4\.20\/bu, .*\), because I couldn’t get this farm’s USDA NASS prices\.$/);
+    const sum = marketSummary(stand);
+    assert.equal(sum.source, 'stand-in');
+    assert.equal(sum.why, 'this site has no connection to USDA NASS set up');
+    assert.equal(sum.prices[0].where, 'Iowa');
+    assert.equal(marketPriceLine({ ok: false }), null);
+    assert.equal(marketSummary(null), null);
+  });
+
+  it('Manami says every market line in "Good to know", NASS or stand-in', () => {
+    const nass = gapsOnly(marketFor({ county: SALINE, rows: salineRows(), thisYear: 2026 }).gaps);
+    assert.deepEqual(nass.unmatched, []);
+    assert.ok(nass.farm.includes('I picked from the crops grown in Saline County, KS, plus fallow and a rye cover crop.'), nass.farm.join(' | '));
+    assert.ok(nass.farm.includes('My prices are what farmers were paid, from USDA NASS: Kansas marketing year 2025 (corn $4.00/bu, winter wheat $5.10/bu, sorghum $3.81/bu from $6.80/cwt). That’s one price everywhere, with no local basis or freight.'), nass.farm.join(' | '));
+    assert.ok(nass.farm.includes('I left out barley: grown here, but USDA has no price or yield for it.'));
+    assert.ok(nass.farm.includes('USDA doesn’t publish dryland yields for winter wheat, sorghum here, so I used the average over all acres.'));
+    assert.ok(nass.farm.includes('My yields are USDA NASS averages for your area, so check them against your own records.'));
+    const stand = gapsOnly(standInMarket('USDA NASS could not be reached (it timed out)').gaps);
+    assert.deepEqual(stand.unmatched, []);
+    assert.equal(stand.farm[0], 'I couldn’t get your local prices from USDA, so I used stand-in late-2025 Iowa prices (corn $4.20/bu, soybeans $10.50/bu, oats $3.10/bu, winter wheat $5.30/bu, alfalfa $210/ton). Treat the money as a rough guide.');
+    assert.equal(stand.farm[1], 'I don’t have your county’s crop list, so I picked from the demo county’s usual crops.');
   });
 });

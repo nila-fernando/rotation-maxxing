@@ -47,7 +47,7 @@ function nassProxy(key) {
 // when set, '' to turn one off. Otherwise '/cropscape' and '/nass' for `npm run dev` and the local
 // build that `npm run preview` serves, and off for the GitHub Pages build (`npm run build:pages`,
 // mode "pages"): a static host can't proxy, so the check-up says those years are out of reach and the
-// plans say there's no price or yield data, instead of asking and failing.
+// plans use the bundled stand-in prices (and say so), instead of asking and failing.
 export default defineConfig(({ mode }) => {
   const root = fileURLToPath(new URL('.', import.meta.url));
   const env = loadEnv(mode, root, 'VITE_');

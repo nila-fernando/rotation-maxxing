@@ -23,6 +23,7 @@
 import { APP_CROP } from '../plan/farmInput.js';
 import { createPlanBuilder } from './planBuilder.js';
 import { money } from '../ui/money.js';
+import { marketPriceLine } from '../data/market.js';
 import { PLANS } from '../plan/planNames.js';
 import { asset } from '../ui/asset.js';
 // the calendar is already in the main bundle (the builder's palette reads its sowing windows), so it's not lazy
@@ -424,7 +425,7 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
         + `<td>${cell(cash.value, money)}</td><td>${cell(bad.value, money)}</td><td>${cell(soil.value, (v) => `${v}/100`)}</td>`
         + `<td>${kind === 'current' ? '–' : cell(beats.value, (v) => `${v}% of years`)}</td></tr>`;
     }).join('');
-    const lines = [fv.priceLine(cmp.price), fv.vsProfitLine(cmp), fv.nCarriedLine(cmp, selected, mixScore, choice)].filter(Boolean);
+    const lines = [marketPriceLine(data.marketData), fv.priceLine(cmp.price), fv.vsProfitLine(cmp), fv.nCarriedLine(cmp, selected, mixScore, choice)].filter(Boolean);
     return `<div class="rot-money__wrap"><table class="rot-money__table"><caption class="sr-only">Money for each plan, over 3 seasons</caption>
       <thead><tr><th scope="col">Plan</th><th scope="col">Cash margin, 3 seasons</th><th scope="col">In a bad year (1 in 10)</th><th scope="col">Soil score in ${cmp.years[2]}</th><th scope="col">Beats keeping going</th></tr></thead>
       <tbody>${rows}</tbody></table></div>${lines.map((l) => `<p class="rot-money__note">${esc(l)}</p>`).join('')}`;

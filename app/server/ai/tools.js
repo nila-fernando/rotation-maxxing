@@ -21,7 +21,7 @@ export const CHAT_TOOLS = Object.freeze([
   },
   {
     name: 'get_plans',
-    description: 'The planner\'s three plans (Keep going, Most profit, Manami’s pick) for the next three seasons: totals and each field\'s crops by season. Says ready: false when the farmer has not opened "Plan my next seasons" yet. Call it for any question about the plans or what to grow next.',
+    description: 'The planner\'s three plans (Keep going, Most profit, Manami’s pick) for the next three seasons: totals, each field\'s crops by season, and the crop prices they were worked out with and where those prices come from (USDA NASS, or stand-ins when NASS could not be reached). Says ready: false when the farmer has not opened "Plan my next seasons" yet. Call it for any question about the plans or what to grow next.',
     input_schema: EMPTY,
     strict: true,
   },

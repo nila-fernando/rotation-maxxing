@@ -11,8 +11,9 @@ the plans out on the island.
 ## Run it on your computer
 
 You need [Node.js](https://nodejs.org) **22.18 or newer** (24 is what we use) and git. Everything
-runs without keys except "Plan my next seasons", which needs a free USDA NASS Quick Stats key for
-local crops, yields and prices (see [Prices, yields and local crops](#prices-yields-and-local-crops-from-usda-nass-vite_nass_proxy)):
+runs without keys. "Plan my next seasons" uses each farm's own crops, yields and prices from USDA NASS
+when there's a free Quick Stats key, and bundled stand-in prices (said so in the plans) when there
+isn't (see [Prices, yields and local crops](#prices-yields-and-local-crops-from-usda-nass-vite_nass_proxy)):
 
 ```sh
 git clone https://github.com/nila-fernando/rotation-maxxing.git
@@ -94,7 +95,7 @@ lookups off.
 
 ## Prices, yields and local crops from USDA NASS (`VITE_NASS_PROXY`)
 
-The planner uses the farm's own market data, never stand-in numbers (`src/data/market.js`):
+The planner uses the farm's own market data (`src/data/market.js`):
 
 - **County:** the middle of the fields, looked up with the FCC Census Block API (keyless).
 - **Crops to choose from:** the planner's crops harvested in that county in the latest USDA Census of
@@ -109,17 +110,24 @@ The planner uses the farm's own market data, never stand-in numbers (`src/data/m
   forecast; Iowa State for alfalfa; NDSU for canola, sunflower and dry beans), not local; the plans
   say so.
 
-Every source shows in the plans' "Good to know". If the county or NASS can't be reached, the plans
-say there is no price or yield data for the farm, and why, instead of planning.
+Every source shows in the plans' "Good to know", and "Money detail" lists the price of each crop the
+plans used and where it's from (Ask Manami gets the same, through `get_plans`).
+
+If the county lookup or NASS can't be reached, or the site has no NASS connection set up, the plans
+fall back to stand-ins and say so in every line that uses them: the placeholder late-2025 Iowa cash
+price levels in `data/demo-farm.json` (`county.prices`), the demo county's crop list (corn, soybeans,
+oats, winter wheat, alfalfa) and the planner's own US base yields. The loading checklist shows the
+market row as "Couldn't reach USDA NASS". If NASS answers but has no crops, prices or yields for the
+county, there are no plans, and the plans panel says why.
 
 Quick Stats needs an API key and doesn't allow browser requests, so the app asks through a proxy
 that adds the key on the server; the key is never in the browser or the built files:
 
 - `npm run dev` and `npm run preview` answer `/nass/api_GET/` themselves (`vite.config.js`), with the
   key from `NASS_API_KEY` in the environment or `app/.env.local`. Get a free key at
-  https://quickstats.nass.usda.gov/api. Without one, the plans say NASS isn't set up.
-- The GitHub Pages build has no proxy unless `VITE_NASS_PROXY` is set, so its plans say there's no
-  price or yield data. To turn it on, deploy the Worker in `proxy/cropscape/` with the secret
+  https://quickstats.nass.usda.gov/api. Without one, the plans use the stand-ins above.
+- The GitHub Pages build has no proxy unless `VITE_NASS_PROXY` is set, so its plans use the
+  stand-ins. To turn it on, deploy the Worker in `proxy/cropscape/` with the secret
   `NASS_API_KEY` (see its README), then set the repository variable `VITE_NASS_PROXY` to the Worker's
   address plus `/nass`, for example `https://cropscape-proxy.example.workers.dev/nass`, and run the
   workflow again. Never put the key itself in a `VITE_` variable: those end up in the browser.

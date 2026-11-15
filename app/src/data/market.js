@@ -1,18 +1,23 @@
 // The farm's market data for the planner, all fetched for where the farm really is: its county
 // (FCC Census API), the crops grown there, their yields and their prices (USDA NASS Quick Stats,
-// through our proxy: src/data/nass.js). No stand-in numbers: when any of it can't be had, the
-// answer is { ok: false, reason } and the plans say plainly that there's no data.
+// through our proxy: src/data/nass.js).
 //
 //   const markets = createMarkets()
 //   const market = await markets.forFarm([lng, lat], { practice: 'non-irrigated' })
-//   market: { ok: true, county, crops, prices, baseYields, gaps }  (see marketFor)
-//        or { ok: false, reason, failed }   failed: couldn't be reached (asking again may work)
+//   market: { ok: true, source: 'nass', county, crops, prices, baseYields, gaps }  (see marketFor)
+//        or { ok: false, reason, failed }   failed: couldn't be reached, or this site has no NASS
+//                                          connection (asking again may work, or never will)
+//   standInMarket(reason)  ->  { ok: true, source: 'stand-in', ... }  for a farm whose NASS data
+//        couldn't be reached: the late-2025 Iowa cash prices bundled with the demo data, every one of
+//        them named as a stand-in in the gaps. NASS answering that it has nothing for the county is
+//        not a reason to use them: then there are no plans, and the plans panel says why.
 //   await markets.status([lng, lat])  ->  { state: 'done' | 'none' | 'failed', reason }  (the loading checklist)
 //
 // The NASS answers are kept per county for the session (a failed try isn't, so it's asked again).
 import { CROP_BY_ID, SOURCES } from '../vendor/rotation-maxxing/algorithm/croptraits.ts';
 import { CROP_WORD } from '../plan/planNames.js';
 import { countyAt } from './countyLookup.js';
+import { getCounty } from './farmData.js';
 import { Unreachable, fetchRetry } from './net.js';
 import { NASS_PROXY, baseYieldsFrom, cropsGrown, marketQueries, nassAvailable, pickPrice, proxiedFetch, stateCensusQuery } from './nass.js';
 
@@ -152,7 +157,75 @@ export function marketFor({ county, rows, thisYear }, { practice = 'non-irrigate
   const costs = costLine(crops);
   if (costs) gaps.push(costs);
 
-  return { ok: true, county, practice, crops, prices, baseYields, gaps };
+  return { ok: true, source: 'nass', county, practice, crops, prices, baseYields, gaps };
+}
+
+/** The crops the stand-in market offers: the demo county's (Story County, Iowa) usual cash crops. */
+export const STAND_IN_CROPS = ['corn', 'soybeans', 'oats', 'winter-wheat', 'alfalfa'];
+const STAND_IN_KEY = { corn: 'corn', soybeans: 'soybeans', oats: 'oats', 'winter-wheat': 'wheat', alfalfa: 'alfalfa' };
+const STAND_IN_UNIT = { alfalfa: 'ton' };
+
+/**
+ * The market to plan with when the farm's own NASS data couldn't be had (NASS or the county lookup
+ * didn't answer, or this site has no NASS connection): the placeholder late-2025 Iowa cash price
+ * levels in data/demo-farm.json (county.prices), the demo county's crop list, and the planner's own
+ * US base yields. Every gap line says it's a stand-in and why, so nobody takes it for local prices.
+ */
+export function standInMarket(reason, { county = null, practice = 'non-irrigated' } = {}) {
+  const levels = getCounty()?.prices || {};
+  const prices = {};
+  for (const id of STAND_IN_CROPS) {
+    const price = levels[STAND_IN_KEY[id]];
+    if (!Number.isFinite(price)) continue;
+    prices[id] = { price, unit: STAND_IN_UNIT[id] || 'bu', year: 2025, level: 'stand-in', place: 'Iowa', source: 'stand-in' };
+  }
+  const crops = STAND_IN_CROPS.filter((id) => prices[id]);
+  const why = reason ? ` (${reason})` : '';
+  const gaps = [
+    `Prices: I couldn’t get this farm’s USDA NASS prices${why}, so these are stand-ins: late-2025 Iowa cash price levels bundled with the app (${crops.map((id) => `${word(id)} ${priceText(prices[id].price, prices[id].unit)}`).join(', ')}), not your local market.`,
+    `Crops to choose from: the demo county’s usual crops (${listWords(crops)}), plus fallow and a cereal-rye cover crop, not a list for this farm’s county.`,
+  ];
+  const costs = costLine(crops);
+  if (costs) gaps.push(costs);
+  return { ok: true, source: 'stand-in', standIn: true, reason: reason || null, county, practice, crops, prices, baseYields: {}, gaps };
+}
+
+/** "corn $4.20/bu, soybeans $10.50/bu": a market's prices for the given crops, for Manami and Ask Manami. */
+export function priceList(market, ids = market?.crops || []) {
+  return ids.filter((id) => market?.prices?.[id]).map((id) => `${word(id)} ${priceText(market.prices[id].price, market.prices[id].unit)}`).join(', ');
+}
+
+/** Where a market's prices come from, in a few words: "USDA NASS prices received, Iowa marketing year 2025". */
+export function priceSourceText(market) {
+  if (!market?.ok) return null;
+  if (market.standIn) return 'stand-in late-2025 Iowa cash prices bundled with the app (USDA NASS couldn’t be reached)';
+  const groups = new Set(market.crops.map((id) => market.prices[id]).filter(Boolean).map((p) => `${p.level === 'state' ? p.place : 'US'} marketing year ${p.year}`));
+  return `USDA NASS prices received, ${[...groups].join('; ')}`;
+}
+
+/** The Money detail's line: which prices the plans were worked out with, and where they're from. */
+export function marketPriceLine(market) {
+  if (!market?.ok) return null;
+  const list = priceList(market);
+  if (!list) return null;
+  return market.standIn
+    ? `Priced with stand-ins: late-2025 Iowa cash price levels bundled with the app (${list}), because I couldn’t get this farm’s USDA NASS prices.`
+    : `Priced with ${priceSourceText(market)}: ${list}.`;
+}
+
+/** The prices for Ask Manami (get_plans): where they're from, and each crop's. */
+export function marketSummary(market) {
+  if (!market?.ok) return null;
+  return {
+    source: market.standIn ? 'stand-in' : 'usda-nass',
+    said: priceSourceText(market),
+    ...(market.standIn ? { why: market.reason || null } : {}),
+    county: market.county ? `${market.county.name}, ${market.county.state}` : null,
+    prices: market.crops.filter((id) => market.prices[id]).map((id) => {
+      const p = market.prices[id];
+      return { crop: word(id), price: priceText(p.price, p.unit), year: p.year, where: p.place };
+    }),
+  };
 }
 
 /** The farm's market data, cached per county and NASS proxy for the session. */
@@ -161,7 +234,7 @@ export function createMarkets({ fetchFn = (...a) => globalThis.fetch(...a), base
   const loads = new Map(); // county fips -> Promise<{ county, rows, thisYear }>
 
   function rowsFor(point) {
-    if (!nassAvailable(base)) return Promise.reject(new Error('this site has no connection to USDA NASS set up'));
+    if (!nassAvailable(base)) return Promise.reject(Object.assign(new Error('this site has no connection to USDA NASS set up'), { code: 'no-nass' }));
     const pk = point.map((v) => v.toFixed(3)).join(',');
     if (!counties.has(pk)) {
       const job = countyAt(point, { fetchFn });
@@ -201,8 +274,9 @@ export function createMarkets({ fetchFn = (...a) => globalThis.fetch(...a), base
       try {
         return marketFor(await rowsFor(point), { practice });
       } catch (e) {
-        // failed: it couldn't be reached (asking again may work), as opposed to NASS having nothing
-        return { ok: false, reason: e.message, failed: e?.code === 'unreachable' };
+        // failed: it couldn't be reached (asking again may work) or this site can't ask NASS at all,
+        // as opposed to NASS answering that it has nothing here
+        return { ok: false, reason: e.message, failed: e?.code === 'unreachable' || e?.code === 'no-nass' };
       }
     },
   };

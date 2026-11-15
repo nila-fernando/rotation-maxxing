@@ -146,3 +146,15 @@ test('readSse reads a byte stream', async () => {
   await readSse(new Response('event: a\ndata: 1\n\n').body, (e) => got.push(e));
   assert.deepEqual(got, [{ event: 'a', data: 1 }]);
 });
+
+test('plans summary: the prices the plans used, and where they are from (NASS, or a named stand-in)', async () => {
+  const { standInMarket } = await import('../data/market.js');
+  const plan = { expectedGM: 1, p10GM: 1, paddocks: [] };
+  const s = plansSummary({ result: { plans: { current: plan, maxProfit: plan, priority: plan } }, marketData: standInMarket('USDA NASS could not be reached') }, new Date(2026, 10, 15));
+  assert.equal(s.prices.source, 'stand-in');
+  assert.match(s.prices.said, /stand-in late-2025 Iowa cash prices/);
+  assert.equal(s.prices.why, 'USDA NASS could not be reached');
+  assert.deepEqual(s.prices.prices[0], { crop: 'corn', price: '$4.20/bu', year: 2025, where: 'Iowa' });
+  // no market data handed over: no prices key at all (nothing made up)
+  assert.equal('prices' in plansSummary({ result: { plans: { current: plan, maxProfit: plan, priority: plan } } }), false);
+});

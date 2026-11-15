@@ -3,8 +3,9 @@
 //
 //   const planner = createPlanner()
 //   const { result, weather, gaps, farm } = await planner.plans({ fields, place, profile, market })
-//   market: the farm's NASS market data (src/data/market.js). When it's { ok: false }, plans()
-//   throws a NoMarketData error (code 'no-market'): nothing is planned on stand-in prices.
+//   market: the farm's market data (src/data/market.js): USDA NASS, or the named stand-in that
+//   main.js swaps in when NASS can't be reached. When it's { ok: false } (NASS has nothing for the
+//   county), plans() throws a NoMarketData error (code 'no-market') and the panel says why.
 //   result: generatePlans' output (see src/vendor/rotation-maxxing/docs/API.md):
 //     result.plans.current / .maxProfit / .priority, result.priceOfPriorities, result.exclusions
 import { plannerFarm, plannerMarket, plannerPriorities } from './farmInput.js';
