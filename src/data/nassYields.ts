@@ -197,7 +197,9 @@ export async function fetchBaseYields(
     }
     const levels: LevelSeries[] = [];
     for (const [level, county] of [['county', o.countyFips], ['state', undefined]] as const) {
-      const res = await fetchFn(quickStatsUrl(o.key, spec, o.stateFips, county));
+      // Quick Stats is often slow; retry server errors (5xx) up to 2 more times.
+      let res = await fetchFn(quickStatsUrl(o.key, spec, o.stateFips, county));
+      for (let i = 0; i < 2 && res.status >= 500; i++) res = await fetchFn(quickStatsUrl(o.key, spec, o.stateFips, county));
       // Quick Stats answers 400 when a query matches no rows.
       if (res.status === 400) continue;
       if (!res.ok) throw new Error(`NASS Quick Stats request failed (HTTP ${res.status}).`);
