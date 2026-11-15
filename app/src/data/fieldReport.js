@@ -20,6 +20,7 @@ import { findFieldBySourceId, getField } from './farmData.js';
 import { FLAG_CONFIG, erosionRisk, flagsFor, shownFlags, statusFor } from './flags.js';
 import { mapTexture } from '../vendor/rotation-maxxing/data/ssurgo.ts';
 import { textureBucket } from '../plan/farmInput.js';
+import { cdlAvailable } from './cdlHistory.js';
 
 /** The 8 CSB years shown in the crop history. */
 export const HISTORY_YEARS = [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025];
@@ -52,8 +53,9 @@ const titleCase = (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1);
  * @param {object|null} [o.weather] { growingSeasonRainMm: [{year, value}], avg30yrRainMm } (field.rain)
  * @param {object|null} [o.profile] farmProfile ({ irrigatedFieldIds })
  * @param {object|null} [o.planWeather] { water, frost } lines from the latest plans, passed through
+ * @param {boolean} [o.cdl]          whether CropScape can be reached from this site (no on GitHub Pages)
  */
-export function buildFieldReport(field, { demo = null, weather = null, profile = null, cfg = FLAG_CONFIG, planWeather = null } = {}) {
+export function buildFieldReport(field, { demo = null, weather = null, profile = null, cfg = FLAG_CONFIG, planWeather = null, cdl = cdlAvailable() } = {}) {
   // crop history: the outline's own years first, the demo record's for any it lacks
   const byYear = new Map();
   for (const c of demo?.cropHistory || []) if (c?.crop != null) byYear.set(Number(c.year), c.crop);
@@ -109,6 +111,7 @@ export function buildFieldReport(field, { demo = null, weather = null, profile =
     status: known.length || soil || slope || rain ? statusFor(flags, cfg) : 'unknown',
     placeholder: {}, // nothing is a stand-in any more
     cdlYears: field.cdlYears || [],
+    cdlOff: !cdl, // the missing years can't be looked up from this site (no CropScape proxy)
     jar,
     planWeather: planWeather ?? null,
   };

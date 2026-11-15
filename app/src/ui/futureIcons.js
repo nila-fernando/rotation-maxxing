@@ -6,6 +6,7 @@
 // Size comes from CSS (.btn svg is 20px).
 import { cropIcon } from './cropIcons.js';
 import { APP_CROP } from '../plan/farmInput.js';
+import { asset } from './asset.js';
 
 const S = (body) => `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 const SOFT = 'fill="currentColor" fill-opacity=".2"';
@@ -20,7 +21,7 @@ const LOOP = '<path d="M19.5 10.5a7.6 7.6 0 0 0-13.4-3.3"/><path d="M5.6 3.6v3.8
 export const PLAN_ICONS = {
   current: S(LOOP),
   maxProfit: S(COIN),
-  priority: '<img src="/manami.svg" alt="" width="20" height="18">',
+  priority: `<img src="${asset('/manami.svg')}" alt="" width="20" height="18">`,
   // a pencil writing, with a tick beside it
   mix: S(`<path d="M13.6 5.4l3 3L8.4 16.6l-3.9.9.9-3.9z" ${SOFT}/><path d="M11.8 7.2l3 3"/><path d="M14 17.6l2 2 4-4.4"/>`),
 };

@@ -16,6 +16,9 @@ import { APP_CROP } from '../plan/farmInput.js';
 import { createPlanBuilder } from './planBuilder.js';
 import { money } from '../ui/money.js';
 import { PLANS, CROP_NAME } from '../plan/planNames.js';
+import { asset } from '../ui/asset.js';
+
+const MANAMI_SVG = asset('/manami.svg');
 
 // (money lives in src/ui/money.js now; it is still exported from here for older callers)
 export { money } from '../ui/money.js';
@@ -268,7 +271,7 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
     const gaps = [...new Set([...data.gaps, ...(pick.informationGaps || []), ...(pick.localReview || [])])];
 
     body.innerHTML = `${tabs()}<div role="tabpanel" id="plansView" aria-labelledby="plansTab-compare">
-      <div class="plans__manami"><img src="/manami.svg" alt="" width="40" height="36"><p>${manami}</p>${farmBtn}</div>
+      <div class="plans__manami"><img src="${MANAMI_SVG}" alt="" width="40" height="36"><p>${manami}</p>${farmBtn}</div>
       <div class="plans__cards">${cards}</div>
       <p class="plans__price">${esc(result.priceOfPriorities.summary)}</p>
 

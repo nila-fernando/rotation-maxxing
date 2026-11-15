@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { booleanPointInPolygon } from '@turf/turf';
-import { fieldPoints, fillCropHistory, majority, withCdlYears } from './cdlHistory.js';
+import { CDL_PROXY, cdlAvailable, fieldPoints, fillCropHistory, majority, withCdlYears } from './cdlHistory.js';
 
 // A ~40 acre square near Ames, IA, and an L-shaped field whose centroid falls outside it.
 const square = { type: 'Polygon', coordinates: [[[-93.36, 42.02], [-93.3575, 42.02], [-93.3575, 42.0218], [-93.36, 42.0218], [-93.36, 42.02]]] };
@@ -62,6 +62,16 @@ describe('CDL crop history', () => {
     const filled = await fillCropHistory([{ id: 'a', geometry: square, crops: null }], { years: [2024, 2025], fetchFn, base: 'https://x' });
     assert.deepEqual(filled, { a: { 2024: 'Corn' } });
     assert.equal(calls.filter((u) => u.includes('year=2025')).length, fieldPoints(square).length * 3);
+  });
+
+  test('with no proxy (the GitHub Pages build), nothing is asked and nothing comes back', async () => {
+    const { fetchFn, calls } = fakeCropScape({ 2024: 'Corn' });
+    const filled = await fillCropHistory([{ id: 'a', geometry: square, crops: null }], { years: [2024, 2025], fetchFn, base: '' });
+    assert.deepEqual(filled, {});
+    assert.equal(calls.length, 0);
+    assert.equal(cdlAvailable(''), false);
+    assert.equal(cdlAvailable('https://x'), true);
+    assert.equal(CDL_PROXY, '/cropscape', 'outside Vite (no VITE_CDL_PROXY) the dev proxy is the default');
   });
 
   test('unchanged fields come back as the same objects', () => {

@@ -8,12 +8,13 @@
 // Every layer has the same shape: { key, live, items, byId, bbox, attribution?, ensure(), subscribe() }
 import { bboxOf, labelPoint } from './geometry.js';
 import { liveLayer } from './liveOutlines.js';
+import { asset } from '../ui/asset.js';
 
 export const OUTLINE_LAYERS = {
-  usda: { label: 'USDA', url: '/data/fields/story-ia-usda.geojson', long: 'USDA crop field outlines' },
-  ai: { label: 'AI', url: '/data/fields/story-ia-ai.geojson', long: 'AI-detected fields (Fields of The World)' },
+  usda: { label: 'USDA', url: asset('/data/fields/story-ia-usda.geojson'), long: 'USDA crop field outlines' },
+  ai: { label: 'AI', url: asset('/data/fields/story-ia-ai.geojson'), long: 'AI-detected fields (Fields of The World)' },
 };
-const SOURCES_URL = '/data/fields/sources.json';
+const SOURCES_URL = asset('/data/fields/sources.json');
 /** Extent of the bundled demo-county files, so we only download them for a farm inside it. */
 const BUNDLED_EXTENT = [-93.6986, 41.8589, -93.2297, 42.2099];
 

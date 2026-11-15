@@ -26,6 +26,9 @@ import { SOURCES } from '../data/fieldReport.js';
 import { cropIcon } from '../ui/cropIcons.js';
 import { LENS_ICONS } from '../ui/futureIcons.js';
 import { JAR } from '../ui/jarIcons.js';
+import { asset } from '../ui/asset.js';
+
+const MANAMI_SVG = asset('/manami.svg');
 
 const MM_PER_IN = 25.4;
 const RISK_TEXT = { low: 'Low erosion risk', medium: 'Medium erosion risk', high: 'High erosion risk' };
@@ -35,6 +38,12 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const cap = (s) => (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : '');
 const inches = (mm) => (mm / MM_PER_IN).toFixed(1);
 const CONFIDENCE = { high: 'High confidence', medium: 'Medium confidence', low: 'Low confidence', adjusted: 'Adjusted by you' };
+
+/** The line under a crop history with years missing; on a site with no CropScape proxy, it says why. */
+export function historyGap(knownYears, cdlOff = false) {
+  const have = knownYears ? `${knownYears} of 8 years on record.` : 'No crop records for this field yet.';
+  return cdlOff ? `${have} The rest come from CropScape, and I can’t reach it from this site yet.` : have;
+}
 
 /**
  * A tiny jar in the record's own layer colours (3 to 5 bands, top to bottom; with more layers the
@@ -295,11 +304,11 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onClose }) {
 
     body.innerHTML = `
       <section class="says" aria-labelledby="ckSays">
-        <h3 id="ckSays" class="says__title"><img src="/manami.svg" alt="" width="24" height="22"> Manami says</h3>
+        <h3 id="ckSays" class="says__title"><img src="${MANAMI_SVG}" alt="" width="24" height="22"> Manami says</h3>
         ${says}${more}
       </section>
       ${section('ckHist', 'Crop history', '2018–2025', `${chip('CSB')}${r.cdlYears?.length ? ` ${chip('CDL')}` : ''}`, `<ol class="history" aria-label="Crops by year">${history}</ol>
-        ${knownYears < r.history.length ? `<p class="ck-caption">${knownYears ? `${knownYears} of 8 years on record.` : 'No crop records for this field yet.'}</p>` : ''}`)}
+        ${knownYears < r.history.length ? `<p class="ck-caption">${historyGap(knownYears, r.cdlOff)}</p>` : ''}`)}
       ${section('ckSoil', 'Soil', '', r.soil ? chip('SSURGO', ph.soil) : '', soil + jarStrip(r.jar, jarSaid?.id === r.id ? jarSaid.text : ''))}
       ${section('ckSlope', 'Slope', '', r.slope ? chip('DEM', ph.slope) : '', slope)}
       ${section('ckRain', 'Rain trend', 'Apr–Sep', r.rain ? chip('POWER', ph.rain) : '', rain)}

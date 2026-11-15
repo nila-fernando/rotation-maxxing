@@ -1,7 +1,10 @@
 // App-wide settings. Change these here rather than in the screens.
 
-/** Where the logo goes: the marketing landing page. Set VITE_LANDING_URL in .env when it has a home. */
-export const LANDING_URL = import.meta.env.VITE_LANDING_URL || '/';
+import { asset } from './ui/asset.js';
+
+/** Where the logo goes: the marketing landing page. Set VITE_LANDING_URL in .env when it has a home;
+ *  until then, the app's own start (under the site's base path, so on GitHub Pages it stays on the site). */
+export const LANDING_URL = import.meta.env.VITE_LANDING_URL || asset('/');
 
 /** Satellite imagery for the map and for the globe's last stretch of the dive.
  *  Esri World Imagery is fine for a prototype; a live app needs its own imagery licence. */

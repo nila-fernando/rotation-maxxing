@@ -5,6 +5,9 @@ outlines, answer three quick questions, and your farm appears as an island. "Pla
 runs the crop-rotation planner (`src/vendor/rotation-maxxing`), and "See them on the farm" plays
 the plans out on the island.
 
+**Try it:** https://nila-fernando.github.io/rotation-maxxing/ (version 0.10.0; what's new is in
+[CHANGELOG.md](CHANGELOG.md)).
+
 ## Run it on your computer
 
 You need [Node.js](https://nodejs.org) **22.18 or newer** (24 is what we use) and git. No API keys or
@@ -12,9 +15,7 @@ You need [Node.js](https://nodejs.org) **22.18 or newer** (24 is what we use) an
 
 ```sh
 git clone https://github.com/nila-fernando/rotation-maxxing.git
-cd rotation-maxxing
-git checkout app-into-main   # until PR #4 is merged; after that, main
-cd app
+cd rotation-maxxing/app
 npm install
 npm run dev
 ```
@@ -48,9 +49,45 @@ In the browser console, `window.__sheep` has handles to poke at (dev only), amon
 ## Tests and build
 
 ```sh
-npm test        # node:test, about 4 s
-npm run build   # into dist/
+npm test              # node:test, about 4 s
+npm run build         # into dist/, for this computer (npm run preview serves it)
+npm run build:pages   # into dist/, the GitHub Pages build (under /rotation-maxxing/, CropScape off)
 ```
+
+## Releases and the live site
+
+Every push to `main` deploys the app to GitHub Pages, at
+https://nila-fernando.github.io/rotation-maxxing/. The workflow is
+[`.github/workflows/deploy-pages.yml`](../.github/workflows/deploy-pages.yml): in `app/` it runs
+`npm ci`, `npm test` and `npm run build:pages`, then publishes `app/dist`. If the tests fail, nothing
+is deployed. You can also run it by hand from the repo's Actions tab ("Run workflow").
+
+One-time setup in the repo: Settings > Pages > Build and deployment > Source: **GitHub Actions**.
+
+To make a release: bump `"version"` in `app/package.json` (and `app/package-lock.json`), add an
+entry to [CHANGELOG.md](CHANGELOG.md), merge into `main`, and tag it (`git tag v0.10.0`).
+
+The site is a project site, so everything lives under `/rotation-maxxing/`. Files in `public/`
+(Manami's picture, her 3D model, the demo county's outlines) go through `asset()` in
+`src/ui/asset.js`, which adds that base; don't write `'/manami.svg'` straight into the code.
+
+## Crop history from CropScape (`VITE_CDL_PROXY`)
+
+Outside the demo county, crop history beyond a field outline's own years comes from USDA CropScape
+(`src/data/cdlHistory.js`). CropScape doesn't allow browser requests from other sites (no CORS
+header), so the app asks through a proxy:
+
+- `npm run dev` and `npm run preview` have one built in, at `/cropscape` (`vite.config.js`).
+- The GitHub Pages build has none, so it doesn't ask. The check-up says the rest of the years come
+  from CropScape and can't be reached from the site yet.
+
+To turn it on for the live site, run a tiny proxy that forwards `/axis2/...` to
+`https://nassgeodata.gmu.edu/axis2/...` and adds an `Access-Control-Allow-Origin` header (a few
+lines on Cloudflare Workers, say), then set a repository variable (Settings > Secrets and variables >
+Actions > Variables) named `VITE_CDL_PROXY` to its address, for example
+`https://cropscape-proxy.example.workers.dev`, and run the workflow again. Locally, the same
+variable in `app/.env.local` (or the environment) overrides the default; set it empty to turn the
+lookups off.
 
 ## Troubleshooting
 

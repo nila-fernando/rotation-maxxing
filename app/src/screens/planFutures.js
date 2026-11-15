@@ -41,6 +41,9 @@ import { solidTop } from '../island/cameraRig.js';
 import { propTop } from '../island/clearance.js';
 import { stackBase, MAX_COINS, COIN_PITCH, DROP_ROOM } from '../island/stackSpots.js';
 import { SHEET_QUERY } from './hub.js';
+import { asset } from '../ui/asset.js';
+
+const MANAMI_SVG = asset('/manami.svg');
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -1089,7 +1092,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
       </div>
       <div class="fut-card__body">
         <div class="says fut-card__says">
-          <p class="says__title"><img src="/manami.svg" alt="" width="24" height="22">Manami</p>
+          <p class="says__title"><img src="${MANAMI_SVG}" alt="" width="24" height="22">Manami</p>
           <p>${esc(voice.fieldLine(cmp, id, view, choice))}</p>
           ${cover ? `<p class="fut-card__cover">${esc(cover)}</p>` : ''}
           <p class="fut-card__said" aria-live="polite">${esc(said)}</p>

@@ -8,13 +8,20 @@
 //     only the years a field doesn't already have; a field's own (CSB) years are never replaced
 //
 // Per field and year: up to 3 points inside the outline, one CropScape lookup each, majority vote.
-// CropScape sends no CORS header, so the browser goes through the dev/preview proxy at /cropscape
-// (vite.config.js). Answers are cached in localStorage by point and year, so a reload or the same
-// field picked again costs nothing. A year CropScape doesn't answer is left missing, as before.
+// CropScape sends no CORS header, so the browser goes through a proxy: VITE_CDL_PROXY, set at build
+// time. vite.config.js gives the dev server and the local build (npm run preview) '/cropscape', its
+// own proxy; the GitHub Pages build gets '' (off) unless VITE_CDL_PROXY is set, since a static host
+// can't proxy. With no proxy, fillCropHistory asks nothing and the check-up says those years are
+// out of reach (cdlAvailable). Answers are cached in localStorage by point and year, so a reload or
+// the same field picked again costs nothing. A year CropScape doesn't answer is left missing.
 import { booleanPointInPolygon, pointOnFeature } from '@turf/turf';
 import { parseCdlValue, samplePoints, toAlbers5070 } from '../vendor/rotation-maxxing/data/cdl.ts';
 
-export const CDL_PROXY = '/cropscape';
+const envProxy = import.meta.env?.VITE_CDL_PROXY; // undefined under node:test
+/** The CropScape proxy path or origin; '' when this build has none. */
+export const CDL_PROXY = typeof envProxy === 'string' ? envProxy.trim().replace(/\/+$/, '') : '/cropscape';
+/** Whether crop history beyond the outline's own years can be looked up from this site. */
+export const cdlAvailable = (base = CDL_PROXY) => !!base;
 const CONCURRENCY = 10;
 const POINTS = 3;
 const ATTEMPTS = 3;
@@ -93,10 +100,11 @@ async function lookup(fetchFn, base, year, [x, y]) {
  * @param {number[]} o.years            the years wanted (e.g. HISTORY_YEARS)
  * @param {(field) => object} [o.known] years already known per field from elsewhere (demo data)
  * @param {Function} [o.fetchFn]        fetch (tests pass a fake)
- * @param {string} [o.base]             CropScape origin or proxy path
+ * @param {string} [o.base]             CropScape origin or proxy path ('': no proxy, nothing is asked)
  * @returns {Promise<Record<string, Record<string, string>>>} new years per field id
  */
 export async function fillCropHistory(fields, { years, known = () => ({}), fetchFn = globalThis.fetch, base = CDL_PROXY }) {
+  if (!cdlAvailable(base)) return {}; // no proxy on this site (GitHub Pages): no lookups that can only fail
   const run = limiter(CONCURRENCY);
   const out = {};
   await Promise.all(fields.map(async (f) => {

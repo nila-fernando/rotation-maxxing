@@ -29,6 +29,9 @@ import {
 import { paintSampleJar } from '../plan/jarSample.js';
 import { JAR, CAMERA, IMAGE, SPLIT, MERGE } from '../ui/jarIcons.js';
 import { ACTION_ICONS } from '../ui/futureIcons.js';
+import { asset } from '../ui/asset.js';
+
+const MANAMI_SVG = asset('/manami.svg');
 
 const SHEET_QUERY = '(max-width: 900px) and (min-height: 521px)'; // as in hub.js and styles.css
 const EDGE_GRAB = 12; // css px: a drag starting this near an edge moves that edge
@@ -246,7 +249,7 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
   }
 
   const saysHtml = () => `<div class="says jar-says">
-      <p class="says__title"><img src="/manami.svg" alt="" width="24" height="22">Manami</p>
+      <p class="says__title"><img src="${MANAMI_SVG}" alt="" width="24" height="22">Manami</p>
       ${says.map((l) => `<p>${esc(l)}</p>`).join('')}
       ${note ? `<p class="jar-says__note">${esc(note)}</p>` : ''}
     </div>`;
@@ -322,7 +325,7 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
     body.innerHTML = `<div class="jar-cols">
         <div class="jar-work">
           <div class="says jar-says">
-            <p class="says__title"><img src="/manami.svg" alt="" width="24" height="22">Manami</p>
+            <p class="says__title"><img src="${MANAMI_SVG}" alt="" width="24" height="22">Manami</p>
             ${lines.map((l) => `<p>${esc(l)}</p>`).join('')}
             ${note ? `<p class="jar-says__note">${esc(note)}</p>` : ''}
           </div>

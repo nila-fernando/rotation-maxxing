@@ -5,7 +5,9 @@
 //   manami.hide()
 //   manami.collapse()   just her face; tap it to read the message again
 
-const AVATAR_SRC = '/manami.svg';
+import { asset } from './asset.js';
+
+const AVATAR_SRC = asset('/manami.svg');
 
 export function createManami(host) {
   host.classList.add('manami');

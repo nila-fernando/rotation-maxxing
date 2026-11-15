@@ -16,6 +16,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { asset } from '../ui/asset.js';
 
 // ---------------------------------------------------------------------------------------------
 // Palette
@@ -1131,7 +1132,7 @@ export function simplifyGeometry(geometry, cell, { keepSides = false } = {}) {
   return g;
 }
 
-export function loadSheepTemplate(url = '/models/manami.glb') {
+export function loadSheepTemplate(url = asset('/models/manami.glb')) {
   if (!templateCache.has(url)) {
     const job = new GLTFLoader().loadAsync(url).then((gltf) => {
       const root = gltf.scene;

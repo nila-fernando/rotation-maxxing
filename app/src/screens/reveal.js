@@ -31,6 +31,7 @@ import { LAMP_FOOTPRINT, makeFarmLamp } from '../island/lamps.js';
 import { buildIslandTerrain } from '../island/terrain.js';
 import { attachSeasons } from '../island/seasons.js';
 import { createFlock } from '../island/wander.js';
+import { asset } from '../ui/asset.js';
 
 const DURATION = 2.8; // seconds, start to still island
 const FOV = 30;
@@ -39,7 +40,7 @@ const YAW_END = -0.2; // a slight turn so the island reads in 3D
 const PROP_SCALE = 0.75; // the prototype's props, a little smaller next to real-shaped fields
 const SHORE_SCALE = 0.9; // the dock and rowboat
 const SINK = 3.2; // how far below the sea the island starts
-const SHEEP_URL = '/models/manami.glb';
+const SHEEP_URL = asset('/models/manami.glb');
 
 const clamp01 = (t) => Math.max(0, Math.min(1, t));
 const phase = (t, a, b) => clamp01((t - a) / (b - a));
