@@ -3,9 +3,10 @@
 //   fieldReportFor(field, { profile, farmIsDemo })   field = an app field (from the field step)
 //   buildFieldReport(field, { demo, weather, profile })   the same, with the data passed in (tests)
 //
-// Crop history comes from the field's own outline (USDA CSB years) or the demo data. Soil, slope,
-// rain and greenness come from the demo data for now (realistic placeholders for Story County;
-// the live sources come later), so other farms show "not available yet" for those.
+// Crop history comes from the field's own outline (USDA CSB years, filled in from CDL) or the demo
+// data. Soil is the field's own SSURGO survey (src/data/soilSurvey.js) when it has arrived, else the
+// demo data's stand-in. Slope, rain and greenness come from the demo data for now (realistic
+// placeholders for Story County), so other farms show "not available yet" for those.
 
 import { CROP_STYLE, cropKeyFor } from '../island/crops.js';
 import { findFieldBySourceId, getField, getMeta, getWeather } from './farmData.js';
@@ -67,8 +68,11 @@ export function buildFieldReport(field, { demo = null, weather = null, profile =
   });
   const known = history.filter((h) => h.crop != null).map(({ year, crop }) => ({ year, crop }));
 
-  const soil = demo?.soil
-    ? { texture: demo.soil.texture ?? null, drainage: demo.soil.drainage ?? null, organicMatterPct: demo.soil.organicMatterPct ?? null, waterHoldingIn: demo.soil.waterHoldingIn ?? null }
+  // the field's own soil survey beats the demo data's stand-in
+  const surveyed = field.soil?.display || null;
+  const s = surveyed || demo?.soil;
+  const soil = s
+    ? { texture: s.texture ?? null, drainage: s.drainage ?? null, organicMatterPct: s.organicMatterPct ?? null, waterHoldingIn: s.waterHoldingIn ?? null }
     : null;
   const slopePct = Number.isFinite(demo?.slopePct) ? demo.slopePct : null;
   const slope = slopePct == null ? null : { pct: slopePct, risk: erosionRisk(slopePct, cfg) };
@@ -103,7 +107,7 @@ export function buildFieldReport(field, { demo = null, weather = null, profile =
     shown: shownFlags(flags, cfg),
     // nothing known about it (no crop years, soil, slope or rain): grey, not a green "all clear"
     status: known.length || soil || slope || rain ? statusFor(flags, cfg) : 'unknown',
-    placeholder: { ...placeholder, history: false },
+    placeholder: { ...placeholder, history: false, ...(surveyed ? { soil: false } : {}) },
   };
 }
 

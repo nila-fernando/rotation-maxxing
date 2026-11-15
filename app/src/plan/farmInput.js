@@ -70,8 +70,18 @@ export function outerRing(geometry) {
   return ring;
 }
 
-/** The planner's Land for a field from the demo data's soil and slope, or the stand-in. */
-export function landFor(demo) {
+/**
+ * The planner's Land for a field: its own SSURGO survey if it has one (src/data/soilSurvey.js),
+ * else the demo data's soil and slope, else the stand-in.
+ */
+export function landFor(demo, field = null) {
+  const surveyed = field?.soil?.land;
+  if (surveyed) {
+    const land = { ...surveyed, ph: surveyed.ph ?? null };
+    // SSURGO's map-unit slope; when it has none (parseSsurgo gives 0), the demo slope or the default
+    if (!(surveyed.slopePct > 0)) land.slopePct = Number.isFinite(demo?.slopePct) ? demo.slopePct : DEFAULT_LAND.slopePct;
+    return { land, known: true, gaps: field.soil.gaps || [] };
+  }
   if (!demo?.soil) return { land: { ...DEFAULT_LAND }, known: false };
   const s = demo.soil;
   const [sand, clay] = TEXTURE_PCT[String(s.texture || '').toLowerCase()] || [null, null];
@@ -153,7 +163,8 @@ export function plannerFarm({ fields, place = null, profile = null, firstSeason 
   gaps.push('Crops to choose from: the usual Corn Belt crops (corn, soybeans, oats, wheat, alfalfa) until county seed data is in.');
   const paddocks = fields.map((f) => {
     const demo = demoRecordFor(f);
-    const { land, known } = landFor(demo);
+    const { land, known, gaps: soilGaps = [] } = landFor(demo, f);
+    for (const g of soilGaps) gaps.push(`${f.name}: ${g}`);
     if (!known) gaps.push(`${f.name}: no soil survey yet, so a typical loam on a gentle slope (holding 0.17 in of water per inch) is assumed.`);
     const run = historyRunFor(f, demo);
     if (run.history.length < 3) gaps.push(`${f.name}: only ${run.history.length} of the last 3 years' crops are on record.`);

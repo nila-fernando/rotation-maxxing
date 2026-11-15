@@ -11,7 +11,9 @@ import './styles.css';
 import { INTRO, LANDING_URL } from './config.js';
 import { DEMO_FARM } from './data/demoFarm.js';
 import * as farmData from './data/farmData.js';
-import { fieldReportFor } from './data/fieldReport.js';
+import { fillCropHistory, withCdlYears } from './data/cdlHistory.js';
+import { fillSoil, withSoil } from './data/soilSurvey.js';
+import { demoRecordFor, fieldReportFor, HISTORY_YEARS } from './data/fieldReport.js';
 import { createPlanner } from './plan/planner.js';
 import { createCheckIn } from './screens/checkin.js';
 import { createFieldPanel } from './screens/fieldPanel.js';
@@ -66,6 +68,7 @@ const fieldsStep = createFieldsStep({
         maxZoom: 16, duration: 0.9,
       });
     }
+    startFieldFill(fields);
     checkIn.start({ fields });
   },
   onChangeLocation: () => {
@@ -73,6 +76,25 @@ const fieldsStep = createFieldsStep({
     globe.backToGlobe();
   },
 });
+
+// What the outlines don't carry, fetched while the check-in runs (the reveal waits a little for it):
+//   crop history  USDA Cropland Data Layer (live USDA outlines have 2023 only; AI and drawn: none)
+//   soil          USDA NRCS SSURGO at a point in each field
+const FIELD_FILL_GRACE_MS = 8000;
+let fieldFill = null;
+function startFieldFill(fields) {
+  const known = (f) => Object.fromEntries((demoRecordFor(f)?.cropHistory || []).map((c) => [c.year, c.crop]));
+  const apply = (merge) => (filled) => {
+    if (fieldFill !== job || !Object.keys(filled).length) return; // a newer pick replaced this one
+    app.fields = merge(app.fields, filled);
+    if (app.island) paintStatuses(); // landed after the reveal: the flags can use it
+  };
+  const job = Promise.all([
+    fillCropHistory(fields, { years: HISTORY_YEARS, known }).then(apply(withCdlYears)).catch((err) => console.warn('CDL crop history', err)),
+    fillSoil(fields).then(apply(withSoil)).catch((err) => console.warn('SSURGO soil', err)),
+  ]);
+  fieldFill = job;
+}
 
 // the rotation planner (src/vendor/rotation-maxxing), in a Web Worker
 const planner = createPlanner();
@@ -300,9 +322,11 @@ function startReveal({ instant = false } = {}) {
 
 const checkIn = createCheckIn({
   manami,
-  onDone: (profile) => {
+  onDone: async (profile) => {
     app.farmProfile = profile;
     console.log('farmProfile', profile);
+    // the island shows each field's newest crop and how many years we checked: give CDL a moment
+    if (fieldFill) await Promise.race([fieldFill, new Promise((r) => setTimeout(r, FIELD_FILL_GRACE_MS))]);
     startReveal();
   },
 });
