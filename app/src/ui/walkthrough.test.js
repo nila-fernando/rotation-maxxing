@@ -93,6 +93,16 @@ describe('the steps', () => {
     for (const sel of v.target) assert.ok(html.includes(`id="${sel.slice(1)}"`), sel);
   });
 
+  it('end by the plans’ close button when the farmer’s plans are still open (the field list waits under them)', () => {
+    const done = STEPS.at(-1);
+    const v = resolveStep(done, (c) => c === 'plans-open');
+    assert.deepEqual(v.target, ['#plansClose']);
+    assert.match(v.body, /Close the plans/);
+    assert.ok(read('../../index.html').includes('id="plansClose"'));
+    // the plan view wins: it closes the plans as it opens
+    assert.deepEqual(resolveStep(done, () => true).target, ['#futPlans', '#futDock']);
+  });
+
   it('wait by the jar step while the jar test is open', () => {
     assert.equal(STEPS.find((s) => s.id === 'jar').try.wait, 'jarVisited');
   });
@@ -100,6 +110,16 @@ describe('the steps', () => {
   it('use only waits the tour knows', () => {
     const src = read('./walkthrough.js');
     for (const s of STEPS.filter((x) => x.try)) assert.match(src, new RegExp(`\\b${s.try.wait}: on`), s.id);
+  });
+
+  it('find Manami’s face under the site’s base path (GitHub Pages)', () => {
+    const src = read('./walkthrough.js');
+    assert.match(src, /src="\$\{asset\('\/manami\.svg'\)\}"/);
+    assert.doesNotMatch(src, /src="\/manami\.svg"/);
+  });
+
+  it('count as seen only once finished or skipped, not when the hub goes away under them', () => {
+    assert.match(read('./walkthrough.js'), /if \(!quiet\) memory\.remember\(\)/);
   });
 });
 
@@ -126,13 +146,27 @@ describe('countLabel', () => {
 });
 
 describe('needsChange', () => {
-  const s = (needs) => ({ needs });
+  const s = (needs, clear) => ({ needs, clear });
   it('opens what the next step needs and closes what only the last one did', () => {
-    assert.deepEqual(needsChange(s(), s('checkup')), { release: null, ensure: 'checkup' });
-    assert.deepEqual(needsChange(s('checkup'), s('checkup')), { release: null, ensure: 'checkup' });
-    assert.deepEqual(needsChange(s('checkup'), s()), { release: 'checkup', ensure: null });
-    assert.deepEqual(needsChange(s('checkup'), s('plans')), { release: 'checkup', ensure: 'plans' });
-    assert.deepEqual(needsChange(undefined, s()), { release: null, ensure: null });
+    assert.deepEqual(needsChange(s(), s('checkup')), { release: null, ensure: 'checkup', clear: null });
+    assert.deepEqual(needsChange(s('checkup'), s('checkup')), { release: null, ensure: 'checkup', clear: null });
+    assert.deepEqual(needsChange(s('checkup'), s()), { release: 'checkup', ensure: null, clear: null });
+    assert.deepEqual(needsChange(s('checkup'), s('plans')), { release: 'checkup', ensure: 'plans', clear: null });
+    assert.deepEqual(needsChange(undefined, s()), { release: null, ensure: null, clear: null });
+  });
+
+  it('shuts what the next step needs out of the way', () => {
+    assert.deepEqual(needsChange(s('plans'), s('checkup', 'plans')), { release: 'plans', ensure: 'checkup', clear: 'plans' });
+    assert.deepEqual(needsChange(s(), s(undefined, 'plans')), { release: null, ensure: null, clear: 'plans' });
+  });
+
+  it('never shows a check-up or the field list under the plans', () => {
+    // the app keeps the field list inert while the plans are open, and opening them closes a check-up
+    for (const step of STEPS) {
+      const onList = step.needs === 'checkup' || (step.target || []).some((t) => /#hub(Panel|Jar|List)/.test(t));
+      if (onList) assert.equal(step.clear, 'plans', step.id);
+    }
+    for (const step of STEPS.filter((x) => x.clear)) assert.notEqual(step.needs, step.clear, step.id);
   });
 });
 

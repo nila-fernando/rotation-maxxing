@@ -13,7 +13,9 @@
 // shows its card in the middle instead, and an `optional` one is left out of the tour. A step's
 // `variants` swap in another target and words while a mode is on (a class on <body>).
 // Some steps need a panel open (`needs`: the field check-up or the plans); the tour opens it, and
-// closes it again when it leaves, but only if it was the one that opened it.
+// closes it again when it leaves, but only if it was the one that opened it. Steps on the field list
+// and the check-up need the plans shut (`clear`: the app keeps the list waiting under them): the tour
+// puts plans the farmer opened away, and back again on the way to a step that needs them (or at the end).
 //
 //   const tour = createWalkthrough({ ctx, sources, say })
 //   tour.start()              from the first step (again, if it's already open)
@@ -23,12 +25,15 @@
 //
 // The pure parts (the steps, the memory, the key map, where the card goes) are exported for tests.
 
+import { asset } from './asset.js';
+
 export const TOUR_KEY = 'rotation-maxxing.tour.v1';
 export const SETTLE_MS = 900; // after a "Try it" is done, before the tour moves on
 
 /**
  * The steps. target: selectors tried in order. needs: a panel the step needs open. side: where the
  * card would like to go. sources: keys of the data sources (fieldReport.js SOURCES) to name.
+ * clear: a panel the step needs shut (the plans: the field list waits, inert, while they're open).
  * try: { text, wait, busyText? } with wait one of the waits in createWalkthrough.
  * busyBody / try.busyText: the words while the plans are still being worked out.
  * variants: [{ when: a <body> class, ...fields to use instead while it's there }].
@@ -42,6 +47,7 @@ export const STEPS = [
   },
   {
     id: 'fields',
+    clear: 'plans',
     target: ['#hubPanel'],
     side: 'right',
     title: 'Your fields',
@@ -50,6 +56,7 @@ export const STEPS = [
   },
   {
     id: 'checkup',
+    clear: 'plans',
     needs: 'checkup',
     target: ['#checkup .checkup__top, #checkup .says', '#checkup'],
     side: 'left',
@@ -58,6 +65,7 @@ export const STEPS = [
   },
   {
     id: 'history',
+    clear: 'plans',
     needs: 'checkup',
     target: ['#checkup section[aria-labelledby="ckHist"]', '#checkup'],
     side: 'left',
@@ -67,6 +75,7 @@ export const STEPS = [
   },
   {
     id: 'soil',
+    clear: 'plans',
     needs: 'checkup',
     target: ['#checkup section[aria-labelledby="ckSoil"]', '#checkup'],
     side: 'left',
@@ -76,6 +85,7 @@ export const STEPS = [
   },
   {
     id: 'slope',
+    clear: 'plans',
     needs: 'checkup',
     target: ['#checkup section[aria-labelledby="ckSlope"]', '#checkup'],
     side: 'left',
@@ -85,6 +95,7 @@ export const STEPS = [
   },
   {
     id: 'rain',
+    clear: 'plans',
     needs: 'checkup',
     target: ['#checkup section[aria-labelledby="ckRain"]', '#checkup'],
     side: 'left',
@@ -94,6 +105,7 @@ export const STEPS = [
   },
   {
     id: 'greenness',
+    clear: 'plans',
     needs: 'checkup',
     target: ['#checkup section[aria-labelledby="ckGreen"]', '#checkup'],
     side: 'left',
@@ -103,6 +115,7 @@ export const STEPS = [
   },
   {
     id: 'jar',
+    clear: 'plans',
     target: ['#hubJar'],
     side: 'right',
     title: 'Test your soil',
@@ -115,7 +128,7 @@ export const STEPS = [
     target: ['#timebar'],
     side: 'bottom',
     title: 'Through the years',
-    body: 'Step back through the years to see what grew where, or press play to watch your farm change. The moon button sets the time of day, the season and a festival theme.',
+    body: 'Step back through the years to see what grew where, or press play to watch your farm change. The moon button sets the time of day, the season and a festival theme, and the speaker turns the farm’s sounds on or off.',
     try: { text: 'Step back a year, or press play.', wait: 'timeMoved' },
   },
   {
@@ -129,7 +142,7 @@ export const STEPS = [
   {
     id: 'farm',
     needs: 'plans',
-    target: ['#plans [data-act="futures"]', '#plans'],
+    target: ['#plans [data-act="futures"]', '#plans .plans__loading', '#plans'],
     side: 'bottom',
     title: 'See them on the farm',
     body: 'Here are your plans, side by side. “See them on the farm” puts them on the island, so you can flip between plans and seasons and watch each field change.',
@@ -149,6 +162,12 @@ export const STEPS = [
       target: ['#futPlans', '#futDock'],
       side: 'top',
       body: 'Here are your plans on the farm. Pick a plan and a season down here and watch each field change. Once you leave this view, the ? on Your fields plays this tour again.',
+    }, {
+      // the plans are still open (the farmer's own): the field list waits under them
+      when: 'plans-open',
+      target: ['#plansClose'],
+      side: 'bottom',
+      body: 'Close the plans here when you’re done, then tap any field for a closer look whenever you like. If you want this tour again, tap the ? on Your fields.',
     }],
   },
 ];
@@ -212,12 +231,14 @@ export function activeSteps(steps, isAvailable) {
 export const countLabel = (i, n) => `${i + 1} of ${n}`;
 
 /**
- * Leaving one step for another: which panel to close (one the step left behind needed) and which to
- * open (the next one needs it). The same panel on both sides stays as it is.
+ * Leaving one step for another: which panel to close (one the step left behind needed), which to
+ * open (the next one needs it), and which the next one needs shut whoever opened it (`clear`). The
+ * same panel on both sides stays as it is.
  */
 export function needsChange(from, to) {
   const a = from?.needs || null, b = to?.needs || null;
-  return { release: a && a !== b ? a : null, ensure: b };
+  const c = to?.clear && to.clear !== b ? to.clear : null;
+  return { release: a && a !== b ? a : null, ensure: b, clear: c };
 }
 
 /**
@@ -327,7 +348,8 @@ export const END_LINES = {
 
 const ICON_CLOSE = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg>';
 const ICON_TRY = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z" fill="currentColor"/><path d="M19 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" fill="currentColor"/></svg>';
-const ICON_DONE = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12.6l4.4 4.4L19 7.4" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_MORE = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ICON_DONE ='<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M5 12.6l4.4 4.4L19 7.4" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 const isTyping = (t) => (t instanceof HTMLInputElement && !['range', 'checkbox', 'radio', 'button'].includes(t.type))
   || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || !!t?.isContentEditable;
@@ -355,6 +377,7 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
   let list = []; // this tour's steps
   let index = -1;
   let owned = { checkup: false, plans: false }; // panels the tour opened (and so closes)
+  let parked = { checkup: false, plans: false }; // panels the farmer opened that the tour put away (and so puts back)
   let stopWait = null;
   let settle = 0;
   let tick = 0;
@@ -433,7 +456,7 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     card.tabIndex = -1;
     card.innerHTML = `
       <div class="tour-card__head">
-        <img class="tour-card__face" src="/manami.svg" alt="" width="40" height="36">
+        <img class="tour-card__face" src="${asset('/manami.svg')}" alt="" width="40" height="36">
         <p class="tour-card__who"><span class="tour-card__name">Manami</span><span class="tour-card__count"></span></p>
         <button class="tour-card__close" type="button" title="Skip the tour (Esc)" aria-label="Skip the tour">${ICON_CLOSE}</button>
       </div>
@@ -444,6 +467,7 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
         <p class="tour-card__src"></p>
         <p class="tour-card__try" aria-live="polite"><span class="tour-card__try-icon"></span><span class="tour-card__try-text"></span></p>
       </div>
+      <div class="tour-card__more" aria-hidden="true">${ICON_MORE}</div>
       <div class="tour-card__foot">
         <button class="tour-card__skip" type="button">Skip tour</button>
         <span class="tour-card__spacer"></span>
@@ -454,13 +478,14 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     const parts = {
       spot, card,
       count: q('.tour-card__count'), bar: q('.tour-card__bar span'), title: q('.tour-card__title'), body: q('.tour-card__body'),
-      src: q('.tour-card__src'), tryEl: q('.tour-card__try'), tryIcon: q('.tour-card__try-icon'), tryText: q('.tour-card__try-text'),
+      main: q('.tour-card__main'), src: q('.tour-card__src'), tryEl: q('.tour-card__try'), tryIcon: q('.tour-card__try-icon'), tryText: q('.tour-card__try-text'),
       skip: q('.tour-card__skip'), back: q('.tour-card__back'), next: q('.tour-card__next'),
     };
     q('.tour-card__close').addEventListener('click', () => end(false));
     parts.skip.addEventListener('click', () => end(false));
     parts.back.addEventListener('click', () => go(index - 1, true));
     parts.next.addEventListener('click', () => go(index + 1, true));
+    parts.main.addEventListener('scroll', () => moreBelow(parts.main), { passive: true });
     document.body.append(spot, card);
     resize?.observe(card);
     return parts;
@@ -468,10 +493,21 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
 
   // ---------------------------------------------------------------- panels the steps need
   function ensure(need) {
-    if (!need || ctx.isOpen(need)) return;
-    owned[need] = true;
-    if (need === 'checkup') ctx.openField();
-    else if (need === 'plans') ctx.openPlans();
+    if (!need) return;
+    if (ctx.isOpen(need)) { parked[need] = false; return; } // (the farmer opened it again: theirs)
+    // the farmer's own, put away for a step that needed it shut: theirs again; else the tour's
+    if (parked[need]) parked[need] = false;
+    else owned[need] = true;
+    open(need);
+  }
+  const open = (need) => (need === 'checkup' ? ctx.openField() : need === 'plans' ? ctx.openPlans() : null);
+  /** A step needs this panel shut: the tour's own is simply closed, the farmer's is put away for later. */
+  function shut(need) {
+    if (!need || !ctx.isOpen(need)) return;
+    if (owned[need]) owned[need] = false;
+    else parked[need] = true;
+    if (need === 'checkup') ctx.closeField();
+    else if (need === 'plans') ctx.closePlans();
   }
   function release(need) {
     if (!need || !owned[need]) return;
@@ -487,6 +523,7 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     lastFocus = document.activeElement;
     list = activeSteps(steps, (s) => targets(s).length > 0);
     owned = { checkup: false, plans: false };
+    parked = { checkup: false, plans: false };
     ui = build();
     document.body.classList.add('is-touring');
     addEventListener('keydown', onKey, true);
@@ -514,7 +551,11 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     leaveStep();
     release('checkup');
     release('plans');
-    memory.remember();
+    // seen once it's been finished or skipped; not when the hub went away under it (it comes back)
+    if (!quiet) memory.remember();
+    // the farmer's own plans, put away for the field steps, come back (not when the hub went away)
+    const putBack = !quiet && parked.plans && !ctx.isOpen('plans');
+    parked = { checkup: false, plans: false };
     resize?.disconnect();
     looks?.disconnect();
     clearInterval(tick);
@@ -528,6 +569,7 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     document.body.classList.remove('is-touring');
     aside = false;
     if (quiet) return;
+    if (putBack) { ctx.openPlans(); return; } // (they take the focus and the keys)
     say(finished ? END_LINES.finished : END_LINES.skipped);
     // back where the farmer was, or to the "?" that plays it again
     const back = lastFocus?.isConnected && lastFocus !== document.body && visible(lastFocus) ? lastFocus : document.getElementById('hubHelp');
@@ -545,8 +587,9 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     if (n >= list.length) { end(true); return; }
     leaveStep();
     const prev = list[index];
-    const { release: off, ensure: on } = needsChange(prev, list[n]);
+    const { release: off, ensure: on, clear } = needsChange(prev, list[n]);
     release(off);
+    shut(clear);
     ensure(on);
     index = n;
     const step = current();
@@ -561,6 +604,7 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
       ? `<span class="tour-card__src-label">From</span> ${named.map((s) => `<span class="tour-card__src-item"><span class="src-chip">${escapeHtml(s.label)}</span> ${escapeHtml(s.name)}</span>`).join('')}`
       : '';
     ui.tryEl.hidden = !step.try;
+    ui.main.scrollTop = 0;
     setTried(false);
     ui.back.hidden = n === 0;
     ui.skip.hidden = n === list.length - 1;
@@ -650,6 +694,11 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     document.body.classList.toggle('is-touring', !on);
   }
 
+  /** The words are cut down to fit and there's more of them below: the card fades out at the bottom. */
+  function moreBelow(main) {
+    main.classList.toggle('has-more', main.scrollHeight - main.scrollTop - main.clientHeight > 2);
+  }
+
   function place() {
     if (!ui) return;
     stepAside(appDialogUp());
@@ -666,6 +715,7 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     ui.card.style.maxHeight = '';
     const p = placeCard({ target, card: { width: ui.card.offsetWidth, height: ui.card.offsetHeight }, vp, side: step.side });
     ui.card.style.maxHeight = p.maxHeight ? `${p.maxHeight}px` : '';
+    moreBelow(ui.main);
     ui.spot.classList.toggle('is-none', !p.spot);
     const s = p.spot || { left: vp.width / 2, top: vp.height / 2, width: 0, height: 0 };
     Object.assign(ui.spot.style, { left: `${s.left}px`, top: `${s.top}px`, width: `${s.width}px`, height: `${s.height}px` });

@@ -1776,6 +1776,15 @@ body.jar-open .hub-tip { display: none; }
 /* the head and the buttons stay put; the words scroll when the card is cut down to fit beside its spot */
 .tour-card__head, .tour-card__bar, .tour-card__foot { flex: none; }
 .tour-card__main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+/* more words below the fold: they fade out at the bottom, and a little arrow says to scroll */
+.tour-card__main.has-more {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 34px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 34px), transparent);
+}
+.tour-card__more { flex: none; display: none; justify-content: center; height: 0; position: relative; pointer-events: none; }
+.tour-card__main.has-more + .tour-card__more { display: flex; }
+.tour-card__more svg { position: absolute; bottom: 0; width: 20px; height: 20px; color: var(--ink-soft); animation: tour-more 1.6s ease-in-out infinite; }
+@keyframes tour-more { 50% { transform: translateY(3px); } }
 /* out of the way while an app dialog (the jar test, the time of day) is open over the hub */
 .tour-spot.is-aside, .tour-card.is-aside { visibility: hidden; opacity: 0; transition: none; animation: none; }
 .tour-card:focus-visible { box-shadow: 0 0 0 2px var(--wood-deep), 0 0 0 6px var(--green-dark), 0 18px 40px rgb(0 0 0 / .45); }
@@ -1826,5 +1835,5 @@ body.is-touring .manami { opacity: 0; pointer-events: none; transform: translate
   .tour-card__face { width: 38px; height: 38px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .tour-spot, .tour-card, .tour-card__bar span { transition: none; animation: none; }
+  .tour-spot, .tour-card, .tour-card__bar span, .tour-card__more svg { transition: none; animation: none; }
 }
