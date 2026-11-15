@@ -3,15 +3,14 @@
 //   header        name (editable, saved back to the app), acres, irrigated switch
 //   crop history  8 crop icons, 2018–2025 (CSB)
 //   soil          texture, drainage, organic matter, water-holding capacity (SSURGO)
-//   slope         average % and an erosion risk label (SRTM)
+//   slope         average % and an erosion risk label (elevation tiles: USGS 3DEP)
 //   rain          growing-season rain, last 10 years, against the 30-year average (POWER); once
 //                 there are plans, Manami's weather risk and any spring freeze on this field's wheat
-//   greenness     last season's NDVI curve (Landsat/HLS); left out when there's no imagery
+//   greenness     last season's NDVI curve (NASA HLS); says so when there's no imagery yet
 //   Manami says   1–2 flags from src/data/flags.js
 //
 // Every section's numbers come from one source, shown as a chip in the section's heading (acres:
-// CSB, in the header). A chip with a dotted edge marks a demo stand-in (soil, slope, rain and
-// greenness are realistic placeholders until the live sources are connected).
+// CSB, in the header). Every number is the field's own fetched data; a section with none says so.
 //
 // The soil section ends with the jar test strip: "Try a jar test", or the farmer's own jar test
 // (src/plan/jarTest.js) when one is in use, with "See your jar", "Test again" and "Stop using it".
@@ -254,14 +253,14 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onClose }) {
           ${fact('Organic matter', Number.isFinite(r.soil.organicMatterPct) ? `${r.soil.organicMatterPct}%` : 'Unknown')}
           ${fact('Water-holding capacity', Number.isFinite(r.soil.waterHoldingIn) ? `${r.soil.waterHoldingIn} in` : 'Unknown')}
         </dl>`
-      : empty('Soil data isn’t available for this field yet.');
+      : empty('No soil data available for this field.');
 
     const slope = r.slope
       ? `<div class="slope">
           <p><b class="slope__pct">${r.slope.pct.toFixed(1)}%</b> <span class="slope__label">average</span></p>
           <p class="risk risk--${r.slope.risk}"><span class="risk__dot" aria-hidden="true"></span>${RISK_TEXT[r.slope.risk]}</p>
         </div>`
-      : empty('Slope isn’t available for this field yet.');
+      : empty('No slope data available for this field.');
 
     // Manami's weather words from the latest plans (none until there are plans)
     const pw = r.planWeather || {};
@@ -271,7 +270,7 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onClose }) {
     const rain = (r.rain
       ? `${rainSparkline(r.rain)}
          <p class="ck-caption">Last ${r.rain.recentYears} years: <b>${inches(r.rain.recentAvg)} in</b> a season vs <b>${inches(r.rain.avg30)} in</b> normal</p>`
-      : empty('Rain records aren’t available for this farm yet.')) + weather;
+      : empty('No rain data available for this farm.')) + weather;
 
     const says = r.shown.length
       ? `<ul class="flags">${r.shown.map((f) => `<li class="flag flag--${f.level}"><span class="flag__dot" aria-hidden="true"></span>${esc(f.text)}</li>`).join('')}</ul>`
@@ -299,12 +298,12 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onClose }) {
         <h3 id="ckSays" class="says__title"><img src="/manami.svg" alt="" width="24" height="22"> Manami says</h3>
         ${says}${more}
       </section>
-      ${section('ckHist', 'Crop history', '2018–2025', chip('CSB'), `<ol class="history" aria-label="Crops by year">${history}</ol>
+      ${section('ckHist', 'Crop history', '2018–2025', `${chip('CSB')}${r.cdlYears?.length ? ` ${chip('CDL')}` : ''}`, `<ol class="history" aria-label="Crops by year">${history}</ol>
         ${knownYears < r.history.length ? `<p class="ck-caption">${knownYears ? `${knownYears} of 8 years on record.` : 'No crop records for this field yet.'}</p>` : ''}`)}
       ${section('ckSoil', 'Soil', '', r.soil ? chip('SSURGO', ph.soil) : '', soil + jarStrip(r.jar, jarSaid?.id === r.id ? jarSaid.text : ''))}
-      ${section('ckSlope', 'Slope', '', r.slope ? chip('SRTM', ph.slope) : '', slope)}
+      ${section('ckSlope', 'Slope', '', r.slope ? chip('DEM', ph.slope) : '', slope)}
       ${section('ckRain', 'Rain trend', 'Apr–Sep', r.rain ? chip('POWER', ph.rain) : '', rain)}
-      ${r.ndvi ? section('ckGreen', 'Greenness', 'last season', chip('Landsat', ph.ndvi), ndviCurve(r.ndvi)) : ''}
+      ${section('ckGreen', 'Greenness', 'last season', r.ndvi ? chip('HLS', ph.ndvi) : '', r.ndvi ? ndviCurve(r.ndvi) : empty('No satellite greenness for this field yet (it can take a minute to arrive).'))}
       ${Object.values(ph).some(Boolean) ? '<p class="ck-legend"><span class="src-chip src-chip--demo" aria-hidden="true">ABC</span> Dotted chips are demo stand-ins until the live data is connected.</p>' : ''}`;
   }
 

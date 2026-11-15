@@ -37,7 +37,7 @@ export const DEFAULT_PROFILE = Object.freeze({ priorities: ['profit'], irrigated
 const CHECKLIST = [
   { label: 'Crop history, 8 years', source: 'USDA CSB' },
   { label: 'Soil', source: 'USDA SSURGO' },
-  { label: 'Terrain and slope', source: 'NASA SRTM' },
+  { label: 'Terrain and slope', source: 'USGS 3DEP' },
   { label: 'Weather 1981–present', source: 'NASA POWER' },
   { label: 'Yields and prices', source: 'USDA NASS, AMS' },
   { label: 'Costs per acre', source: 'USDA ERS' },
