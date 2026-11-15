@@ -62,7 +62,7 @@ export function fieldDetail(report) {
     acres: acresOf(r.acres),
     irrigated: !!r.irrigated,
     status: r.status,
-    crop_history: (r.history || []).map((h) => ({ year: h.year, crop: h.crop == null ? null : h.label || h.crop })),
+    crop_history: (r.history || []).map((h) => ({ year: h.year, crop: h.crop == null ? null : h.label || h.crop, ...(h.byFarmer ? { set_by_farmer: true } : {}) })),
     soil: r.soil ? { texture: r.soil.texture ?? null, drainage: r.soil.drainage ?? null, organic_matter_pct: round1(r.soil.organicMatterPct), water_holding_in: round1(r.soil.waterHoldingIn) } : null,
     slope: r.slope ? { pct: round1(r.slope.pct), erosion_risk: r.slope.risk ?? null } : null,
     rain: r.rain ? { recent_avg_in: round1(r.rain.recentAvg / 25.4), normal_in: round1(r.rain.avg30 / 25.4), recent_years: r.rain.recentYears } : null,
@@ -70,7 +70,7 @@ export function fieldDetail(report) {
     flags: (r.shown || []).map((f) => f.text).filter(Boolean),
     jar: r.jar ? { texture_class: r.jar.textureClass ?? null, sand_pct: r.jar.sandPct ?? null, silt_pct: r.jar.siltPct ?? null, clay_pct: r.jar.clayPct ?? null, confidence: r.jar.confidence ?? null, agrees_with_soil_map: !!r.jar.sameAsMap } : null,
     plan_weather: r.planWeather ? { water: r.planWeather.water ?? null, frost: r.planWeather.frost ?? null } : null,
-    sources: { crop_history: 'USDA CSB and CDL', soil: 'USDA SSURGO', slope: 'USGS 3DEP', rain: 'NASA POWER' },
+    sources: { crop_history: 'USDA CSB and CDL, except years marked set_by_farmer (the farmer entered those, so trust them)', soil: 'USDA SSURGO', slope: 'USGS 3DEP', rain: 'NASA POWER' },
   };
 }
 

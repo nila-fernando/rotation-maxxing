@@ -591,6 +591,20 @@ export function createTimeTravel({ hub, onYear } = {}) {
       preview,
       /** Builds these crop layouts ([Map id -> crop key]) in idle time, so showing them later is instant. */
       prebuild: (keyMaps) => crops.prebuild(keyMaps),
+      /**
+       * The farmer edited a field's crop history: the years' crops from `next` (Map id -> [{ year, key,
+       * label }]), and "now" from nowKeys (Map id -> crop key). The year on show is drawn again; a plan
+       * view or play-through picks it up when it comes back to the years on record.
+       */
+      setHistory(next, nowKeys = new Map()) {
+        history = next;
+        for (const f of view.fields) if (nowKeys.has(f.id)) f.cropKey = nowKeys.get(f.id);
+        crops.prebuild(years.map(keysFor));
+        if (mode === 'now' || typeof mode === 'number') {
+          shownCropYear = undefined; // (so the crops and the field list are drawn again)
+          apply(stateFor(mode), { instant: true });
+        }
+      },
       /** fn() with the festival on show at its full size (themes.atFull): for measuring what it fills. */
       atFullTheme: (fn) => themes.atFull(fn),
       /** Jumps the play-through to `seconds` (for testing in the console). */

@@ -811,7 +811,7 @@ body.is-hub .reveal__label { z-index: 0; }
 body { --ck-w: 348px; } /* the check-up's width (the season chip centres between it and the sidebar) */
 .checkup {
   position: fixed; z-index: 28; right: var(--gutter); top: 72px; bottom: 22px; width: var(--ck-w);
-  display: flex; flex-direction: column; overflow: hidden;
+  display: flex; flex-direction: column; overflow: hidden; overflow: clip; /* clip: never scrolled itself, so the header can't be scrolled away (the tour's last section used to) */
   background: var(--cream); border: 5px solid var(--wood); border-radius: 26px;
   box-shadow: 0 0 0 2px var(--wood-deep), 0 8px 0 -2px var(--wood-deep), 0 20px 40px rgb(60 40 80 / .28);
   animation: hub-in-right .45s var(--spring) both;
@@ -904,6 +904,28 @@ body { --ck-w: 348px; } /* the check-up's width (the season chip centres between
 /* the year picked in the year bar */
 .hist.is-year .hist__icon { border-color: var(--green-dark); box-shadow: 0 0 0 2px var(--green); }
 .hist.is-year .hist__year { color: var(--green-ink); font-weight: 700; }
+/* the farmer's own years (src/fields/cropEdits.js): a small green dot on the icon */
+.hist--farmer .hist__icon { position: relative; }
+.hist--farmer .hist__icon::after, .hist-mine__dot {
+  content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--green-dark); border: 2px solid var(--cream);
+}
+.hist--farmer .hist__icon::after { position: absolute; top: -4px; right: -4px; }
+.hist-mine { display: flex; align-items: center; gap: 6px; }
+.hist-mine__dot { display: inline-block; flex: none; }
+/* the crop history editor: a crop picker per year */
+.hist-edit__lead { margin: 0 0 10px; }
+.hist-edit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; }
+.hist-edit__row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; }
+.hist-edit__year { font-size: 13.5px; font-weight: 700; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.hist-edit__pick {
+  min-width: 0; width: 100%; height: 38px; padding: 0 8px; border-radius: 10px; font: 600 14.5px/1 var(--font); color: var(--ink);
+  background: var(--tile); border: 2px solid var(--tile-line); cursor: pointer;
+}
+.hist-edit__pick:hover { background: var(--tile-hover); }
+.hist-edit__pick:focus-visible { outline: 3px solid var(--green-dark); outline-offset: 1px; }
+.hist-edit__btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.ck-hist__note:empty { display: none; }
+@media (max-width: 380px) { .hist-edit { grid-template-columns: minmax(0, 1fr); } }
 .hist:focus-visible .hist__icon { outline: 3px solid var(--green-dark); outline-offset: 1px; }
 
 /* soil facts: label left, value right */

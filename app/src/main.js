@@ -28,6 +28,7 @@ import { createJars, jarKeepOuts } from './island/jarProps.js';
 import { createSeaLife } from './island/seaLife.js';
 import { createCheckIn, CROPS } from './screens/checkin.js';
 import { CROP_KEYS } from './island/crops.js';
+import { applyCropEdits, restoreCrops } from './fields/cropEdits.js';
 import { createFieldPanel } from './screens/fieldPanel.js';
 import { createJarPanel } from './screens/jarPanel.js';
 import { createPlansPanel, firstSeason, money } from './screens/plansPanel.js';
@@ -214,6 +215,7 @@ const fieldPanel = createFieldPanel({
     paintStatuses();
   },
   onAsk: (id, opener) => askManami.open({ focus: { kind: 'field', field_id: id, name: nameOf(id) }, opener }),
+  onCrops: (id, edits) => setCrops(id, edits),
   onJar: (id, mode) => {
     if (mode === 'remove') removeJar(id, { from: 'checkup' });
     else jarPanel.open({ fieldId: id, step: mode === 'open' ? 'result' : 'howto', from: 'checkup' });
@@ -407,6 +409,28 @@ function setJar(id, record) {
   paintStatuses();
   if (fieldPanel.openId === id) fieldPanel.update(reportFor(id));
   return { prev, spots };
+}
+
+/**
+ * The farmer's own crop history for a field ({ year: cropKey | null }, or 'restore' for USDA's
+ * record): the app, the island's crops (now and each year on record), the field list, the check-up.
+ * The plans and Ask Manami read app.fields, so they use it from the next time they look.
+ */
+function setCrops(id, edits) {
+  const f = app.fields.find((x) => x.id === id);
+  if (!f) return;
+  const next = edits === 'restore' ? restoreCrops(f) : applyCropEdits(f, edits);
+  if (next === f) return;
+  app.fields = app.fields.map((x) => (x.id === id ? next : x));
+  // "now" on the island: the field's latest year on record
+  const last = [...(reportFor(id)?.history || [])].reverse().find((h) => h.crop != null) || null;
+  const key = last?.key || 'other';
+  if (app.island) app.island.fields = app.island.fields.map((x) => (x.id === id ? { ...x, crop: last?.crop ?? null, cropKey: key } : x));
+  hub.setLastCrop(id, key, last?.label || 'No crop on record');
+  if (timeTravel.session) timeTravel.session.setHistory(cropHistories(), new Map([[id, key]]));
+  else hub.setRowCrop(id, null);
+  paintStatuses();
+  if (fieldPanel.openId === id) fieldPanel.update(reportFor(id));
 }
 
 /** After a jar test came or went from the plan view: the plans again, on that field's card. */

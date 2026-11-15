@@ -655,6 +655,14 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
       el.classList.toggle('is-none', !key);
     }
 
+    /** A field's latest crop changed (the farmer edited its history): kept for its row and tooltip. */
+    function setLastCrop(id, key, label) {
+      const f = byId.get(id);
+      if (!f) return;
+      f.cropKey = key;
+      f.cropLabel = label;
+    }
+
     /** A field's new name: its row, and the tooltip if it's showing. */
     function renameField(id, name) {
       const f = byId.get(id);
@@ -737,6 +745,7 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
       paintStatus,
       renameField,
       setRowCrop,
+      setLastCrop,
       /** Measure the free area again (the check-up panel changed size). */
       relayout: () => rig.layout({ animate: true }),
       get selected() { return selected; },
@@ -771,6 +780,7 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
     overview: () => session?.overview(),
     renameField: (id, name) => session?.renameField(id, name),
     setRowCrop: (id, info) => session?.setRowCrop(id, info),
+    setLastCrop: (id, key, label) => session?.setLastCrop(id, key, label),
     setPlanMode: (m) => session?.setPlanMode(m),
     /** What a tap can open on the island besides the fields (the soil jars' pick), or null. */
     setPropPicker(fn) {
