@@ -20,6 +20,36 @@
   `/nass/` with the Quick Stats key as a Worker secret; set `VITE_NASS_PROXY` to turn it on for the
   live site. Locally, `NASS_API_KEY` in the environment or `app/.env.local`.
 
+## v0.12.0 (2026-11-15)
+
+### What's new
+
+- **Save your farm.** Your farm saves itself on this device, no sign-in needed: come back and Manami
+  offers to open it again, just as you left it. Sign in with an emailed link (the person button, top
+  right) to keep your farms in your account and open them on any device. The demo still needs no
+  sign-in. Your own crop history edits are saved too.
+- **Real prices for your farm.** "Plan my next seasons" now uses your county's crops and USDA NASS
+  yields and prices. If they can't be reached, the plans use stand-in prices and say so wherever
+  they show. The loading checklist shows each data source as it arrives.
+- **Manami's take on the plans.** Ask her which plan she'd pick for each field and why, rotation
+  first and money second. Every number shown is the planner's own, never the AI's.
+- **Manami's read on a field.** In a field's check-up, ask for her short read of its crops, soil,
+  slope, rain and greenness.
+- **Ask Manami remembers.** Signed in, your conversations are kept and pick up where you left off.
+
+### Better to use
+
+- One set of rules for the panels: one big panel at a time, popovers close when anything else opens,
+  and the farm's controls wait while a panel covers it.
+- With the plans open, tapping a field in Your fields shows its row in the plans.
+- Roomier layouts where words were cramped: the plans table, the plan view's dock, the money table
+  and field strips on a phone, and plain words in "Build your own".
+
+### Fixed
+
+- A farm with no field outlines (or no connection to them) now offers to draw your fields, instead
+  of stopping.
+
 ## v0.11.1 (2026-11-15)
 
 ### What's new
