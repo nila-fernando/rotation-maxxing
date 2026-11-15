@@ -6,7 +6,9 @@
 //             worth, and Fields, Why and watch out, Back to the plans, Use …
 //   island    the plan's crops for the season; fields that change get green outlines and grow back in;
 //             a coin stack over each field is its 3-season cash (bright gold: more than keeping going);
-//             a chip over each field says the money and has a dot for anything to watch
+//             a chip over each field says the money and has a dot for anything to watch, and a
+//             snowflake where a spring freeze can hurt the wheat (the walk's frost stop and the card's
+//             peek outline those fields ice blue, under a light rime: src/plan/futureMarks.js)
 //   Manami    walks a short reel of lines first (skippable at any stop), then the farmer looks round
 //   card      a field's whole story, and the place to pick its plan (the mix is scored like the panel's)
 //   notes     "Why and watch out": her reasons, the risks, the gaps, and the planner's own words
@@ -17,11 +19,15 @@
 //
 //   const futures = createPlanFutures({ hub, timeTravel, manami, getData, getChoice, setChoice, evaluateMix, onSave, onBack, ... })
 //   futures.start('priority', { reel: true, view, startYear })   futures.stop()   futures.insets()
+//   futures.start(kind, { reel: false, view, startYear, card: fieldId, said })   opens that field's card once
+//                                       in, with Manami's line `said` in it
 import * as THREE from 'three';
 import {
   KINDS, kindFor, mixedPlan, compareFutures, fieldOf, viewField, seasonChanges, seasonCashFor, coinPlan,
-  tiles as tileValues, sameCrops, uniformKind, gainField, reelStops, fineprint,
+  tiles as tileValues, sameCrops, uniformKind, gainField, reelStops, fineprint, frostIds, dryIds,
 } from '../plan/compareFutures.js';
+import { marksFor } from '../plan/futureMarks.js';
+import { frostNumbers } from '../plan/weatherWords.js';
 import * as voice from '../plan/futuresVoice.js';
 import { SEVERITY_LABEL, LENS_LABEL } from '../plan/builder.js';
 import { PLANS, CROP_NAME } from '../plan/planNames.js';
@@ -89,6 +95,33 @@ export function focusHome(els) {
   return els.find((el) => el && !el.disabled && el.getClientRects().length > 0) || null;
 }
 
+/**
+ * A chip's inside: the crop, the field's 3-season cash, its difference from keeping going (when
+ * showDiff), a snowflake when this season's wheat has a spring freeze, a drop when the field runs
+ * short of water where water is the weather worry (dry), and the warning dot. s is the season shown.
+ */
+export function chipHtml({ s, total, diff, showDiff = false, dry = false }) {
+  return `<span class="fut-chip__crop plan-crop">${cropIconFor(s.crop, s.cover)}</span>`
+    + `<span class="fut-chip__cash">${esc(moneyAbout(total))}</span>`
+    + (showDiff ? `<span class="fut-chip__diff ${diff >= 0 ? 'is-up' : 'is-down'}">${esc(diff >= 0 ? '+' : '−')}${esc(moneyAbout(Math.abs(diff)))}</span>` : '')
+    + (s.freeze ? `<span class="fut-chip__frost" aria-hidden="true">${LENS_ICONS.frost}</span>` : '')
+    + (dry ? `<span class="fut-chip__dry" aria-hidden="true">${LENS_ICONS.water}</span>` : '')
+    + (s.worst ? `<span class="fut-chip__dot sev-${s.worst}"></span>` : '');
+}
+
+/** A season radio's year line: the season icon, the year, and a snowflake (hidden unless `frost`; paintDock flips it). */
+export function seasonYearHtml(year, frost = false) {
+  return `<span class="fut-season__year">${SEASON_ICONS.summer}${esc(year)}<span class="fut-season__frost" aria-hidden="true"${frost ? '' : ' hidden'}>${LENS_ICONS.frost}</span></span>`;
+}
+
+/** The years in a plan's seasons whose wheat has a spring freeze, for its row's label: " Spring freeze risk on the wheat in 2028." */
+export function frostRowWords(seasons, years) {
+  const ys = seasons.map((s, y) => (s.freeze ? years[y] : null)).filter((y) => y != null);
+  if (!ys.length) return '';
+  const list = ys.length > 1 ? `${ys.slice(0, -1).join(', ')} and ${ys[ys.length - 1]}` : String(ys[0]);
+  return ` Spring freeze risk on the wheat in ${list}.`;
+}
+
 /** "+$25k" / "−$2k" (a money difference with its sign). */
 const signed = (d) => `${d >= 0 ? '+' : '−'}${money(Math.abs(d))}`;
 /** "$25k more than keeping going", for screen readers. */
@@ -110,8 +143,10 @@ const cellName = (s) => `${cropName(s.crop)}${s.cover ? ` + ${cropName(s.cover)}
  * @param {() => void} [o.onStart]   [o.onStop]
  * @param {(plan: object, info: object) => void} [o.onSave]
  * @param {() => void} [o.onBack]   back to the plans panel;  [o.onBuild] its "Build your own"
+ * @param {(fieldId: string) => void} [o.onJar]   the card's "Test this field’s soil with a jar"
+ * @param {(fieldId: string) => boolean} [o.hasJar]   the field has a jar test in use (no such link then)
  */
-export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrentData = () => null, getChoice = () => ({}), setChoice, evaluateMix, onStart, onStop, onSave, onBack, onBuild }) {
+export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrentData = () => null, getChoice = () => ({}), setChoice, evaluateMix, onStart, onStop, onSave, onBack, onBuild, onJar = null, hasJar = () => false }) {
   const $ = (id) => document.getElementById(id);
   const dock = $('futDock');
   const titleEl = $('futTitle');
@@ -153,6 +188,8 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
   let reel = null; // { stops, i } while Manami walks through
   let marksBase = 'current'; // what the change outlines are measured against (null: none)
   let focusId = null; // a field the walk (or the "start there" hint) lights gold
+  let frostLens = false; // the frost fields outlined ice blue, with a rime on the farm (the walk's frost stop, the card's peek)
+  let peek = false; // the lens is the card's "Show a spring freeze on the farm"
   let hintOn = false; // the hint's gold outline stays until the first tap
   let cardId = null;
   let cardOpener = null;
@@ -203,15 +240,20 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     document.body.classList.add('plan-futures');
     dock.hidden = false;
     setDockH();
+    // (a frame later: setDockH can resize what's observed, and in the same frame that's a loop)
+    let roFrame = 0;
     const ro = new ResizeObserver(() => {
-      if (!active) return;
-      setDockH();
-      session()?.relayout();
-      chipsDirty = true;
+      cancelAnimationFrame(roFrame);
+      roFrame = requestAnimationFrame(() => {
+        if (!active) return;
+        setDockH();
+        session()?.relayout();
+        chipsDirty = true;
+      });
     });
     ro.observe(dock);
     ro.observe(card);
-    offs.push(() => ro.disconnect());
+    offs.push(() => { ro.disconnect(); cancelAnimationFrame(roFrame); });
     // Manami's bubble grows, shrinks and folds away with each line: the chips look again
     const manamiHost = document.getElementById('manami');
     let lastBottom = -1;
@@ -254,6 +296,12 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     if (id !== run || !active) return;
     try {
       begin(fresh, kind, walk);
+      // (back from a jar test opened on a field's card: that card again)
+      if (opts.card && fieldOf(cmp, opts.card)) {
+        openCard(opts.card, { opener: fieldsBtn });
+        // and Manami's word on it there (she steps aside while a card is open)
+        if (opts.said) { said = String(opts.said); renderCard(); }
+      }
     } catch (e) {
       // anything unexpected: leave cleanly rather than stranding the farmer in a half-built mode
       console.error('planFutures: could not start', e);
@@ -270,6 +318,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     reel = null;
     marksBase = 'current';
     focusId = null;
+    frostLens = peek = false;
     hintOn = false;
     cardId = cardOpener = null;
     said = '';
@@ -518,7 +567,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     const cells = cellsFor(cmp, view, season, choice);
     const changed = grow ? changedIds(shown, cells, xOf) : [];
     shown = cells;
-    timeTravel.preview({ label: NAME[view], startYear, keysByYear: keysFor(cmp, view, choice) }, season, { grow: changed.length ? changed : null, stagger });
+    previewIsland({ grow: changed.length ? changed : null, stagger });
     paintMarks();
     paintCoins();
     paintDock();
@@ -529,13 +578,34 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     queueStatus();
   }
 
+  /**
+   * The view's crops for the season on the island; with the frost lens on and a freeze that season,
+   * a light rime lies on the farm (only the snow look: the season and any festival stay as they are).
+   */
+  function previewIsland({ grow = null, stagger } = {}) {
+    const frost = frostLens && frostIds(cmp, view, season, choice).size > 0;
+    timeTravel.preview({ label: NAME[view], startYear, keysByYear: keysFor(cmp, view, choice) }, season, { grow, stagger, frost });
+  }
+
   function paintMarks() {
-    const m = new Map();
-    if (marksBase && marksBase !== view) for (const [id, k] of seasonChanges(cmp, view, choice, marksBase)[season]) m.set(id, k);
-    if (focusId) m.set(focusId, 'focus');
-    if (cardId) m.set(cardId, 'focus');
-    session()?.setMarks(m);
+    session()?.setMarks(marksFor(cmp, view, season, choice, { marksBase, frostLens, focusId, cardId }));
     chipsDirty = true;
+  }
+
+  /**
+   * The frost lens off (a new view or season, the card closing, the walk ending): the outlines go
+   * back to the changes and the rime lifts. Returns whether it was on. repaint: false when the
+   * caller paints next anyway.
+   */
+  function lensOff({ repaint = true } = {}) {
+    const was = frostLens;
+    frostLens = peek = false;
+    if (was && repaint && cmp) {
+      previewIsland();
+      paintMarks();
+      if (cardId) renderCard();
+    }
+    return was;
   }
 
   // ---- the dock
@@ -548,7 +618,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
       <span class="fut-plan__text"><span class="fut-plan__name">${esc(NAME[k])}</span><span class="fut-plan__subrow"><span class="fut-plan__sub"></span>${k === 'priority' ? '<span class="fut-plan__badge">Recommended</span>' : ''}</span></span>
     </button>`).join('');
     seasonsEl.innerHTML = years().map((y, i) => `<button type="button" role="radio" class="fut-season" data-i="${i}">
-      <span class="fut-season__year">${SEASON_ICONS.summer}${y}</span><span class="fut-season__cash"></span>
+      ${seasonYearHtml(y, frostIds(cmp, view, i, choice).size > 0)}<span class="fut-season__cash"></span>
     </button>`).join('');
     captionEl.removeAttribute('role');
     captionEl.textContent = voice.captionLine(coinsPlan.value);
@@ -572,6 +642,9 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
       b.setAttribute('aria-checked', String(on));
       b.tabIndex = on ? 0 : -1;
       b.setAttribute('aria-label', voice.seasonLabel(cmp, view, i, choice));
+      const flake = b.querySelector('.fut-season__frost');
+      const noFrost = !frostIds(cmp, view, i, choice).size;
+      if (flake && flake.hidden !== noFrost) flake.hidden = noFrost;
       const d = cash[i] - cmp.seasonCash.current[i];
       const html = `${esc(money(cash[i]))}${view === 'current' ? '' : `<span class="fut-season__diff"> · ${esc(Math.abs(d) < 500 ? 'same' : signed(d))}</span>`}`;
       const el = b.querySelector('.fut-season__cash');
@@ -651,6 +724,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
   function paintChips() {
     if (!cmp) return;
     const changes = marksBase && marksBase !== view ? seasonChanges(cmp, view, choice, marksBase)[season] : new Map();
+    const dry = dryIds(cmp, view, season, choice);
     const written = [];
     for (const c of chips) {
       const f = fieldOf(cmp, c.id);
@@ -659,12 +733,10 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
       const s = e.seasons[season];
       const d = e.total - f.byKind.current.total;
       const showDiff = kindOf(c.id) !== 'current' && Math.abs(d) >= 500;
-      c.changed = changes.has(c.id) || c.id === focusId || c.id === cardId;
+      // (with the frost lens on, the frost fields' chips win a place over the others)
+      c.changed = changes.has(c.id) || c.id === focusId || c.id === cardId || (frostLens && !!s.freeze);
       c.weight = Math.abs(d);
-      const html = `<span class="fut-chip__crop plan-crop">${cropIconFor(s.crop, s.cover)}</span>`
-        + `<span class="fut-chip__cash">${esc(moneyAbout(e.total))}</span>`
-        + (showDiff ? `<span class="fut-chip__diff ${d >= 0 ? 'is-up' : 'is-down'}">${esc(d >= 0 ? '+' : '−')}${esc(moneyAbout(Math.abs(d)))}</span>` : '')
-        + (s.worst ? `<span class="fut-chip__dot sev-${s.worst}"></span>` : '');
+      const html = chipHtml({ s, total: e.total, diff: d, showDiff, dry: dry.has(c.id) });
       const cls = `fut-chip${showDiff ? ' has-diff' : ''}${e.total <= 0 ? ' is-loss' : ''}${c.id === focusId || c.id === cardId ? ' is-focus' : ''}`;
       if (html !== c.html || c.el.className !== cls) {
         c.html = html;
@@ -767,7 +839,10 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     view = st.view;
     season = st.season;
     marksBase = st.marksBase;
-    focusId = st.fieldId || null;
+    // the weather stops light their fields their own way (ice blue for frost), not gold
+    frostLens = !!st.frostLens;
+    peek = false;
+    focusId = st.noFocus ? null : st.fieldId || null;
     paint({ grow: i > 0, stagger: st.growStagger || 0 });
     cameraTo(st.camera === 'field' ? { kind: 'field', id: st.fieldId } : { kind: st.camera });
     const go = (j) => () => { if (reel === token && reel.i === i && active) { reel.i = j; runStop(); } };
@@ -796,6 +871,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     marksBase = 'current';
     focusId = null;
     hintOn = false;
+    if (frostLens) { frostLens = peek = false; previewIsland(); } // (the marks are painted below)
     if (hint) {
       const g = gainField(cmp);
       if (g) { focusId = g.id; hintOn = true; }
@@ -822,16 +898,38 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     if (v === view) return;
     view = v;
     if (!reel) marksBase = 'current';
+    lensOff({ repaint: false });
     paint();
     if (v === 'mix' && !uniformKind(cmp, choice) && !mixScore) scoreMix();
   }
 
-  function setSeason(i) {
+  /** keepFrost: the card's freeze peek moves the season itself, and keeps its lens on. */
+  function setSeason(i, { keepFrost = false } = {}) {
     if (!checkData()) return;
     const s = Math.max(0, Math.min(2, i));
     if (s === season) return;
     season = s;
+    if (!keepFrost) lensOff({ repaint: false });
     paint();
+  }
+
+  /**
+   * The card's "Show a spring freeze on the farm": the island goes to the field's first season with
+   * a freeze, every frost field that season is outlined ice blue under a rime, and #futStatus says
+   * which. Pressed again (or Esc, or Done), it goes off.
+   */
+  function togglePeek() {
+    if (!cardId) return;
+    if (peek && frostLens) { lensOff(); queueStatus(); return; }
+    const e = viewField(cmp, cardId, view, choice);
+    const y = e.seasons.findIndex((s) => s.freeze);
+    if (y < 0) return;
+    frostLens = peek = true;
+    if (y !== season) setSeason(y, { keepFrost: true });
+    else paint();
+    if (!active || !cmp) return; // (the farm changed under the mode, and it stopped)
+    clearTimeout(statusTimer); // (the peek's line, not the season's)
+    statusEl.textContent = voice.frostPeekLine(cmp, season, frostIds(cmp, view, season, choice));
   }
 
   /** The tooltip over a field (hub.setPlanMode). */
@@ -858,6 +956,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     dropHint();
     if (was !== kind) mixScore = null;
     view = 'mix';
+    lensOff({ repaint: false });
     paint();
     scoreMix();
     said = voice.pickedLine(fieldOf(cmp, id).name, kind);
@@ -897,10 +996,13 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
       reel = null;
       marksBase = 'current';
       focusId = null;
+      if (frostLens) { frostLens = peek = false; previewIsland(); } // (the walk's frost stop: the rime lifts)
       manami.say(voice.yourTurnLine());
     }
     const was = cardId;
     cardId = id;
+    // (the peek was this card's: another field's card starts without it)
+    if (was && was !== id && peek && lensOff({ repaint: false })) { previewIsland(); queueStatus(); }
     if (!was) cardOpener = opener;
     if (was !== id) said = '';
     card.hidden = false;
@@ -923,6 +1025,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     card.hidden = true;
     card.replaceChildren();
     document.body.classList.remove('fut-card-open');
+    if (lensOff({ repaint: false })) { previewIsland(); queueStatus(); }
     paintMarks();
     paintChips();
     paintDock();
@@ -981,7 +1084,9 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
         ${watch.length
     ? `<ul class="fut-watch">${watch.map((w) => `<li class="fut-watch__row"><span class="fut-watch__when">${w.year} · <span class="fut-sev sev-${w.severity}">${esc(w.label)}</span> ·</span>${LENS_ICONS[w.lens] || ''}<span class="sr-only">${esc(LENS_LABEL[w.lens] || '')}:</span><span>${esc(w.text)}</span></li>`).join('')}</ul>`
     : '<p class="fut-none">Nothing to flag here. Nice work.</p>'}
+        ${e.seasons.some((s) => s.freeze) ? `<button class="linkish fut-frost-peek" type="button" data-act="frost" aria-pressed="${peek && frostLens}">Show a spring freeze on the farm</button>` : ''}
         ${good.length ? `<h3 class="fut-card__h">Good to know</h3><ul class="fut-list">${good.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+        ${onJar && !hasJar(id) ? '<button class="linkish fut-jar" type="button" data-act="jar">Test this field’s soil with a jar</button>' : ''}
         <details class="fut-numbers"${numbersOpen ? ' open' : ''}><summary>More numbers</summary>${numbersHtml(f, e)}</details>
       </div>
       <div class="fut-card__foot">
@@ -1002,14 +1107,14 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     const on = kind === picked;
     const cells = e.seasons.map((s, y) => `<span class="fut-cell">
         <span class="plan-crop">${cropIconFor(s.crop, s.cover)}</span>
-        <span class="fut-cell__year">${years()[y]}</span>
+        <span class="fut-cell__year">${years()[y]}${s.freeze ? `<span class="fut-cell__frost" aria-hidden="true">${LENS_ICONS.frost}</span>` : ''}</span>
         <span class="fut-cell__cash">${esc(perAcre(s.gmAc))}/ac</span>
         <span class="fut-cell__soil">${TILE_ICONS.soil}${s.soil100}</span>
       </span>`).join('');
     const sev = Math.max(0, ...e.seasons.map((s) => s.worst));
     const d = e.total - f.byKind.current.total;
     const total = kind === 'current' ? money(e.total) : `${money(e.total)}, ${Math.abs(d) < 500 ? 'same' : signed(d)}`;
-    const label = `${NAME[kind]}: ${e.seasons.map((s, y) => `${years()[y]} ${cellName(s)}`).join(', ')}. About ${money(e.total)} over 3 seasons${kind === 'current' ? '' : `, ${diffWords(d)}`}.${sev ? ` ${SEVERITY_LABEL[sev]}: something to watch.` : ''}${sameAs ? ` Same crops as ${NAME[sameAs]}.` : ''}`;
+    const label = `${NAME[kind]}: ${e.seasons.map((s, y) => `${years()[y]} ${cellName(s)}`).join(', ')}. About ${money(e.total)} over 3 seasons${kind === 'current' ? '' : `, ${diffWords(d)}`}.${sev ? ` ${SEVERITY_LABEL[sev]}: something to watch.` : ''}${frostRowWords(e.seasons, years())}${sameAs ? ` Same crops as ${NAME[sameAs]}.` : ''}`;
     return `<button type="button" role="radio" class="fut-row fut-row--${kind}" data-kind="${kind}" aria-checked="${on}" tabindex="${on ? 0 : -1}" aria-label="${esc(label)}">
       <span class="fut-row__head"><span class="fut-row__icon">${PLAN_ICONS[kind]}</span><b>${esc(NAME[kind])}</b>${kind === 'priority' ? '<span class="fut-plan__badge">Recommended</span>' : ''}${sameAs ? `<span class="fut-row__same">same crops as ${esc(NAME[sameAs])}</span>` : ''}</span>
       <span class="fut-row__cells">${cells}</span>
@@ -1033,6 +1138,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
       if (s.nCredit > 0) rows.push(['Nitrogen credit', `+${perAcre(s.nCredit)}/ac`]);
       if (s.drag < 0) rows.push(['Yield drag', `−${Math.round(Math.abs(s.drag))} ${s.unit || 'bu'}/ac`]);
       if (s.coverCost) rows.push(['Cover crop', `${perAcre(s.coverCost)}/ac`]);
+      rows.push(...frostNumbers(s.freeze));
       return `<div class="fut-num"><p class="fut-num__h">${years()[y]} · ${esc(cellName(s))}</p><dl>${rows.map(([k, v, raw]) => `<div><dt>${esc(k)}</dt><dd>${raw ? v : esc(v)}</dd></div>`).join('')}</dl></div>`;
     }).join('');
   }
@@ -1072,7 +1178,10 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     if (carried) why.push(carried);
     const rows = voice.watchRows(cmp, view, choice);
     const risks = voice.farmRiskLines(cmp, view, mixScore, choice);
-    const good = [voice.weatherLine(cmp.weather), voice.captionLine(coinsPlan.value), ...gaps.farm];
+    // (the weather worry in her words; the planner's own sentence stays in the fine print)
+    const wheat = cmp.fields.some((f) => viewField(cmp, f.id, view, choice).seasons.some((s) => /wheat/.test(s.crop)));
+    const weatherRisk = voice.weatherRiskLine(cmp.weatherRisk, { wheat, irrigated: !!cmp.facts?.irrigated });
+    const good = [voice.weatherLine(cmp.weather), weatherRisk, voice.captionLine(coinsPlan.value), ...gaps.farm];
     const raw = fineprint(cmp, view, mixScore, choice);
     const p = (t) => `<p>${esc(t)}</p>`;
     const list = (items) => `<ul class="fut-list">${items.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`;
@@ -1128,11 +1237,12 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
   /** Esc: the notes first, then the card, then back to the plans. Ours alone while the mode is on. */
   function onKey(e) {
     if (e.key !== 'Escape' || !active) return;
-    if (document.body.classList.contains('plans-open')) return;
+    if (document.body.classList.contains('plans-open') || document.body.classList.contains('jar-open')) return;
     if (e.target.closest?.('input, textarea, select')) return;
     e.preventDefault();
     e.stopPropagation();
     if (notesOpen) closeNotes();
+    else if (cardId && peek && frostLens) { lensOff(); queueStatus(); } // the freeze peek first, then the card
     else if (cardId) closeCard();
     else back();
   }
@@ -1199,6 +1309,8 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     else if (act === 'prev') stepCard(-1);
     else if (act === 'next') stepCard(1);
     else if (act === 'save') save();
+    else if (act === 'frost') togglePeek();
+    else if (act === 'jar') onJar?.(cardId);
   });
   card.addEventListener('change', (e) => {
     if (active && cmp && e.target.matches('.fut-card__select')) openCard(e.target.value);
@@ -1237,7 +1349,7 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     insets,
     get active() { return active; },
     /** For debugging in the console: the state of the mode. */
-    get state() { return { view, season, choice: { ...choice }, cardId, notesOpen, reel: reel ? reel.stops[reel.i]?.id : null, limits, mixScore: mixScore?.expectedGM ?? null }; },
+    get state() { return { view, season, choice: { ...choice }, cardId, notesOpen, frostLens, peek, reel: reel ? reel.stops[reel.i]?.id : null, limits, mixScore: mixScore?.expectedGM ?? null }; },
     get cmp() { return cmp; },
   };
 }

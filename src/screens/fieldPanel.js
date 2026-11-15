@@ -4,7 +4,8 @@
 //   crop history  8 crop icons, 2018–2025 (CSB)
 //   soil          texture, drainage, organic matter, water-holding capacity (SSURGO)
 //   slope         average % and an erosion risk label (SRTM)
-//   rain          growing-season rain, last 10 years, against the 30-year average (POWER)
+//   rain          growing-season rain, last 10 years, against the 30-year average (POWER); once
+//                 there are plans, Manami's weather risk and any spring freeze on this field's wheat
 //   greenness     last season's NDVI curve (Landsat/HLS); left out when there's no imagery
 //   Manami says   1–2 flags from src/data/flags.js
 //
@@ -12,14 +13,20 @@
 // CSB, in the header). A chip with a dotted edge marks a demo stand-in (soil, slope, rain and
 // greenness are realistic placeholders until the live sources are connected).
 //
-//   const panel = createFieldPanel({ onRename, onIrrigated, onClose })
+// The soil section ends with the jar test strip: "Try a jar test", or the farmer's own jar test
+// (src/plan/jarTest.js) when one is in use, with "See your jar", "Test again" and "Stop using it".
+//
+//   const panel = createFieldPanel({ onRename, onIrrigated, onJar, onClose })
 //   panel.open(report)     a report from src/data/fieldReport.js
-//   panel.update(report)   after a rename or the irrigated switch
+//   panel.update(report)   after a rename, the irrigated switch or a jar test
+//   panel.jarNote(id, text)   a short line under the jar strip (said to screen readers too)
 //   panel.close()
 //   panel.insets()         { right, bottom }: how much of the screen it covers (for the camera)
 import { formatAcres } from '../fields/geometry.js';
 import { SOURCES } from '../data/fieldReport.js';
 import { cropIcon } from '../ui/cropIcons.js';
+import { LENS_ICONS } from '../ui/futureIcons.js';
+import { JAR } from '../ui/jarIcons.js';
 
 const MM_PER_IN = 25.4;
 const RISK_TEXT = { low: 'Low erosion risk', medium: 'Medium erosion risk', high: 'High erosion risk' };
@@ -28,6 +35,62 @@ const SHEET_QUERY = '(max-width: 900px) and (min-height: 521px)'; // as in hub.j
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const cap = (s) => (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : '');
 const inches = (mm) => (mm / MM_PER_IN).toFixed(1);
+const CONFIDENCE = { high: 'High confidence', medium: 'Medium confidence', low: 'Low confidence', adjusted: 'Adjusted by you' };
+
+/**
+ * A tiny jar in the record's own layer colours (3 to 5 bands, top to bottom; with more layers the
+ * biggest 5 are kept), for the check-up's jar strip. Decoration only: the text beside it says it all.
+ */
+export function jarSwatch(layers) {
+  let bands = (layers || []).filter((l) => l && l.share > 0 && Array.isArray(l.rgb) && l.type !== 'air');
+  if (bands.length > 5) {
+    const keep = new Set([...bands].sort((a, b) => b.share - a.share).slice(0, 5));
+    bands = bands.filter((l) => keep.has(l));
+  }
+  const total = bands.reduce((s, l) => s + l.share, 0) || 1;
+  const top = 7, bottom = 29, h = bottom - top;
+  let y = top;
+  const rects = bands.map((l) => {
+    const bh = (l.share / total) * h;
+    const [r, g, b] = l.rgb.map((v) => Math.max(0, Math.min(255, Math.round(Number(v) || 0))));
+    const out = `<rect x="4" y="${y.toFixed(2)}" width="16" height="${(bh + 0.3).toFixed(2)}" fill="rgb(${r} ${g} ${b})"/>`;
+    y += bh;
+    return out;
+  }).join('');
+  return `<svg viewBox="0 0 24 32" aria-hidden="true" focusable="false">
+    <defs><clipPath id="ckJarClip"><rect x="4" y="6" width="16" height="23" rx="3"/></clipPath></defs>
+    <g clip-path="url(#ckJarClip)"><rect x="4" y="6" width="16" height="23" fill="#eef6f8"/>${rects}</g>
+    <rect x="3.5" y="5.5" width="17" height="24" rx="3.5" fill="none" stroke="#9c714f" stroke-width="1.6"/>
+    <rect x="5.5" y="1.5" width="13" height="4" rx="1.2" fill="#b98a5e" stroke="#7d5840" stroke-width="1.2"/>
+  </svg>`;
+}
+
+/** The soil section's jar strip: "Try a jar test", or the jar test in use with its three links. */
+export function jarStrip(jar, note = '') {
+  const said = `<p class="ck-caption ck-jar__note" role="status">${esc(note)}</p>`;
+  if (!jar) {
+    return `<div class="ck-jar ck-jar--empty">
+      <span class="ck-jar__icon" aria-hidden="true">${JAR}</span>
+      <p>Want to check it yourself? A jar of soil and water shows your sand, silt and clay.</p>
+      <button class="btn btn--quiet btn--small" type="button" data-jar="new">${JAR}<span>Try a jar test</span></button>
+    </div>${said}`;
+  }
+  const pct = (v) => (Number.isFinite(v) ? `${Math.round(v)}%` : '?');
+  const conf = CONFIDENCE[jar.confidence] || '';
+  return `<div class="ck-jar">
+    <span class="ck-jar__swatch" aria-hidden="true">${jarSwatch(jar.layers)}</span>
+    <div class="ck-jar__text">
+      <p class="ck-jar__title">Your jar test: <b>${esc(jar.textureClass)}</b> <span class="src-chip src-chip--jar"><span class="sr-only">Source: </span>Jar</span></p>
+      <p class="ck-caption">Sand ${pct(jar.sandPct)} · Silt ${pct(jar.siltPct)} · Clay ${pct(jar.clayPct)}${conf ? ` · ${conf}` : ''}${jar.sample ? ' · A sample jar' : ''}</p>
+      <p class="ck-caption">${jar.sameAsMap ? 'It agrees with the soil map.' : 'I’m planning with your jar here.'}</p>
+      <div class="ck-jar__acts">
+        <button class="linkish" type="button" data-jar="open">See your jar</button>
+        <button class="linkish" type="button" data-jar="new">Test again</button>
+        <button class="linkish" type="button" data-jar="remove">Stop using it</button>
+      </div>
+    </div>
+  </div>${said}`;
+}
 
 /** A source chip; placeholder = a demo stand-in for that source. */
 function chip(key, placeholder = false) {
@@ -93,9 +156,10 @@ export function ndviCurve(ndvi) {
  * @param {object} o
  * @param {(id: string, name: string) => string} o.onRename   saves; returns the name actually kept
  * @param {(id: string, on: boolean) => void} o.onIrrigated
+ * @param {(id: string, mode: 'new'|'open'|'remove') => void} [o.onJar]   the jar strip's buttons
  * @param {() => void} o.onClose
  */
-export function createFieldPanel({ onRename, onIrrigated, onClose }) {
+export function createFieldPanel({ onRename, onIrrigated, onJar, onClose }) {
   const root = document.getElementById('checkup');
   const head = document.getElementById('checkupHead');
   const body = document.getElementById('checkupBody');
@@ -103,8 +167,14 @@ export function createFieldPanel({ onRename, onIrrigated, onClose }) {
   const sheet = matchMedia(SHEET_QUERY);
   let report = null;
   let markedYear = null; // the year picked in the year bar, ringed in the crop history
+  let jarSaid = null; // { id, text }: the jar strip's last line (kept through a redraw)
 
   closeBtn.addEventListener('click', () => onClose?.());
+  // the jar strip's buttons (redrawn with the panel, so the click is caught here)
+  body.addEventListener('click', (e) => {
+    const b = e.target.closest?.('[data-jar]');
+    if (b && report) onJar?.(report.id, b.dataset.jar);
+  });
 
   // ---- the crop-history tooltip: one element on <body>, so the panel's scroll area never clips it
   const tip = document.createElement('div');
@@ -193,10 +263,15 @@ export function createFieldPanel({ onRename, onIrrigated, onClose }) {
         </div>`
       : empty('Slope isn’t available for this field yet.');
 
-    const rain = r.rain
+    // Manami's weather words from the latest plans (none until there are plans)
+    const pw = r.planWeather || {};
+    const weather = [[LENS_ICONS.water, pw.water], [LENS_ICONS.frost, pw.frost]]
+      .filter(([, text]) => text)
+      .map(([icon, text]) => `<p class="ck-caption ck-weather">${icon}<span>${esc(text)}</span></p>`).join('');
+    const rain = (r.rain
       ? `${rainSparkline(r.rain)}
          <p class="ck-caption">Last ${r.rain.recentYears} years: <b>${inches(r.rain.recentAvg)} in</b> a season vs <b>${inches(r.rain.avg30)} in</b> normal</p>`
-      : empty('Rain records aren’t available for this farm yet.');
+      : empty('Rain records aren’t available for this farm yet.')) + weather;
 
     const says = r.shown.length
       ? `<ul class="flags">${r.shown.map((f) => `<li class="flag flag--${f.level}"><span class="flag__dot" aria-hidden="true"></span>${esc(f.text)}</li>`).join('')}</ul>`
@@ -226,7 +301,7 @@ export function createFieldPanel({ onRename, onIrrigated, onClose }) {
       </section>
       ${section('ckHist', 'Crop history', '2018–2025', chip('CSB'), `<ol class="history" aria-label="Crops by year">${history}</ol>
         ${knownYears < r.history.length ? `<p class="ck-caption">${knownYears ? `${knownYears} of 8 years on record.` : 'No crop records for this field yet.'}</p>` : ''}`)}
-      ${section('ckSoil', 'Soil', '', r.soil ? chip('SSURGO', ph.soil) : '', soil)}
+      ${section('ckSoil', 'Soil', '', r.soil ? chip('SSURGO', ph.soil) : '', soil + jarStrip(r.jar, jarSaid?.id === r.id ? jarSaid.text : ''))}
       ${section('ckSlope', 'Slope', '', r.slope ? chip('SRTM', ph.slope) : '', slope)}
       ${section('ckRain', 'Rain trend', 'Apr–Sep', r.rain ? chip('POWER', ph.rain) : '', rain)}
       ${r.ndvi ? section('ckGreen', 'Greenness', 'last season', chip('Landsat', ph.ndvi), ndviCurve(r.ndvi)) : ''}
@@ -235,6 +310,7 @@ export function createFieldPanel({ onRename, onIrrigated, onClose }) {
 
   function open(r) {
     const scroll = report?.id === r.id ? body.scrollTop : 0;
+    if (report?.id !== r.id) jarSaid = null;
     report = r;
     hideTip();
     render(r);
@@ -247,9 +323,10 @@ export function createFieldPanel({ onRename, onIrrigated, onClose }) {
 
   // Manami steps aside while the panel is open (her flags are in it): out of sight and out of the tab order
   function setManamiAway() {
-    // away while this or the plans panel is open (both can't open at once, but either can close last)
+    // away while this, the plans panel or the jar test is open (any of them can close last)
     const m = document.getElementById('manami');
-    if (m) m.inert = document.body.classList.contains('checkup-open') || document.body.classList.contains('plans-open');
+    const cl = document.body.classList;
+    if (m) m.inert = cl.contains('checkup-open') || cl.contains('plans-open') || cl.contains('jar-open');
   }
 
   /**
@@ -270,9 +347,18 @@ export function createFieldPanel({ onRename, onIrrigated, onClose }) {
   function update(r) {
     if (!report || report.id !== r.id) return;
     const active = document.activeElement;
-    const keepFocus = active && root.contains(active) ? (active.matches('.checkup__irrigated') ? '.checkup__irrigated' : active.matches('.checkup__name') ? '.checkup__name' : null) : null;
+    const keepFocus = active && root.contains(active) ? (active.matches('.checkup__irrigated') ? '.checkup__irrigated' : active.matches('.checkup__name') ? '.checkup__name' : active.matches('[data-jar]') ? `[data-jar="${active.dataset.jar}"]` : null) : null;
     open(r);
-    if (keepFocus) root.querySelector(keepFocus)?.focus({ preventScroll: true });
+    // (a jar button that went with the redraw: its strip's first button instead)
+    if (keepFocus) (root.querySelector(keepFocus) || (keepFocus.startsWith('[data-jar') ? root.querySelector('[data-jar]') : null))?.focus({ preventScroll: true });
+  }
+
+  /** A short line under the jar strip ("Okay, West 140 is back on the soil map."), read out too. */
+  function jarNote(id, text) {
+    jarSaid = { id, text: String(text || '') };
+    if (report?.id !== id) return;
+    const el = body.querySelector('.ck-jar__note');
+    if (el) el.textContent = jarSaid.text;
   }
 
   function close() {
@@ -299,6 +385,7 @@ export function createFieldPanel({ onRename, onIrrigated, onClose }) {
   return {
     open,
     update,
+    jarNote,
     rename,
     markYear,
     close,

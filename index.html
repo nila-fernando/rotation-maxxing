@@ -149,6 +149,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Show the whole farm
       </button>
+      <button class="btn btn--quiet btn--small hub-panel__jar" id="hubJar" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8.5 3h7v3h-7z"/><path d="M7 6h10a1 1 0 0 1 1 1v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V7a1 1 0 0 1 1-1z"/><path d="M6.5 13.5h11M6.5 17h11"/><path d="M6.5 17h11v2a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2z" fill="currentColor" fill-opacity=".2" stroke="none"/></svg>
+        <span>Test your soil</span>
+      </button>
     </aside>
     <div class="timebar" id="timebar" role="group" aria-label="The farm through the years" hidden>
       <p class="timebar__label" id="timeLabel" aria-live="polite"></p>
@@ -251,6 +255,21 @@
       </button>
     </div>
     <div class="plans__body" id="plansBody"></div>
+  </section>
+
+  <!-- the soil jar test: a photo of a settled jar -> sand, silt and clay for a field (src/screens/jarPanel.js) -->
+  <section class="jar" id="jar" role="dialog" aria-labelledby="jarTitle" hidden>
+    <header class="jar__head">
+      <div class="jar__heading"><p class="jar__kicker">Jar test</p><h2 class="jar__title" id="jarTitle" tabindex="-1">Test your soil</h2></div>
+      <label class="jar__for">For <select id="jarField" class="jar__select"></select></label>
+      <button class="checkup__close" id="jarClose" type="button" aria-label="Close the jar test">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg>
+      </button>
+    </header>
+    <ol class="jar__steps" id="jarSteps" aria-label="Steps"><li aria-current="step">How to</li><li>Photo</li><li>Layers</li><li>Your soil</li></ol>
+    <div class="jar__body" id="jarBody"></div>
+    <footer class="jar__foot" id="jarFoot"></footer>
+    <p class="sr-only" id="jarLive" aria-live="polite"></p>
   </section>
 
   <!-- Part 3.5 · the field check-up panel (src/screens/fieldPanel.js) -->

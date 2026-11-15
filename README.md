@@ -33,11 +33,17 @@ demo farm's weather and planner run offline, from data in the repo.
 | `?hub=5` | straight to the demo farm's island (5 fields; `?hub=1` or `?hub=15` for 1 or 15) |
 | `?hub=5&futures=1` | straight into "See them on the farm", with Manami's walk |
 | `?hub=5&futures=explore` | the same, without the walk |
+| `?hub=5&futures=1&nocrops=soybeans` | the same on a farm that can't grow soybeans: Manami's pick sows winter wheat, so you see spring freeze risk on the farm |
 | `&hour=21.5` | a time of day (21.5 is 9:30 pm) |
 | `&today=2026-12-24` | a date, for the season and festival on the island |
 | `?demo=land` | lands on the demo farm at once, to pick fields yourself |
 
-In the browser console, `window.__sheep` has handles to poke at (dev only).
+To try the soil jar test, open a field on `?hub=5` (West 140, say), then "Try a jar test" in its
+check-up (or "Test your soil" under the field list), and "Try a sample jar". "Use for West 140"
+puts the jar by the field's gate on the island; tap it to see the jar again.
+
+In the browser console, `window.__sheep` has handles to poke at (dev only), among them
+`__sheep.jarPanel.open({ fieldId: 'f2' })` and `__sheep.jars()` for the jars on the island.
 
 ## Tests and build
 

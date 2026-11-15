@@ -15,6 +15,10 @@
 //   hub.show(island)              island = the reveal's result ({ fields, view })
 //   hub.setStatus(id, status)     Part 3.5 colours the dots ('unknown' = grey)
 //   hub.select(id) / hub.overview() / hub.hide()
+//   hub.setPropPicker(fn)         things on the island a tap can open (the soil jars): fn(origin, dir)
+//                                 -> { fieldId, tip: { title, note } } | null, asked before the fields;
+//                                 a hit goes to the plan mode's onTap, else to onJarTap(fieldId)
+//   hub.focusOn(spec, seconds)    the camera eases to { center, radius, y } (jumps with reduced motion)
 import * as THREE from 'three';
 import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
@@ -33,6 +37,7 @@ const HOVER_COLOR = 0xfffaf0;
 const SELECT_COLOR = 0xffd35c;
 const EDGE_COLOR = 0x4a3020;
 const MARK_CHANGED = 0x8fd8a4; // a plan view's "this field changes" outline (src/screens/planFutures.js)
+export const MARK_FROST = 0x7cc6f2; // and its "a spring freeze can hurt the wheat here" outline (ice blue, on the dark edge so it reads on snow)
 // the field list is a bottom sheet on narrow, tall-enough screens (same query as src/styles.css);
 // everywhere else (including landscape phones) it's the left sidebar
 export const SHEET_QUERY = '(max-width: 900px) and (min-height: 521px)';
@@ -52,8 +57,9 @@ const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').match
  * @param {() => void} [o.onCloseFieldPanel]           back to the whole farm (the panel closes)
  * @param {() => {right?: number, bottom?: number}} [o.getPanelInsets]  how much of the screen the panel covers
  * @param {() => void} [o.onPlan]   "Plan my next seasons" (Part 4)
+ * @param {(fieldId: string) => void} [o.onJarTap]   a field's soil jar was tapped on the island
  */
-export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets = () => ({}), panelEl = null, onPlan } = {}) {
+export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets = () => ({}), panelEl = null, onPlan, onJarTap } = {}) {
   const $ = (id) => document.getElementById(id);
   const root = $('hub');
   const panel = $('hubPanel');
@@ -64,6 +70,9 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
   const tip = $('hubTip');
   const statuses = new Map(); // id -> status key; kept across shows
   let session = null;
+  let propPicker = null; // the soil jars' picker (main.js), asked before the fields
+  // a dialog over the island (the jar test) has the island wait: no taps, no hover
+  const dialogUp = () => document.body.classList.contains('jar-open');
 
   planBtn.addEventListener('click', () => {
     onPlan?.();
@@ -124,7 +133,7 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
     let pointerDirty = false;
     let press = null; // { x, y, t, id } of a press on the canvas
     let pressed = false; // a button is down on the canvas (turning the island): no hover
-
+    let propHit = null; // a jar under the pointer ({ fieldId, tip }): its tooltip instead of a field's
 
     // ---------------------------------------------------------------- the field list
     const total = fields.reduce((s, f) => s + (Number.isFinite(f.acres) ? f.acres : 0), 0);
@@ -231,6 +240,7 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
       // green where the crop changes, a fainter green where only the money does
       markCrop: new LineMaterial({ ...lineOpts, color: MARK_CHANGED, linewidth: 4 }),
       markMargin: new LineMaterial({ ...lineOpts, color: MARK_CHANGED, linewidth: 4, opacity: 0.55 }),
+      markFrost: new LineMaterial({ ...lineOpts, color: MARK_FROST, linewidth: 4 }),
     };
     const setResolution = () => Object.values(lineMats).forEach((m) => m.resolution.set(canvas.clientWidth || innerWidth, canvas.clientHeight || innerHeight));
     setResolution();
@@ -266,7 +276,7 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
       Object.values(lineMats).forEach((m) => m.dispose());
     });
 
-    // marks a plan view has put on fields: id -> 'focus' | 'crop' | 'margin' (see setMarks)
+    // marks a plan view has put on fields: id -> 'focus' | 'crop' | 'margin' | 'frost' (see setMarks)
     let marks = new Map();
     // which look a lit outline takes: selected (gold), then hover (cream), then the marks
     const OUTLINE_LOOK = {
@@ -275,6 +285,7 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
       focus: [lineMats.selectEdge, lineMats.select],
       crop: [lineMats.hoverEdge, lineMats.markCrop],
       margin: [lineMats.hoverEdge, lineMats.markMargin],
+      frost: [lineMats.hoverEdge, lineMats.markFrost],
     };
     function paintOutlines() {
       for (const f of fields) {
@@ -288,7 +299,8 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
 
     /**
      * Lights fields up for a plan view: a Map (or [id, mark] pairs) of id -> 'focus' (gold),
-     * 'crop' (green: the crop changes) or 'margin' (faint green: same crop, different money).
+     * 'crop' (green: the crop changes), 'margin' (faint green: same crop, different money) or
+     * 'frost' (ice blue: a spring freeze can hurt the wheat there).
      * null clears them. Selection and hover still show over a mark.
      */
     function setMarks(map) {
@@ -298,6 +310,7 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
 
     // ---------------------------------------------------------------- hover and the tooltip
     function setHover(id, source = 'island') {
+      if (id && propHit) { propHit = null; } // a field lit from the list (or the pointer moved off the jar)
       const next = id && byId.has(id) ? { id, source } : null;
       if (next?.id === hover?.id && next?.source === hover?.source) return;
       const prevId = hover?.id;
@@ -308,9 +321,9 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
         row?.classList.add('is-hover');
         if (row && source === 'island') row.scrollIntoView({ block: 'nearest' });
       }
-      canvas.style.cursor = hover?.source === 'island' ? 'pointer' : '';
+      canvas.style.cursor = hover?.source === 'island' || propHit ? 'pointer' : '';
       paintOutlines();
-      if (!hover) { tip.hidden = true; return; }
+      if (!hover) { if (!propHit) tip.hidden = true; return; }
       fillTip(byId.get(hover.id));
       tip.hidden = false;
       tip.dataset.anchor = source;
@@ -320,7 +333,11 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
     function fillTip(f) {
       const b = document.createElement('b');
       const s = document.createElement('span');
-      if (planMode?.tipFor) {
+      if (propHit) {
+        b.textContent = propHit.tip?.title || '';
+        s.textContent = propHit.tip?.note || '';
+        delete tip.dataset.sev;
+      } else if (planMode?.tipFor) {
         // planning on the island: what's planned there, and what Manami thinks of it
         const t = planMode.tipFor(f.id) || {};
         b.textContent = t.title || f.name;
@@ -358,13 +375,13 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
 
     const v = new THREE.Vector3();
     function placeTip() {
-      if (!hover || tip.hidden) return;
-      if (pressed && hover.source === 'island') { tip.style.visibility = 'hidden'; return; } // turning the island
+      if ((!hover && !propHit) || tip.hidden) return;
+      if (pressed && (propHit || hover.source === 'island')) { tip.style.visibility = 'hidden'; return; } // turning the island
       const W = innerWidth - (getPanelInsets()?.right || 0); // keep clear of the check-up panel
       const H = innerHeight;
       const tw = tip.offsetWidth, th = tip.offsetHeight;
       let x, y;
-      if (hover.source === 'island' && pointer) {
+      if ((propHit || hover.source === 'island') && pointer) {
         x = pointer.x + 16;
         y = pointer.y + 18;
         if (x + tw > W - 8) x = pointer.x - tw - 12;
@@ -393,6 +410,33 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
       raycaster.setFromCamera(ndc, camera);
       return pickField(raycaster.ray.origin, raycaster.ray.direction, fields, EDGE_TOLERANCE)?.id ?? null;
     }
+    /** A jar (or other picked prop) under (x, y), or null. */
+    function pickPropAt(clientX, clientY) {
+      if (!propPicker) return null;
+      const r = canvas.getBoundingClientRect();
+      ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+      camera.updateMatrixWorld();
+      raycaster.setFromCamera(ndc, camera);
+      try { return propPicker(raycaster.ray.origin, raycaster.ray.direction) || null; } catch (e) { console.error('hub: prop picker', e); return null; }
+    }
+    /** The jar under the pointer: its tooltip and a pointer cursor (null: none). */
+    function setPropHover(hit) {
+      if (!hit && !propHit) return;
+      if (hit && propHit && hit.fieldId === propHit.fieldId) { placeTip(); return; }
+      propHit = hit || null;
+      if (propHit) {
+        if (hover) setHover(null);
+        fillTip(null);
+        tip.hidden = false;
+        tip.dataset.anchor = 'island';
+        canvas.style.cursor = 'pointer';
+        placeTip();
+      } else {
+        canvas.style.cursor = hover?.source === 'island' ? 'pointer' : '';
+        if (!hover) tip.hidden = true;
+        else { fillTip(byId.get(hover.id)); placeTip(); }
+      }
+    }
 
     const onMove = (e) => {
       if (e.pointerType === 'touch') return; // no hover on touch; a tap selects
@@ -402,6 +446,7 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
     };
     const onLeave = () => {
       pointer = null;
+      setPropHover(null);
       if (hover?.source === 'island') setHover(null);
     };
     // A press is a tap only if it's the one pointer down: a second finger makes it a pinch.
@@ -422,6 +467,14 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
       press = null;
       if (e.button !== 0) return;
       if (Math.hypot(e.clientX - p.x, e.clientY - p.y) > CLICK_SLOP || performance.now() - p.t > CLICK_MS) return; // a turn
+      if (dialogUp()) return; // (the jar test is open over the island)
+      // a soil jar first: it stands outside the fields, but a ray past it can still reach one
+      const hit = pickPropAt(e.clientX, e.clientY);
+      if (hit) {
+        if (planMode) planMode.onTap?.(hit.fieldId);
+        else onJarTap?.(hit.fieldId);
+        return;
+      }
       const id = pickAt(e.clientX, e.clientY);
       if (planMode) { planMode.onTap?.(id); return; }
       if (id) select(id);
@@ -452,7 +505,7 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
     offs.push(() => controls.removeEventListener('change', onCameraChange));
 
     const onKey = (e) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (e.key !== 'Escape' || e.defaultPrevented || dialogUp()) return;
       // text boxes keep Esc for themselves (the name box puts the old name back); switches don't
       if (e.target.closest?.('textarea, select, [contenteditable="true"], input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=reset]):not([type=range])')) return;
       if (selected || rig.focused) { e.preventDefault(); overview(); }
@@ -598,13 +651,18 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
     const frame = (dt) => {
       fitFog(dt);
       rig.update(dt);
-      if (pointerDirty && pointer && !pressed) {
+      if (pointerDirty && pointer && !pressed && !dialogUp()) {
         pointerDirty = false;
-        const id = pickAt(pointer.x, pointer.y);
-        if (id) setHover(id, 'island');
-        else if (hover?.source === 'island') setHover(null);
+        const hit = planMode?.dragging ? null : pickPropAt(pointer.x, pointer.y);
+        if (hit) setPropHover(hit);
+        else {
+          setPropHover(null);
+          const id = pickAt(pointer.x, pointer.y);
+          if (id) setHover(id, 'island');
+          else if (hover?.source === 'island') setHover(null);
+        }
       }
-      if (hover) placeTip();
+      if (hover || propHit) placeTip();
       if (!document.hidden && dt > 0 && dt < 0.25) {
         perf.sum += dt;
         perf.n++;
@@ -649,7 +707,9 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
       /** The reveal's island view this session draws on (camera, scene, props, frame hooks...). */
       view,
       /** No field lit, and the pointer forgotten (so a turn of the island doesn't re-light one under an old spot). */
-      clearHover: () => { pointer = null; pointerDirty = false; setHover(null); },
+      clearHover: () => { pointer = null; pointerDirty = false; setPropHover(null); setHover(null); },
+      /** Look again for what's under the pointer (a jar came or went). */
+      repick: () => { pointerDirty = true; },
       dispose() {
         offs.reverse().forEach((fn) => fn());
         offs.length = 0;
@@ -666,6 +726,17 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
     renameField: (id, name) => session?.renameField(id, name),
     setRowCrop: (id, info) => session?.setRowCrop(id, info),
     setPlanMode: (m) => session?.setPlanMode(m),
+    /** What a tap can open on the island besides the fields (the soil jars' pick), or null. */
+    setPropPicker(fn) {
+      propPicker = typeof fn === 'function' ? fn : null;
+      session?.repick();
+    },
+    /** The camera eases to { center: [x, z], radius, y } (a soil jar, say); with reduced motion it jumps. */
+    focusOn(spec, seconds = 0.75) {
+      if (!spec || !session) return;
+      session.rig.layout({ animate: !reducedMotion() });
+      session.rig.focus(spec, reducedMotion() ? 0 : seconds);
+    },
     get session() { return session; },
   };
 }

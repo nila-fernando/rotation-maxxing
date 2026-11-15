@@ -124,9 +124,10 @@ export function createFarmSpins(view, { firstAfter = 14, every = [40, 80] } = {}
     return { x, y };
   }
 
-  // a farmer busy in a panel or dragging a crop doesn't need a dancing sheep
+  // a farmer busy in a panel, planning, or walking through the plans with her doesn't need a
+  // dancing sheep (her bubble would sit on the plan chips and talk over her own walk)
   const busy = () => document.hidden || reducedMotion()
-    || ['plans-open', 'checkup-open', 'isle-dragging'].some((c) => document.body.classList.contains(c));
+    || ['plans-open', 'checkup-open', 'isle-dragging', 'isle-planning', 'plan-futures'].some((c) => document.body.classList.contains(c));
 
   function tryTurn() {
     if (busy() || !headOnScreen()) { later(8); return; }

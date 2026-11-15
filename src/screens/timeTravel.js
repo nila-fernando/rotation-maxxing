@@ -17,7 +17,7 @@ import { formatHour } from '../island/daylight.js';
 import { createDecor } from '../island/decor.js';
 import { createSeasons } from '../island/seasons.js';
 import { createThemes, THEME_NAMES, THEMES } from '../island/themes/index.js';
-import { createPlayback, nowState, occasionOn, occasionState, seasonAt, SEASON_NAMES, SEASONS, seasonState, staticState } from '../island/timeline.js';
+import { createPlayback, frostLook, nowState, occasionOn, occasionState, seasonAt, SEASON_NAMES, SEASONS, seasonState, staticState } from '../island/timeline.js';
 import { SEASON_ICONS } from '../ui/season.js';
 
 const ICONS = {
@@ -254,18 +254,22 @@ export function createTimeTravel({ hub, onYear } = {}) {
      * emptyByYear?: [Set of field ids not planned yet] }, year index i.
      * opts.grow: field ids whose crops sprout back up as they show (in that order, opts.stagger
      * seconds apart; see cropYears.growIn). Showing it again (a season or festival picked) doesn't.
+     * opts.frost: a spring freeze that season, so a light rime of frost lies on the farm
+     * (timeline.frostLook). It only raises the snow: the season and any festival stay as they are,
+     * and it stays on when the season or festival is picked again.
      */
     let lastPreview = null;
-    function preview(info, i = 0, { grow = null, stagger } = {}) {
+    function preview(info, i = 0, { grow = null, stagger, frost = false } = {}) {
       const { label, keysByYear, startYear, emptyByYear } = info;
-      lastPreview = { info, i };
+      lastPreview = { info, i, frost };
       mode = 'preview';
       playback = null;
       previewLabel = label;
       // the picked season or festival dresses the farm, but the planned crops always show grown
       // (a winter or a cut-down Thanksgiving would hide what's being planned)
       const st = stateFor(startYear + i), grown = staticState(startYear + i).look;
-      const look = { ...st.look, growth: grown.growth, harvested: false, ripe: Math.min(st.look.ripe, grown.ripe) };
+      const planned = { ...st.look, growth: grown.growth, harvested: false, ripe: Math.min(st.look.ripe, grown.ripe) };
+      const look = frost ? frostLook(planned) : planned;
       apply({ ...st, look }, { instant: reduced(), keys: keysByYear[i], empty: emptyByYear?.[i] || null, grow: grow ? [...grow] : null, stagger });
     }
 
@@ -283,7 +287,7 @@ export function createTimeTravel({ hub, onYear } = {}) {
       reshow();
     }
     function reshow() {
-      if (mode === 'preview' && lastPreview) preview(lastPreview.info, lastPreview.i);
+      if (mode === 'preview' && lastPreview) preview(lastPreview.info, lastPreview.i, { frost: lastPreview.frost });
       else if (typeof mode === 'number') select(mode);
       else select('now'); // (a play-through stops: it runs through every season itself)
     }

@@ -7,14 +7,20 @@
 //      with each field's check-up panel               src/screens/fieldPanel.js
 //      and the plans on the island ("See them on the farm", loaded when first opened)
 //                                                     src/screens/planFutures.js
+//      and the soil jar test (a dialog; the jar then stands by the field's gate)
+//                                                     src/screens/jarPanel.js, src/island/jarProps.js
 import './styles.css';
 import { INTRO, LANDING_URL } from './config.js';
 import { DEMO_FARM } from './data/demoFarm.js';
 import * as farmData from './data/farmData.js';
 import { fieldReportFor } from './data/fieldReport.js';
 import { createPlanner } from './plan/planner.js';
-import { createCheckIn } from './screens/checkin.js';
+import { JAR_LINES } from './plan/jarTest.js';
+import { fieldWeatherNote } from './plan/weatherWords.js';
+import { createJars } from './island/jarProps.js';
+import { createCheckIn, CROPS } from './screens/checkin.js';
 import { createFieldPanel } from './screens/fieldPanel.js';
+import { createJarPanel } from './screens/jarPanel.js';
 import { createPlansPanel, firstSeason, money } from './screens/plansPanel.js';
 import { createIslandPlanner } from './screens/islandPlanner.js';
 import { createFieldsStep } from './screens/fields.js';
@@ -82,16 +88,25 @@ const planSeasons = () => planner.plans({ fields: app.fields, place: app.farm, p
 /** Scores a plan picked field by field (or built by hand) on the farm as it stands. */
 const evaluateMix = (plan) => planner.evaluate({ fields: app.fields, place: app.farm, profile: app.farmProfile, county: farmData.getCounty(), plan, firstSeason: firstSeason(today()) });
 
-/** Manami steps aside (out of sight and the tab order) while the check-up or the plans are open. */
+/** Manami steps aside (out of sight and the tab order) while the check-up, the plans or the jar test are open. */
 function syncManami() {
-  const away = document.body.classList.contains('checkup-open') || document.body.classList.contains('plans-open');
+  const cl = document.body.classList;
+  const away = cl.contains('checkup-open') || cl.contains('plans-open') || cl.contains('jar-open');
   document.getElementById('manami').inert = away;
 }
 
-/** A field's check-up (flags, soil, slope, rain, greenness) from what the app knows now. */
+/**
+ * A field's check-up (flags, soil, slope, rain, greenness, its jar test) from what the app knows
+ * now; once there are plans, Manami's weather words for it too.
+ */
 function reportFor(id) {
   const f = app.fields.find((x) => x.id === id);
-  return f ? fieldReportFor(f, { profile: app.farmProfile, farmIsDemo: !!app.farm?.demo }) : null;
+  if (!f) return null;
+  let planWeather = null;
+  try {
+    planWeather = plansPanel.data ? fieldWeatherNote(plansPanel.data, f.id, { startYear: firstSeason(today()) }) : null;
+  } catch (e) { console.error('weather note', e); }
+  return fieldReportFor(f, { profile: app.farmProfile, farmIsDemo: !!app.farm?.demo, planWeather });
 }
 /** Colours every status dot in the hub's list from Manami's flags. */
 function paintStatuses() {
@@ -120,6 +135,10 @@ const fieldPanel = createFieldPanel({
     fieldPanel.update(reportFor(id));
     paintStatuses();
   },
+  onJar: (id, mode) => {
+    if (mode === 'remove') removeJar(id, { from: 'checkup' });
+    else jarPanel.open({ fieldId: id, step: mode === 'open' ? 'result' : 'howto', from: 'checkup' });
+  },
   onClose: () => hub.overview(),
 });
 
@@ -136,6 +155,7 @@ const hub = createHub({
   getPanelInsets: () => (planFutures?.active ? planFutures.insets() : fieldPanel.insets()),
   panelEl: fieldPanel.el,
   onPlan: () => plansPanel.open(),
+  onJarTap: (id) => jarPanel.open({ fieldId: id, step: 'result', from: 'island' }),
 });
 
 // "Plan my next seasons": the planner's three plans, a pick per field, and a preview on the island
@@ -145,6 +165,7 @@ const plansPanel = createPlansPanel({
   getSaved: () => app.plan?.plan || null, // "Build your own" starts from the plan saved last
   evaluateMix,
   onOpen: () => {
+    jarPanel.close({ restore: false }); // (the jar test, if it was open over the farm)
     openSeq++; // a "See them on the farm" still loading stays shut
     planFutures?.stop(); // back from the plans on the island
     islandPlanner.stop(); // back from planning on the island, or opened over it
@@ -213,6 +234,8 @@ async function openFutures(kind, opts = {}) {
     onSave: (plan, info) => plansPanel.saveChosen(plan, info),
     onBack: () => plansPanel.open(),
     onBuild: () => plansPanel.openBuild(),
+    onJar: (id) => jarPanel.open({ fieldId: id, step: 'howto', from: 'futures' }),
+    hasJar: (id) => !!app.fields.find((f) => f.id === id)?.jar,
   });
   if (!app.island?.view) return;
   return planFutures.start(kind, { ...opts, view: app.island.view, startYear: firstSeason(today()) });
@@ -250,6 +273,141 @@ const timeTravel = createTimeTravel({
   onYear: ({ year }) => fieldPanel.markYear(year),
 });
 
+// ---------------------------------------------------------------- the soil jar test
+// The dialog (src/screens/jarPanel.js) turns a photo of a settled jar into a field's sand, silt
+// and clay. "Use" saves it on the field (field.jar, src/plan/jarTest.js toRecord): the planner
+// plans with that texture, the check-up shows it, and the jar stands by the field's gate
+// (src/island/jarProps.js), where a tap opens it again.
+const JAR_REFRESH_MS = 800; // after a festival change, as the coin stacks wait (its things pop in first)
+const jarSession = new Map(); // fieldId -> this session's photo and layers (never saved)
+let jars = null;
+let jarFrameOff = null;
+let jarTimer = 0;
+let jarOccasion; // the festival the jars were last placed for
+const jarInert = new Map(); // what the dialog made inert -> whether it was before
+/** Each field's jar test in use (one whose record is for that field). */
+const jarRecords = () => app.fields.filter((f) => f.jar && f.jar.fieldId === f.id).map((f) => f.jar);
+const nameOf = (id) => app.fields.find((f) => f.id === id)?.name || 'this field';
+
+const jarPanel = createJarPanel({
+  getFields: () => app.fields,
+  isDemoFarm: () => !!app.farm?.demo,
+  getMapTexture: (id) => reportFor(id)?.soil?.texture ?? null,
+  session: jarSession,
+  onOpen: () => {
+    // the field list, and the plan view's dock and card, wait while it's open
+    for (const id of ['hubPanel', 'futDock', 'futCard', 'futNotes']) {
+      const el = $(id);
+      if (el && !jarInert.has(el)) { jarInert.set(el, el.inert); el.inert = true; }
+    }
+    hub.session?.clearHover();
+    syncManami();
+  },
+  onClose: () => {
+    for (const [el, was] of jarInert) el.inert = was;
+    jarInert.clear();
+    syncManami();
+  },
+  onUse: (record, { from }) => useJar(record, from),
+  onRemove: (id, { from }) => removeJar(id, { from }),
+});
+$('hubJar').addEventListener('click', () => jarPanel.open({ fieldId: app.openFieldId, from: 'farm' }));
+
+/** Puts a jar test on a field (or takes it off, with null): the app, the island, the check-up. */
+function setJar(id, record) {
+  const prev = app.fields.find((f) => f.id === id)?.jar ?? null;
+  const put = (list) => list.map((f) => (f.id === id ? { ...f, jar: record || null } : f));
+  app.fields = put(app.fields);
+  if (app.island) app.island.fields = put(app.island.fields);
+  const spots = jars?.set(jarRecords()) ?? new Map();
+  hub.session?.repick();
+  paintStatuses();
+  if (fieldPanel.openId === id) fieldPanel.update(reportFor(id));
+  return { prev, spots };
+}
+
+/** After a jar test came or went from the plan view: the plans again, on that field's card. */
+function replanFutures() {
+  const s = planFutures.state;
+  planFutures.stop();
+  // (with a card open, she says it in the card)
+  return openFutures(s.view, { reel: false, card: s.cardId, said: JAR_LINES.replanned }).then(() => {
+    if (planFutures?.active && !planFutures.state.cardId) manami.say(JAR_LINES.replanned);
+  });
+}
+
+/** "Use for West 140": the jar test goes on the field, the camera flies to the jar, Manami says so. */
+function useJar(record, from) {
+  const id = record.fieldId;
+  const name = nameOf(id);
+  const { prev, spots } = setJar(id, record);
+  if (from === 'futures' && planFutures?.active) { replanFutures(); return; }
+  if (app.openFieldId) hub.overview(); // the check-up steps aside, so she can say it (it shows the jar when opened again)
+  const focus = jars?.focusFor(id);
+  if (focus) hub.focusOn(focus, 0.75);
+  const line = reportFor(id)?.jar?.sameAsMap ? JAR_LINES.same(name) : JAR_LINES.used(name, record.textureClass, spots.get(id)?.by ?? null);
+  manami.say(line, {
+    actions: [
+      { label: 'See the new plans', primary: true, onClick: () => plansPanel.open() },
+      {
+        label: 'Undo',
+        onClick: () => {
+          setJar(id, prev);
+          manami.say(prev ? `Okay, ${name} is back on your earlier jar test.` : JAR_LINES.undone(name), { focus: true });
+        },
+      },
+    ],
+    focus: true,
+  });
+}
+
+/** "Stop using it": the field goes back on the soil map. */
+function removeJar(id, { from } = {}) {
+  if (!app.fields.find((f) => f.id === id)?.jar) return;
+  const name = nameOf(id);
+  setJar(id, null);
+  const line = JAR_LINES.undone(name);
+  if (from === 'futures' && planFutures?.active) { replanFutures(); return; }
+  if (fieldPanel.openId === id) {
+    // said in the check-up (she's tucked away while it's open)
+    fieldPanel.jarNote(id, line);
+    if (!fieldPanel.el.contains(document.activeElement)) fieldPanel.el.querySelector('[data-jar]')?.focus({ preventScroll: true });
+    return;
+  }
+  manami.say(line, { actions: [{ label: 'See the new plans', primary: true, onClick: () => plansPanel.open() }], focus: true });
+}
+
+/** The jars on a new island: built once their materials are compiled, tapped through the hub. */
+function startJars(island) {
+  stopJars();
+  const mine = createJars(island.view, { getName: (id) => app.fields.find((f) => f.id === id)?.name ?? null });
+  jars = mine;
+  jarOccasion = timeTravel.session?.state?.occasion ?? null;
+  jarFrameOff = island.view.onFrame((dt) => {
+    mine.step(dt);
+    // a festival came or went (by date, or picked in the day panel; a new crop year doesn't say so):
+    // once its things have popped in a little, the jars check their spots again
+    const occasion = timeTravel.session?.state?.occasion ?? null;
+    if (occasion !== jarOccasion) {
+      jarOccasion = occasion;
+      clearTimeout(jarTimer);
+      jarTimer = setTimeout(() => { if (jars === mine) mine.refresh(); }, JAR_REFRESH_MS);
+    }
+  });
+  hub.setPropPicker((origin, dir) => mine.pick(origin, dir));
+  mine.prewarm(island.view.camera).then(() => {
+    if (jars === mine) { mine.set(jarRecords()); hub.session?.repick(); }
+  });
+}
+function stopJars() {
+  clearTimeout(jarTimer);
+  jarFrameOff?.();
+  jarFrameOff = null;
+  jars?.dispose();
+  jars = null;
+  hub.setPropPicker(null);
+}
+
 /** Each field's crops by year (2018–2025, CSB), for the year selector. */
 function cropHistories() {
   return new Map(app.fields.map((f) => {
@@ -262,6 +420,16 @@ function cropHistories() {
 function hourParam() {
   const h = Number(params.get('hour'));
   return params.has('hour') && Number.isFinite(h) ? ((h % 24) + 24) % 24 : null;
+}
+
+/**
+ * ?nocrops=soybeans,oats: the crops the farm can't grow, as if picked in the check-in (dev and demos;
+ * only the check-in's own crop keys count). With soybeans out, Manami's pick sows winter wheat, so
+ * the plan views show its spring freezes.
+ */
+function noCropsParam() {
+  const keys = new Set(CROPS.map((c) => c.key));
+  return [...new Set((params.get('nocrops') || '').split(',').map((k) => k.trim().toLowerCase()))].filter((k) => keys.has(k));
 }
 
 /** Today, or ?today=2026-12-24 to preview a season or holiday (dev and demos). */
@@ -278,6 +446,7 @@ const reveal = createReveal({
     app.island = island;
     hub.show(island); // the farm's home screen from here on
     paintStatuses();
+    startJars(island); // each field's soil jar test, by its gate
     timeTravel.show(island, { history: cropHistories(), today: today(), hour: hourParam(), liveDate: !params.has('today') });
     farmSpins?.dispose();
     farmSpins = createFarmSpins(island.view); // now and then Manami turns on the spot: "When they see me rotate…"
@@ -294,6 +463,9 @@ let farmSpins = null;
 function startReveal({ instant = false } = {}) {
   farmSpins?.dispose();
   farmSpins = null;
+  jarPanel.close({ restore: false });
+  stopJars();
+  jarSession.clear();
   document.body.classList.remove('reveal-done');
   fieldPanel.close();
   openSeq++;
@@ -365,6 +537,9 @@ function handle(event) {
     case 'returned':
       farmSpins?.dispose();
       farmSpins = null;
+      jarPanel.close({ restore: false });
+      stopJars();
+      jarSession.clear();
       app.farm = null;
       app.fields = [];
       app.farmProfile = null;
@@ -413,7 +588,7 @@ function testFields(n) {
   return out;
 }
 
-if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, rotateManami: () => farmSpins?.now() }; // for poking at in the console
+if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, jarPanel, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now() }; // for poking at in the console
 
 // ---------------------------------------------------------------- the first five seconds
 (async function intro() {
@@ -422,13 +597,14 @@ if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsSt
   warmUpLiveOutlines(); // open the live outline files while the globe spins, so the first farm is quicker
   if (params.has('reveal') || params.has('hub')) {
     // dev shortcuts: ?reveal=1|5|15 jumps to the island reveal with demo fields, ?hub=1|5|15 straight to the hub
+    // (&nocrops=soybeans: the farm can't grow those)
     const key = params.has('hub') ? 'hub' : 'reveal';
     globe.flyTo(DEMO_FARM);
     globe.landNow();
     introDone = true;
     await wait(600);
     app.fields = testFields(Number(params.get(key)) || 5);
-    app.farmProfile = { priorities: ['profit'], irrigatedFieldIds: [], excludedCrops: [] };
+    app.farmProfile = { priorities: ['profit'], irrigatedFieldIds: [], excludedCrops: noCropsParam() };
     fieldsStep.hold();
     startReveal({ instant: key === 'hub' });
     return;
