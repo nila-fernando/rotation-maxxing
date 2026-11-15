@@ -47,6 +47,7 @@ import { aiEndpoint } from './ai/runner.js';
 import { adviceFailLine, adviceRoutes, askAdvice, fieldBody, planBody } from './ai/advice.js';
 import { fieldDetail } from './ai/context.js';
 import { createPlanTake } from './screens/planTake.js';
+import { createConversationStore } from './save/conversations.js';
 import { createFarmSpins } from './ui/rotateManami.js';
 import { createSearchBox } from './ui/searchBox.js';
 import { installCropTips } from './ui/cropTip.js';
@@ -770,9 +771,16 @@ let seaLife = null;
 // the island's ambient sound, and its switch on the top bar (src/audio/)
 // "Ask Manami": questions about the farm, answered by Claude through the app's own server (server/ai).
 // Her tools read the farm here; without the server (GitHub Pages, or no key) she says so plainly.
+// signed in, her conversations are kept in the account (one thread per farm, reopened next time)
+const conversations = createConversationStore({
+  getClient: () => auth.client(),
+  getUser: () => auth.user,
+  getFarmId: () => (saveCtx && auth.user ? local.get(saveCtx.id)?.cloud?.[auth.user.id]?.id ?? null : null),
+});
 const askManami = createAskManami({
   endpoint: AI_ENDPOINT,
   host: aiHost,
+  conversations: { latest: () => conversations.latest(), save: (m, o) => conversations.save(m, o), startNew: () => conversations.startNew(), forget: () => conversations.forget() },
   onOpen: () => syncManami(),
   onClose: () => syncManami(),
 });
@@ -951,6 +959,7 @@ function openSaved(snap) {
   journeyStarted = true;
   introDone = true;
   saveCtx = { id: snap.id };
+  askManami.resetSaved(); // her last conversation about this farm, not the one on screen before
   local.setCurrent(snap.id);
   app.plan = snap.plan || null;
   restoring = true;
@@ -1023,7 +1032,7 @@ authReady.then(({ user, linkError }) => {
       : 'That sign-in link didn’t work. Pop your email in again and I’ll send a new one.');
   }
 });
-auth.onChange((user) => { sync.setUser(user); account.refresh(); });
+auth.onChange((user) => { sync.setUser(user); account.refresh(); askManami.resetSaved(); });
 
 /** "Welcome back! Open West Farm?" for the farm saved last (or, signed in, the newest in the account). */
 function offerSaved(snapOrRow, { signedIn = false } = {}) {
