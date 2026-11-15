@@ -7,8 +7,10 @@
  *   relative yield (field, crop, year) = FAO-33 Ya/Ym from the water balance
  *   multiplier = relative yield / mean DRYLAND relative yield over all years
  *
- * Dividing by the dryland mean keeps "national average yield" meaning an
- * average year, and lets irrigated fields come out above average.
+ * Dividing by the dryland mean keeps the base yield (local NASS dryland or
+ * all-practice yield, else the US average) meaning an average year, and lets
+ * irrigated fields come out above it. When an irrigated farm's base yield is
+ * an IRRIGATED yield, the irrigated mean is used instead.
  */
 import { CROP_BY_ID } from './croptraits';
 import { typicalYield } from './cropData';
@@ -257,9 +259,13 @@ export function scenariosFromDailyWeather(farm: Farm, weather: DailyWeather, opt
 
   // Normalise by the mean over years of each year's average (over predecessors) dryland relative yield,
   // so the average year's multiplier is exactly 1 even when early years lack some predecessors.
+  // Exception: on an irrigated farm whose base yield for the crop is an IRRIGATED yield
+  // (Farm.baseYields), normalise by the irrigated mean, so the base is the irrigated average year.
   const meanDry = new Map<string, number>();
   for (const [k, byYear] of runs) {
-    const perYear = [...byYear.values()].map((m) => [...m.values()].reduce((a, r) => a + r.dry, 0) / m.size);
+    const cropId = k.slice(k.lastIndexOf('|') + 1);
+    const key: 'dry' | 'actual' = irrigated && farm.baseYields?.[cropId]?.practice === 'irrigated' ? 'actual' : 'dry';
+    const perYear = [...byYear.values()].map((m) => [...m.values()].reduce((a, r) => a + r[key], 0) / m.size);
     meanDry.set(k, perYear.reduce((a, b) => a + b, 0) / perYear.length);
   }
 

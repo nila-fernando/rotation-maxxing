@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "backtest": "vite-node scripts/backtest.ts",
     "cmip6-trends": "vite-node scripts/cmip6-trends.ts",
-    "climate-compare": "vite-node scripts/climate-compare.ts"
+    "climate-compare": "vite-node scripts/climate-compare.ts",
+    "nass-base-yields": "vite-node scripts/nass-base-yields.ts"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

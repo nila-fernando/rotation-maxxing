@@ -45,7 +45,10 @@ All functions are synchronous and pure except `buildFarm`, which fetches data. I
 | `buildFarm` output | **Breaking:** `weather` is now the planning input (`WeatherScenario[] \| WeatherEnsemble`). The raw NASA POWER record moved to `daily`. New: `weatherSource` (pass to `createFarmState`) and `targetYear`. | Stable from now |
 | `createFarmState(farm, weather, nextSeason, weatherSource?)` | New optional 4th argument. With it, `replan` re-adjusts the weather to each new `nextSeason`. | Stable |
 | `SeasonObservations.daily` | New optional field: the season's daily NASA POWER weather, appended to the weather source | Stable |
-| `reasons[]` | With present-climate adjustment, includes e.g. "Weather adjusted to today's climate using NASA NEX-GDDP-CMIP6 (5 models); older years shifted more. 2001 replayed ~1.1 F warmer in Jul (daily highs)." | Display text |
+| `reasons[]` | With present-climate adjustment, includes e.g. "Weather shifted to the model-projected 2027 climate using NASA NEX-GDDP-CMIP6 (5 climate models); older years shifted more. 2001 replayed ~3.0 F warmer in Jul (daily highs, model-projected change)." | Display text |
+| `buildFarm` input | New `baseYields` (precomputed `src/data/baseYields/<site>.json`) and `nassApiKey` | Stable |
+| `Farm.baseYields` | **New** optional field: local base yield per crop (NASS county, then state; else the US average). Set by `buildFarm`; editable | Stable |
+| `years[].terms` (first yield term) | With local base yields the label changes from "US average Corn (grain) yield" to e.g. "Saline County, KS Corn (grain) yield, non-irrigated (NASS 2021-2025 average, x0.72 non-irrigated/all-practice ratio (county))", basis `design` when a practice ratio is applied | Display text |
 | `isEnsemble(weather)` | New helper export | Stable |
 
 Example `weatherRisk` for a humid Iowa farm:
@@ -434,6 +437,8 @@ Drag-and-drop feedback. Rules only (no Monte Carlo), so a call takes well under 
 
 Draw fields and get a planner-ready farm. It calls NASA POWER, SSURGO and CropScape, all keyless. It is async and can take a few seconds. Anything the farmer enters wins over fetched data.
 
+**Base yields (NASS).** Pass `baseYields` (the precomputed `src/data/baseYields/<site>.json` for the demo counties) so yields start from the county average instead of the US average. The non-irrigated or irrigated set is picked from `constraints.irrigation`. Alternatively `nassApiKey` fetches them live from USDA NASS Quick Stats (server or script use only; never ship a key to the browser). With neither, yields stay at US averages and `gaps` says so.
+
 ```json
 {
   "fields": [
@@ -478,9 +483,10 @@ Draw fields and get a planner-ready farm. It calls NASA POWER, SSURGO and CropSc
 }
 ```
 
-**Output:** `{ farm, scenarios, weather, provenance, gaps }`
-- `farm`: a `Farm`, ready to edit and pass to the planner
-- `scenarios`: the weather pool; pass it through unchanged
+**Output:** `{ farm, weather, scenarios, weatherSource, targetYear, daily, provenance, gaps }`
+- `farm`: a `Farm`, ready to edit and pass to the planner. `farm.baseYields[cropId]` holds the local base yield and where it came from (`level`, `place`, `practice`, `years`, `practiceRatio`)
+- `weather`: pass it to `generatePlans` / `evaluatePlan` unchanged; `scenarios` is its deterministic (mean) pool
+- `weatherSource`: pass it to `createFarmState`; `daily`: the raw NASA POWER record
 - `provenance[fieldId]`: `{ soil: "Coland clay loam ...", history: ["2022: Corn", ...] }`
 - `gaps`: what couldn't be filled
 

@@ -61,8 +61,16 @@ Yield sits behind a `YieldModel` interface. Search and Monte Carlo only call `yi
 The shipped model is **TraitYieldModel**:
 
 ```
-yield = US average yield × salinity × pH × drainage × rotation factors × (1 − shade loss) × weather multiplier
+yield = base yield × salinity × pH × drainage × rotation factors × (1 − shade loss) × weather multiplier
 ```
+
+**Base yield** (`Farm.baseYields`, filled by `buildFarm` from USDA NASS Quick Stats; `src/data/nassYields.ts`):
+- **Series:** the mean of the last 5 available "all production practices" survey yields, counting only the 10 years up to the newest NASS year for that crop (design), so a county that stopped reporting falls back instead of using a stale average.
+- **Practice:** recent NASS yields mix irrigated and dryland acres. Kansas publishes the NON-IRRIGATED / IRRIGATED split only up to 2018 (county and state), so the split is applied as a **ratio**: the mean of (practice yield / all-practice yield) over the years both were published. The ratio comes from the county when it has 3+ paired years, else the state (design). Rain-fed farms use the non-irrigated ratio, irrigated farms the irrigated one. With no split (e.g. Iowa, almost all rain-fed), the all-practice yield is used, with a gap.
+- **Fallback:** county (3+ recent years) → state → the US average in `croptraits.ts`, with a gap naming the level.
+- **Demo counties** (Saline, McPherson, Story, Boone) are precomputed by `npm run nass-base-yields` into `src/data/baseYields/`, so the demo needs no key.
+- The water-balance multiplier stays relative to the base (below), so the backtest is unchanged.
+- **Caveat:** land-suitability factors (pH, drainage, salinity) still apply on top. A county average already reflects the county's typical soils, so for an average field this partly double-counts (see the gaps table).
 
 Every model is wrapped by `withCalibration()`, which multiplies by the field's learned yield factor (see *The season loop*). The weather multiplier is per field when the pool came from NASA POWER.
 
@@ -346,7 +354,7 @@ Ya/Ym    = 1 − Ky × (1 − ΣETa / ΣETm)       Ky from FAO-66 Table 1 (FAO-3
 multiplier(field, crop, year) = Ya/Ym ÷ mean dryland Ya/Ym over all years
 ```
 
-Dividing by the dryland mean keeps the national yield meaning "an average year", and lets irrigated fields come out above average. Irrigated fields are refilled to field capacity when depletion passes RAW, until the seasonal allocation runs out. Planting uses the Handbook 628 active-start date where available.
+Dividing by the dryland mean keeps the base yield meaning "an average year", and lets irrigated fields come out above it. On an irrigated farm whose base yield is an irrigated NASS yield, the irrigated mean is used instead, so the irrigated base is not counted twice. Irrigated fields are refilled to field capacity when depletion passes RAW, until the seasonal allocation runs out. Planting uses the Handbook 628 active-start date where available.
 
 **Soil-water carryover (one season of memory).** Each crop starts with the root zone left by what came before. The water at planting depends on the previous crop:
 - **Previous crop:** that crop's season (starting full; cut short if the next crop is planted before it's harvested), then the off-season. In the off-season, bare-soil evaporation (FAO-56 Ch. 7) is reduced by the previous crop's residue mulch (FAO-56 Ch. 11: TEW −5% per 10% cover) and refilled by rain.
@@ -467,6 +475,8 @@ The NASA POWER record (2000 onward) is shifted toward the climate of the season 
 - a standard calendar
 - distinct modelling centres
 
+**Two of the five are high-sensitivity models.** IPSL-CM6A-LR (4.56 °C) and ACCESS-CM2 (4.72 °C) are above the AR6 *likely* range of 2.5–4 °C (AR6 WG1 Ch. 7), though inside the *very likely* 2–5 °C range used for selection. High-sensitivity models tend to warm faster than observed over recent decades (Hausfather et al. 2022, *Nature* 605, 26-29, "Climate simulations: recognize the hot model problem"), so these two may pull the 5-model mean trend up; in Monte Carlo the two together are drawn 2 times in 5. The other three (2.61, 2.98, 3.15 °C) are inside the likely range.
+
 **Trends** (precomputed by `scripts/cmip6-trends.ts`; point requests only, cached, 4 at a time):
 - **Period:** historical 1995–2014 joined to SSP2-4.5 2015–2035. This close to the present, the scenario choice barely matters.
 - **Fit:** for each model, variable and calendar month, a least-squares line through **3-month centred moving-window** means (wrapping December–January). This is a design choice, made to reduce single-run noise.
@@ -494,7 +504,7 @@ Reference ET, the water balance, carryover, freeze detection and erosivity are t
 
 **Modes and the backtest.** `weatherAdjustment: 'present'` is the default when trends are available. **The backtest always uses `'none'`** (raw POWER).
 
-**Explanation**, e.g. "Weather adjusted to today's climate using NASA NEX-GDDP-CMIP6 (5 models); older years shifted more. 2001 replayed ~1.1 F warmer in Jul (daily highs)."
+**Explanation**, e.g. "Weather shifted to the model-projected 2027 climate using NASA NEX-GDDP-CMIP6 (5 climate models); older years shifted more. 2001 replayed ~3.0 F warmer in Jul (daily highs, model-projected change)." The shifts are climate-model projections, not observations, and the text says so.
 
 **Gaps:**
 - only monthly averages shift, not extremes or variability
@@ -631,6 +641,8 @@ Also:
 | Magnitudes of the pest-repeat and white-mold penalties | `constants.ts` | Unsourced design values |
 | Legume N credits to wheat and sorghum | — | Not modelled (corn only) |
 | Corn/soy price correlation; 10+ years of prices for σ | — | Not modelled / 3 years only |
-| State/county yields instead of national | `croptraits.ts` | National only |
+| Local base yields | `src/data/nassYields.ts` | NASS county → state → US average. Kansas practice split ends 2018, so non-irrigated/irrigated is a historical ratio (design) |
+| Land-suitability factors on top of a county base yield | `yieldModel.ts` | pH, drainage and salinity factors were designed against a US average; with a county base they partly double-count (not yet corrected) |
+| Operating costs and prices | `croptraits.ts` | US totals (ERS 2027 forecast) and US marketing-year prices, not regional (K-State budgets differ a lot for dryland Kansas; see `reports/`) |
 
 See also `DATA_GAPS` in `croptraits.ts`.

@@ -170,6 +170,36 @@ export interface Farm {
   /** Water and equipment limits. */
   constraints?: FarmConstraints;
   paddocks: Paddock[];
+  /**
+   * Local base (average-year) yields per crop, replacing the US average from
+   * croptraits.ts. buildFarm fills this from USDA NASS Quick Stats
+   * (county -> state -> national). Crops not listed use the US average.
+   */
+  baseYields?: Partial<Record<CropId, BaseYield>>;
+}
+
+/** An average-year yield for one crop at this farm, with where it came from. */
+export interface BaseYield {
+  /** Per acre, in the crop's yield unit. */
+  value: number;
+  /** Geographic level of the yield series used. */
+  level: 'county' | 'state' | 'national';
+  /** Place name, e.g. "Saline County, KS". */
+  place: string;
+  /** Practice the value represents. 'all' = NASS "all production practices" (no split available). */
+  practice: 'non-irrigated' | 'irrigated' | 'all';
+  /** Years averaged (most recent available, up to 5). */
+  years: number[];
+  /** All-practice yields for those years. */
+  allPracticeMean: number;
+  /**
+   * When the value is converted from all practices to one practice: the mean
+   * of (practice yield / all-practice yield) over the years NASS published both.
+   */
+  practiceRatio?: { value: number; years: number[]; level: 'county' | 'state' };
+  basis: Basis;
+  sources: string[];
+  note?: string;
 }
 
 /** Harvest/field equipment that some crops need (see EQUIPMENT_NEEDED in constants.ts). */

@@ -5,7 +5,7 @@
  *   npm run climate-compare -- saline   # one site
  *
  * For each site: NASA POWER 2000-2024 at the county centroid, SSURGO at the
- * centroid, a 4-paddock demo farm, and the three plans with weatherAdjustment
+ * centroid, NASS non-irrigated county base yields (src/data/baseYields), a 4-paddock demo farm, and the three plans with weatherAdjustment
  * 'none' vs 'present' (target = PLANNING_SEASON). Prints the shift applied to
  * the oldest pool year per variable (flagging trends < 2x their standard
  * error), and each plan's expected margin, P10 and rank.
@@ -13,6 +13,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { generatePlans } from '../src/algorithm/api';
+import { baseYieldFor, operatingCost, typicalPrice } from '../src/algorithm/cropData';
+import { CROP_BY_ID } from '../src/algorithm/croptraits';
+import type { BaseYieldsFile } from '../src/data/nassYields';
 import { buildWeather, meanTrends, shiftTable, type ClimateTrendsFile } from '../src/algorithm/climateAdjust';
 import { SQ_M_PER_ACRE } from '../src/algorithm/geometry';
 import type { CropId, Farm, PlanResult, Priorities } from '../src/algorithm/types';
@@ -40,6 +43,9 @@ async function main(): Promise<void> {
       continue;
     }
     const trends = JSON.parse(readFileSync(file, 'utf8')) as ClimateTrendsFile;
+    const byFile = join(process.cwd(), 'src', 'data', 'baseYields', `${s.site}.json`);
+    const by = existsSync(byFile) ? (JSON.parse(readFileSync(byFile, 'utf8')) as BaseYieldsFile)['non-irrigated'] : null;
+    const baseYields = by ? Object.fromEntries(s.crops.filter((c) => by.baseYields[c]).map((c) => [c, by.baseYields[c]!])) : undefined;
     const county = await fetchCountyOutline(s.geoid);
     const [lng, lat] = county.centroid;
     const power = await fetchPowerDaily(lat, lng, 2000, 2024);
@@ -57,6 +63,7 @@ async function main(): Promise<void> {
         history: i % 2 === 0 ? s.history : [...s.history.slice(1), s.history[0]!],
         availableCrops: s.crops,
       })),
+      ...(baseYields ? { baseYields } : {}),
     };
     const none = buildWeather(farm, power.weather, { trends, targetYear: PLANNING_SEASON, weatherAdjustment: 'none' });
     const present = buildWeather(farm, power.weather, { trends, targetYear: PLANNING_SEASON, weatherAdjustment: 'present' });
@@ -68,6 +75,17 @@ async function main(): Promise<void> {
     const oldest = 2001;
     const rows = shiftTable(mean, oldest, PLANNING_SEASON);
     out.push(`## ${county.name}, ${s.state}`, '', `Grid cell ${trends.gridCell.lat}, ${trends.gridCell.lng}; soil ${soil.mapUnit}; models ${trends.models.map((m) => m.model).join(', ')}.`, '');
+    out.push('### Base yields and average-year margin per acre (before rotation, soil and weather factors)', '', '| Crop | Base yield | Level, practice | Price | Operating cost | Yield x price - cost |', '|---|---|---|---|---|---|');
+    for (const c of s.crops.filter((x) => x !== 'fallow' && x !== 'cereal-rye')) {
+      const crop = CROP_BY_ID[c]!;
+      const b = baseYieldFor(farm, crop);
+      const loc = farm.baseYields?.[c];
+      const price = typicalPrice(crop), cost = operatingCost(crop);
+      const margin = b.value !== null && price !== null && cost !== null ? String(Math.round(b.value * price - cost)) : '?';
+      const where = loc ? `${loc.place} (${loc.level}), ${loc.practice}${loc.practiceRatio ? ` (ratio ${loc.practiceRatio.value.toFixed(2)})` : ''}` : 'US average';
+      out.push(`| ${crop.name} | ${b.value?.toFixed(1)} ${crop.yieldUnit}/ac | ${where} | $${price?.toFixed(2)} | $${cost?.toFixed(0)} | $${margin} |`);
+    }
+    out.push('');
     out.push(`### Shift applied to the oldest pool year (${oldest} -> ${PLANNING_SEASON}), 5-model mean`, '', '| Variable | Unit | ' + MONTHS.join(' | ') + ' |', '|---|---|' + MONTHS.map(() => '---').join('|') + '|');
     for (const v of ['tasmax', 'tasmin', 'pr', 'hurs', 'rsds', 'sfcWind']) {
       const r = rows.filter((x) => x.variable === v);
@@ -76,7 +94,8 @@ async function main(): Promise<void> {
     const noise = rows.filter((x) => x.likelyNoise).length;
     out.push('', `\\* = trend smaller than 2x its standard error (likely noise): ${noise} of ${rows.length} month-variable shifts.`, '');
 
-    const fmt = (p: PlanResult) => `$${Math.round(p.expectedGM).toLocaleString('en-US')} | $${Math.round(p.p10GM).toLocaleString('en-US')}`;
+    const acreYears = farm.paddocks.reduce((a, p) => a + p.acres, 0) * rNone.plans.current.paddocks[0]!.sequence.length;
+    const fmt = (p: PlanResult) => `$${Math.round(p.expectedGM).toLocaleString('en-US')} ($${Math.round(p.expectedGM / acreYears)}/ac/yr) | $${Math.round(p.p10GM).toLocaleString('en-US')}`;
     const rank = (r: typeof rNone) => {
       const ps = Object.entries(r.plans).sort((a, b) => b[1].objective - a[1].objective).map(([k]) => k);
       return (k: string) => ps.indexOf(k) + 1;
@@ -89,7 +108,7 @@ async function main(): Promise<void> {
         `| ${k} | ${a.paddocks[0]!.sequence.join('>')} -> ${b.paddocks[0]!.sequence.join('>')} | ${fmt(a).replace(' | ', ' | ')} | ${fmt(b)} | ${rn(k)} -> ${rp(k)} |`,
       );
     }
-    out.push('', `Explanation shown: "${rPres.plans.priority.reasons.find((x) => /adjusted to today/.test(x)) ?? ''}"`, '');
+    out.push('', `Explanation shown: "${rPres.plans.priority.reasons.find((x) => /model-projected/.test(x)) ?? ''}"`, '');
   }
   console.log(out.join('\n'));
 }

@@ -3,9 +3,8 @@
  * never care which model is used. Today: TraitYieldModel (national yield x
  * multipliers). Later: an APSIM lookup-table model.
  */
-import { getCrop, isFallow, salinityRelativeYield, typicalYield } from './cropData';
+import { baseYieldFor, getCrop, isFallow, salinityRelativeYield } from './cropData';
 import { FREEZE_DAMAGE_FACTORS } from './croptraits';
-import { sourceIds } from './evidence';
 import { FREEZE_GAP, freezeFactor } from './frost';
 import { drainageCheck, phCheck } from './landSuitability';
 import { productOf, rotationEffect, timelineOf } from './rotation';
@@ -167,10 +166,10 @@ export function meanScenario(pool: WeatherScenario[]): WeatherScenario {
 }
 
 /**
- * yield = national average x land suitability x rotation effect x (1 - shade loss) x weather multiplier
+ * yield = base yield (local NASS county/state, else US average) x land suitability x rotation effect x (1 - shade loss) x weather multiplier
  */
 export class TraitYieldModel implements YieldModel {
-  readonly name = 'TraitYieldModel (national yield x multipliers)';
+  readonly name = 'TraitYieldModel (base yield x multipliers)';
 
   yieldFor(
     paddock: Paddock,
@@ -187,7 +186,8 @@ export class TraitYieldModel implements YieldModel {
       const terms: Term[] = explain ? [{ label: 'Fallow: no harvest', value: 0, unit: 'per ac', basis: 'sourced' }] : [];
       return { value: 0, unit: null, terms, gaps, risks: [], shadedFraction: 0 };
     }
-    const base = typicalYield(crop);
+    const baseInfo = baseYieldFor(ctx.prepared.farm, crop);
+    const base = baseInfo.value;
     if (base === null) {
       return { value: null, unit: crop.yieldUnit, terms: [], gaps, risks: [], shadedFraction: 0 };
     }
@@ -274,7 +274,7 @@ export class TraitYieldModel implements YieldModel {
 
     const terms: Term[] = [];
     if (explain) {
-      terms.push({ label: `US average ${crop.name} yield`, value: base, unit, basis: 'sourced', sources: sourceIds(crop.yieldPerAcre?.source) });
+      terms.push({ label: baseInfo.label, value: base, unit, basis: baseInfo.basis, sources: baseInfo.sources });
       let running = base;
       for (const f of factors) {
         if (f.factor === 1) {

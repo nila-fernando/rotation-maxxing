@@ -49,6 +49,11 @@ export const DATA_SOURCES: Record<string, SourceInfo> = {
     url: 'https://www.ipcc.ch/report/ar6/wg1/downloads/report/IPCC_AR6_WGI_Chapter07_SM.pdf',
     covers: 'Climate sensitivity used to select the five models',
   },
+  nassQuickStats: {
+    title: 'USDA NASS Quick Stats (survey yields by county and state, all practices / non-irrigated / irrigated)',
+    url: 'https://quickstats.nass.usda.gov/',
+    covers: 'Local base yields: the mean of the last 5 available years, converted to non-irrigated or irrigated with the published practice ratio',
+  },
   farmerReport: {
     title: "The farmer's own end-of-season reports",
     url: null,
@@ -97,6 +102,9 @@ export function localReviewFor(input: {
 
   if (terms.some((t) => t.label.startsWith('US average'))) {
     out.push('Yields start from US averages: compare them with your own records or county yields before trusting the dollar figures.');
+  }
+  if (terms.some((t) => t.sources?.includes('nassQuickStats'))) {
+    out.push('Base yields are NASS county (or state) averages: compare them with your own yield records for these fields.');
   }
   if (terms.some((t) => t.basis === 'design' && /White mold|carried over|host year|repeat drag/.test(t.label))) {
     out.push('Pest and disease penalties (white mold, nematodes, repeats) are estimates: check local pressure with your agronomist.');

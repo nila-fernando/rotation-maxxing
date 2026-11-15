@@ -6,7 +6,8 @@
  */
 import { ALFALFA_ESTABLISHMENT_YIELD_FACTOR } from './constants';
 import { CROP_BY_ID } from './croptraits';
-import type { CropId, CropTable, CropTraits } from './types';
+import { sourceIds } from './evidence';
+import type { Basis, CropId, CropTable, CropTraits, Farm } from './types';
 
 export const DEFAULT_CROPS: CropTable = CROP_BY_ID;
 
@@ -28,6 +29,21 @@ export const FALLOW_COST_GAP =
 export function typicalYield(c: CropTraits): number | null {
   if (isFallow(c)) return FALLOW_KNOWN.yieldPerAcre;
   return c.yieldPerAcre?.value.typical ?? null;
+}
+
+/**
+ * The average-year yield for this farm: the local NASS base yield when the
+ * farm has one (Farm.baseYields), otherwise the US average from croptraits.ts.
+ */
+export function baseYieldFor(farm: Farm | undefined, c: CropTraits): { value: number | null; label: string; basis: Basis; sources: string[] } {
+  const local = isFallow(c) ? undefined : farm?.baseYields?.[c.id];
+  if (local) {
+    const practice = local.practice === 'all' ? 'all practices' : local.practice;
+    const yrs = local.years.length ? `${Math.min(...local.years)}-${Math.max(...local.years)}` : '';
+    const ratio = local.practiceRatio ? `, x${local.practiceRatio.value.toFixed(2)} ${local.practice}/all-practice ratio (${local.practiceRatio.level})` : '';
+    return { value: local.value, label: `${local.place} ${c.name} yield, ${practice} (NASS ${yrs} average${ratio})`, basis: local.basis, sources: local.sources };
+  }
+  return { value: typicalYield(c), label: `US average ${c.name} yield`, basis: 'sourced', sources: sourceIds(c.yieldPerAcre?.source) };
 }
 
 export function typicalPrice(c: CropTraits): number | null {
