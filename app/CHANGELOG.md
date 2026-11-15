@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.11.1 (2026-11-15)
+
+### What's new
+
+- **Edit a field's crop history.** In a field's check-up, "Edit crop history" lets you set what you
+  really grew each year from 2018 to 2025, or "Not sure" to take a year off the record. Your years
+  count over USDA's: the plans, the crops on the island, Manami's notes and Ask Manami all use them.
+  Your years get a small dot, and "Put back USDA's record" undoes it all. For now your edits last
+  until you leave the page; saving them comes with sign-in.
+
+### Fixed
+
+- After the farm tour, a field's check-up no longer loses its header (the name, acres and "Ask about
+  this field") off the top of the panel.
+
 ## v0.11.0 (2026-11-15)
 
 ### What's new
