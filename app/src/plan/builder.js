@@ -6,9 +6,11 @@
 // a millisecond each): { lens, severity 1 note | 2 careful | 3 avoid, reason }.
 import { checkPlacement } from '../vendor/rotation-maxxing/algorithm/placement.ts';
 import { prepareFarm } from '../vendor/rotation-maxxing/algorithm/geometry.ts';
+import { handoff } from './cropCalendar.js';
+import { handoffLine } from './calendarVoice.js';
 
 export const SEASONS = 3;
-export const LENS_LABEL = { nitrogen: 'Nitrogen', pest: 'Pests', water: 'Water', erosion: 'Erosion', repeat: 'Repeat', shade: 'Shade', market: 'Market', land: 'Land', frost: 'Frost' };
+export const LENS_LABEL = { nitrogen: 'Nitrogen', pest: 'Pests', water: 'Water', erosion: 'Erosion', repeat: 'Repeat', shade: 'Shade', market: 'Market', land: 'Land', frost: 'Frost', timing: 'Timing' };
 export const SEVERITY_LABEL = { 1: 'Note', 2: 'Careful', 3: 'Avoid' };
 
 /** A plan with every season empty. */
@@ -65,17 +67,21 @@ export function emptyCount(plan, farm) {
  *   at(plan, fieldId, year, crop)  warnings for putting crop there (the rest of the plan as is)
  *   all(plan)                      Map 'fieldId:year' -> warnings, for every filled season
  */
-export function createChecker(farm, market) {
+export function createChecker(farm, market, { timing = null } = {}) {
   const prepared = prepareFarm(farm);
   const known = new Set(farm.paddocks.flatMap((p) => p.availableCrops));
+  const timingAt = timing ? timingCheck(farm, timing) : null;
   const at = (plan, fieldId, year, crop) => {
     if (!crop) return [];
+    let out;
     try {
-      return checkPlacement(prepared, plan, fieldId, year, crop, { market });
+      out = checkPlacement(prepared, plan, fieldId, year, crop, { market });
     } catch (e) {
       // a crop the planner doesn't know (it shouldn't be offered, but never let a check crash the grid)
       return known.has(crop) ? [{ lens: 'land', severity: 3, reason: e.message }] : [];
     }
+    const t = timingAt?.(plan, fieldId, year, crop);
+    return t ? [...out, t] : out;
   };
   const all = (plan) => {
     const out = new Map();
@@ -85,6 +91,25 @@ export function createChecker(farm, market) {
     return out;
   };
   return { at, all };
+}
+
+/**
+ * The app's own timing lens (opt-in: createChecker(farm, market, { timing: place }), place from
+ * cropCalendar.placeOf): whether the crop before comes off in time to sow this one. A clash is
+ * Careful (2), tight is a Note (1); the reason is Manami's handoff line. The vendored planner's
+ * checks are untouched, and compareFutures doesn't pass it, so the plans' own warnings don't move.
+ */
+function timingCheck(farm, place) {
+  const byId = new Map(farm.paddocks.map((p) => [p.id, p]));
+  const YEAR = 2001; // only the months and days matter
+  return (plan, fieldId, year, crop) => {
+    const prev = year > 0 ? plan.sequences[fieldId]?.[year - 1]?.main : byId.get(fieldId)?.history?.at(-1);
+    if (!prev || prev === crop) return null;
+    const h = handoff(prev, crop, YEAR + year, place);
+    if (h.fit !== 'clash' && h.fit !== 'tight') return null;
+    const betterAfter = h.fit === 'clash' ? (['soybeans', 'oats', 'corn'].find((c) => c !== prev && handoff(c, crop, YEAR + year, place).fit === 'ok') ?? null) : null;
+    return { lens: 'timing', severity: h.fit === 'clash' ? 2 : 1, reason: handoffLine(h, { prev, next: crop, betterAfter }), fit: h.fit };
+  };
 }
 
 /** The worst severity in a list of warnings (0 for none). */

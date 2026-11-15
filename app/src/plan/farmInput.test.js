@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
-import { getFields } from '../data/farmData.js';
+import { getFarm, getFields } from '../data/farmData.js';
 import { generatePlans, checkPlacement, evaluatePlan, planFromCrops } from '../vendor/rotation-maxxing/algorithm/index.ts';
 import { scenariosFromDailyWeather } from '../vendor/rotation-maxxing/algorithm/climate.ts';
 import { historyFor, historyUpTo, landFor, outerRing, plannerFarm, plannerMarket, plannerPriorities, stateOf, textureBucket, usableJar } from './farmInput.js';
@@ -233,5 +233,32 @@ describe('a jar test sets the field\u2019s soil texture, and nothing else', () =
     assert.equal(textureBucket('Sand'), 'sand');
     assert.equal(textureBucket(''), null);
     assert.equal(textureBucket(null), null);
+  });
+});
+
+describe('the farm’s county (FIPS) for the crop calendar', () => {
+  it('the demo farm carries Story County, 19169, onto the planner farm', async () => {
+    assert.equal(getFarm().fips, '19169');
+    const { farm } = plannerFarm({ market: demoMarket, fields: appFields(), place: DEMO_PLACE });
+    assert.equal(farm.fips, '19169');
+    assert.equal(farm.state, 'IA');
+  });
+  it('a place with its own FIPS keeps it; a place without one gets none', () => {
+    const field = { id: 'field-1', name: 'Back 80', acres: 80, crops: { 2023: 'Corn' }, soil: appFields()[0].soil, geometry: { type: 'Polygon', coordinates: [[[-97, 40], [-96.99, 40], [-96.99, 40.01], [-97, 40.01], [-97, 40]]] } };
+    assert.equal(plannerFarm({ market: demoMarket, fields: [field], place: { lat: 40, lon: -97, detail: 'Nebraska, United States', fips: '31159' } }).farm.fips, '31159');
+    assert.equal('fips' in plannerFarm({ market: demoMarket, fields: [field], place: { lat: 40, lon: -97, detail: 'Nebraska, United States' } }).farm, false);
+    assert.equal('fips' in plannerFarm({ market: demoMarket, fields: [field], place: { lat: 40, lon: -97, fips: 'Story' } }).farm, false);
+  });
+  it('the planner ignores it: the demo plans’ pinned totals are unchanged', async () => {
+    const { demoData, START_YEAR } = await import('../../test/futuresDemo.mjs');
+    const { compareFutures } = await import('./compareFutures.js');
+    const data = demoData(['profit']);
+    assert.equal(data.farm.fips, '19169');
+    const { totals } = compareFutures(data, { startYear: START_YEAR });
+    assert.equal(Math.round(totals.current.expectedGM), 346469);
+    assert.equal(Math.round(totals.maxProfit.expectedGM), 413859);
+    assert.equal(Math.round(totals.priority.expectedGM), 406649);
+    assert.equal(Math.round(totals.priority.p10GM), 273704);
+    assert.equal(totals.priority.endSoil100, 57);
   });
 });

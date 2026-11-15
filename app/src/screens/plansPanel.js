@@ -1,32 +1,59 @@
-// "Plan my next seasons": the rotation planner's three plans side by side (roadmap 4.3, 4.4).
+// "Plan my next seasons": the rotation planner's three plans (roadmap 4.3, 4.4), rotation first.
 //
 //   Keep going     the current rotation, continued
 //   Most profit    the most cash over the 3 seasons
 //   Manami's pick  the best fit for the farmer's priorities (from the check-in)
 //
-// For each: the 3-season cash margin, a bad year (1 in 10), soil health, and how often it beats
-// keeping going; every field's crops for the 3 seasons; the reasons, risks and gaps. Pick a plan per
-// field (the mix is scored too) and save it. "See them on the farm" (and each plan's "Show on the
-// island") opens the plans on the island itself (src/screens/planFutures.js).
+// Three tabs:
+//   Your rotation  Manami's headline (rotation only), a "Plan to show" switch, the rotation ribbon
+//                  (two past seasons and three planned, with link signs and verdicts, no money), the
+//                  5-row rotation check, then the money: one line and a closed "Money detail". Each
+//                  field's story opens under its ribbon row and carries the per-field pick. Then
+//                  "Why my pick", "Watch out", "Good to know" and the planner's own words, all closed.
+//   When to sow    jobs by month, crop cards, frost and handoffs (src/screens/cropCalendarView.js)
+//   Build your own the drag-and-drop planner (src/screens/planBuilder.js), unchanged
+// Pick a plan per field (the mix is scored too) and save it. "See it on the farm" opens the plan on
+// show on the island itself (src/screens/planFutures.js).
 //
 //   const panel = createPlansPanel({ planSeasons, evaluateMix, onPreview, onFutures, onSave, onOpen, onClose })
 //   panel.open()   panel.close()   panel.ensureData()   panel.getChoice()   panel.setChoice(map)
-import { cropIcon } from '../ui/cropIcons.js';
+//
+// The rotation views (compareFutures, Manami's lines, the ribbon, the calendar) load with the first
+// open, alongside the plans themselves, so they stay out of the app's first download.
 import { APP_CROP } from '../plan/farmInput.js';
 import { createPlanBuilder } from './planBuilder.js';
 import { money } from '../ui/money.js';
-import { PLANS, CROP_NAME } from '../plan/planNames.js';
+import { PLANS } from '../plan/planNames.js';
 import { asset } from '../ui/asset.js';
+// the calendar is already in the main bundle (the builder's palette reads its sowing windows), so it's not lazy
+import * as cropCalendar from '../plan/cropCalendar.js';
 
 const MANAMI_SVG = asset('/manami.svg');
 
 // (money lives in src/ui/money.js now; it is still exported from here for older callers)
 export { money } from '../ui/money.js';
 
-// a little barn, for "See them on the farm"
+// a little barn, for "See it on the farm"
 const FARM_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20V10.2L12 4l8.5 6.2V20z" fill="currentColor" fill-opacity=".2"/><path d="M9 20v-5.5h6V20M9 14.5l6 5.5M15 14.5L9 20M10 10h4"/></svg>';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// a value inside a quoted attribute selector
+const attrSel = (s) => String(s ?? '').replace(/["\\]/g, '\\$&');
+
+/** The panel's three tabs, in order (the arrow keys cycle them). */
+export const TABS = [
+  { view: 'rotation', label: 'Your rotation' },
+  { view: 'calendar', label: 'When to sow' },
+  { view: 'build', label: 'Build your own' },
+];
+
+/** The tab an arrow, Home or End key moves to from `view` (wrapping), or null for other keys. */
+export function nextTab(view, key) {
+  const i = Math.max(0, TABS.findIndex((t) => t.view === view));
+  const n = TABS.length;
+  const j = { ArrowLeft: (i - 1 + n) % n, ArrowRight: (i + 1) % n, Home: 0, End: n - 1 }[key];
+  return j == null ? null : TABS[j].view;
+}
 
 /** The first season the plans start with: next year's once this year's harvest is in (from August). */
 export function firstSeason(today = new Date()) {
@@ -34,13 +61,26 @@ export function firstSeason(today = new Date()) {
 }
 
 /**
- * Manami's line over the cards (HTML): what her pick earns over keeping going, or that the rotation
- * already fits, with what her pick costs when it earns less. gain: pick minus keeping going, 3 seasons.
+ * Manami's money line (HTML): what her pick earns over keeping going, or that the rotation already
+ * fits, with what her pick costs when it earns less. gain: pick minus keeping going, 3 seasons.
+ * (The panel now leads with the rotation; this stays for older callers and its tests.)
  */
 export function pickNote(gain, beats) {
   if (gain > 1) return `My pick earns about <b>${money(gain)}</b> more than keeping going over 3 seasons, and comes out ahead in <b>${beats}%</b> of the weather years I tried.`;
   if (gain < -1) return `My pick earns about <b>${money(-gain)}</b> less than keeping going over 3 seasons, in return for what you told me matters most.`;
   return 'Your rotation is already a good fit. My pick changes little.';
+}
+
+// the rotation views, loaded once with the first open
+let mods = null;
+let modsP = null;
+/** Loads the rotation views (once). */
+export function loadRotationViews() {
+  modsP ??= Promise.all([
+    import('../plan/compareFutures.js'), import('../plan/futuresVoice.js'), import('../plan/rotationStory.js'),
+    import('../plan/rotationVoice.js'), import('./rotationRibbon.js'), import('./cropCalendarView.js'), cropCalendar,
+  ]).then(([cf, fv, rs, rv, rr, cv, cc]) => (mods = { cf, fv, rs, rv, rr, cv, cc }), (e) => { modsP = null; throw e; });
+  return modsP;
 }
 
 /**
@@ -63,8 +103,19 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
   let choice = {}; // field id -> plan kind
   let run = 0;
   let mixRun = 0;
-  let view = 'compare'; // 'compare' the three plans | 'build' your own (drag and drop)
-  let handoff = null; // the plans on show, handed straight to the island by "See them on the farm" / "Show on the island"
+  let view = 'rotation'; // 'rotation' | 'calendar' (when to sow) | 'build' your own (drag and drop)
+  let selected = 'priority'; // the plan on show in the ribbon, the check and the money line
+  const openStories = new Set(); // the field stories that are open
+  let calSeason = 0; // the season on show in "When to sow"
+  let mixScore = null; // the mix's evaluateMix score, once worked out
+  let mixShown = false; // whether the switch shows "Your plan"
+  let cmp = null; // compareFutures(data), worked out with the first render of these plans
+  let cmpData = null;
+  const rots = new Map(); // kind -> rotationOf(cmp, kind)
+  let ribbonWired = false;
+  let disposeView = null; // the "When to sow" tab's wiring
+  let handoff = null; // the plans on show, handed straight to the island by "See it on the farm"
+  let viewsErr = null; // why the rotation views didn't load, the last time they were asked for
 
   // "Build your own": the drag-and-drop planner, scored by the same planner
   const builder = createPlanBuilder({
@@ -84,7 +135,7 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
 
   // Esc closes it wherever focus is (Safari doesn't focus buttons on click)
   document.addEventListener('keydown', (e) => {
-    // (a jar test open over the plans takes the Esc for itself)
+    // (a jar test open over the plans takes the Esc for itself; the crop tip takes the first Esc on its window listener)
     if (e.key === 'Escape' && !root.hidden && !document.body.classList.contains('jar-open') && !e.target.closest?.('input, textarea')) { e.preventDefault(); e.stopPropagation(); close(); }
   }, true);
   let opener = null; // focus goes back here on close
@@ -115,13 +166,15 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
     await Promise.resolve();
     if (data && !settled) setBusy(true);
     try {
-      const fresh = await pending;
+      // (if the rotation views don't load, the plans still do: "Build your own" works without them)
+      const [fresh] = await Promise.all([pending, loadRotationViews().catch((e) => { viewsErr = e; })]);
       if (id !== run || root.hidden) return;
       adopt(fresh);
       setBusy(false);
       render();
     } catch (e) {
       if (id !== run) return;
+      setBusy(false);
       body.innerHTML = e?.code === 'no-market'
         // no prices or yields for this farm: said plainly, with why (nothing is planned on stand-ins)
         ? `<p class="plans__error">${esc(e.message)} Without them I can’t work out what each crop would earn here, so there are no plans to show.</p>`
@@ -135,6 +188,7 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
     // keep the picks for fields that are still there; new fields start on Manami's pick
     choice = Object.fromEntries(fresh.result.plans.priority.paddocks.map((p) => [p.paddockId, choice[p.paddockId] && fresh.result.plans[choice[p.paddockId]] ? choice[p.paddockId] : 'priority']));
     data = fresh;
+    mixScore = null;
   }
 
   /**
@@ -154,16 +208,39 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
   /** The pick per field (a copy). */
   const getChoice = () => ({ ...choice });
 
-  /** The picks made elsewhere (the plans on the island): the table's radios and the mix follow. */
-  function setChoice(map) {
-    choice = { ...choice, ...map };
-    const cells = body.querySelectorAll('.plan-cell');
-    if (!cells.length) return;
+  const isMixed = () => new Set(Object.values(choice)).size > 1;
+  const uniform = () => { const k = new Set(Object.values(choice)); return k.size === 1 ? [...k][0] : null; };
+
+  /** The story radios follow the picks (and the one picked is the one in the tab order). */
+  function syncCells(field = null) {
+    const cells = body.querySelectorAll(field ? `.plan-cell[data-field="${attrSel(field)}"]` : '.plan-cell');
     for (const b of cells) {
       const on = (choice[b.dataset.field] || 'priority') === b.dataset.kind;
       b.classList.toggle('is-on', on);
       b.setAttribute('aria-checked', String(on));
+      b.tabIndex = on ? 0 : -1;
     }
+    return cells;
+  }
+
+  /**
+   * After the picks change: "Your plan" shows on the switch once they differ by field (and goes
+   * with them), and while it is on show the ribbon, the check and the money follow the picks.
+   */
+  function afterChoice() {
+    const mixed = isMixed();
+    fixSelected();
+    if (view === 'rotation' && mods && cmp && (mixed !== mixShown || selected === 'mix')) refreshShown();
+  }
+
+  /** The picks made elsewhere (the plans on the island): the story radios, the switch and the mix follow. */
+  function setChoice(map) {
+    choice = { ...choice, ...map };
+    mixScore = null;
+    const cells = syncCells();
+    const shown = !!body.querySelector('.rot-host--switch');
+    if (!cells.length && !shown) return;
+    afterChoice();
     scoreMix();
   }
 
@@ -207,95 +284,253 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
     return { sequences };
   }
 
-  function seqCell(slots, years) {
-    return slots.map((s, i) => {
-      const key = APP_CROP[s.main] || 'other';
-      const name = CROP_NAME[s.main] || s.main;
-      const cover = s.cover ? ` + ${CROP_NAME[s.cover] || s.cover} cover` : '';
-      return `<span class="plan-crop" title="${years[i]}: ${esc(name + cover)}">${cropIcon(key)}${s.cover ? '<span class="plan-crop__cover" aria-hidden="true"></span>' : ''}<span class="sr-only">${years[i]}: ${esc(name + cover)}</span></span>`;
-    }).join('');
+  // ---- the comparison and the rotations ----
+
+  /** compareFutures for the plans on show (worked out once per set of plans). */
+  function cmpNow() {
+    if (cmpData !== data) {
+      cmp = mods.cf.compareFutures(data, { startYear: firstSeason(today()) });
+      cmpData = data;
+      rots.clear();
+    }
+    return cmp;
   }
 
+  /** A plan's rotation (the mix: the picks as they stand, never cached). */
+  function rotFor(kind) {
+    if (kind === 'mix') return mods.rs.rotationOf(cmp, 'mix', choice, mixScore);
+    if (!rots.has(kind)) rots.set(kind, mods.rs.rotationOf(cmp, kind));
+    return rots.get(kind);
+  }
+
+  const planName = (kind) => mods.rr.PLAN_NAME[kind] || 'Your plan';
+
   function tabs() {
-    const tab = (v, label) => `<button type="button" role="tab" class="plans__tab" id="plansTab-${v}" aria-controls="plansView" data-view="${v}" aria-selected="${view === v}" tabindex="${view === v ? 0 : -1}">${label}</button>`;
-    return `<div class="plans__tabs" role="tablist" aria-label="Plans">${tab('compare', 'Compare plans')}${tab('build', 'Build your own')}</div>`;
+    const tab = ({ view: v, label }) => `<button type="button" role="tab" class="plans__tab" id="plansTab-${v}" aria-controls="plansView" data-view="${v}" aria-selected="${view === v}" tabindex="${view === v ? 0 : -1}">${label}</button>`;
+    return `<div class="plans__tabs" role="tablist" aria-label="Plans">${TABS.map(tab).join('')}</div>`;
   }
 
   function render() {
-    if (view === 'build') {
-      body.innerHTML = `${tabs()}<div class="plans__build" role="tabpanel" id="plansView" aria-labelledby="plansTab-build"></div>`;
-      const y0 = firstSeason(today());
-      builder.mount(body.querySelector('.plans__build'), {
-        farm: data.farm,
-        market: data.market,
-        years: [y0, y0 + 1, y0 + 2],
-        exclusions: data.result.exclusions,
-        saved: getSaved(),
-        startPlans: { priority: planOf('priority').plan, current: planOf('current').plan, priorityResult: planOf('priority') },
-      });
+    disposeView?.();
+    disposeView = null;
+    if (view === 'build') return renderBuild();
+    if (!mods) {
+      if (viewsErr) {
+        // the views didn't load (a dropped connection, say): say so, and keep the tabs (the builder still works)
+        const why = viewsErr;
+        viewsErr = null; // (the next open tries again)
+        body.innerHTML = `${tabs()}<p class="plans__error" role="tabpanel" id="plansView" aria-labelledby="plansTab-${view}">I couldn’t lay these plans out this time (${esc(why.message)}). Try again in a moment.</p>`;
+        return;
+      }
+      loadRotationViews().then(() => { if (!root.hidden) render(); }, (e) => { viewsErr = e; if (!root.hidden) render(); });
       return;
     }
-    const { result } = data;
+    if (!ribbonWired) {
+      mods.rr.wireRibbon(body, {
+        onToggle: (id, isOpen) => { if (isOpen) openStories.add(id); else openStories.delete(id); },
+        onSelect: (kind) => select(kind),
+      });
+      ribbonWired = true;
+    }
+    try {
+      cmpNow();
+    } catch (e) {
+      body.innerHTML = `${tabs()}<p class="plans__error" role="tabpanel" id="plansView">I couldn’t lay these plans out this time (${esc(e.message)}).</p>`;
+      return;
+    }
+    if (view === 'calendar') renderCalendar();
+    else renderRotation();
+  }
+
+  function renderBuild() {
+    body.innerHTML = `${tabs()}<div class="plans__build" role="tabpanel" id="plansView" aria-labelledby="plansTab-build"></div>`;
+    const el = body.querySelector('.plans__build');
+    if (!el) return;
     const y0 = firstSeason(today());
-    const years = [y0, y0 + 1, y0 + 2];
-    const cur = planOf('current'), pick = planOf('priority');
-    const gain = pick.expectedGM - cur.expectedGM;
-    const beats = Math.round((pick.probBeatsCurrent ?? 0) * 100);
-    const manami = pickNote(gain, beats);
-    const farmBtn = onFutures ? `<button class="btn btn--primary btn--small plans__farm" type="button" data-act="futures">${FARM_ICON}See them on the farm</button>` : '';
+    builder.mount(el, {
+      farm: data.farm,
+      market: data.market,
+      years: [y0, y0 + 1, y0 + 2],
+      exclusions: data.result.exclusions,
+      saved: getSaved(),
+      startPlans: { priority: planOf('priority').plan, current: planOf('current').plan, priorityResult: planOf('priority') },
+    });
+  }
 
-    const cards = PLANS.map(({ kind, name, blurb }) => {
-      const p = planOf(kind);
-      const soil = Math.round((p.endSoilHealth ?? p.soilHealth) * 100);
-      return `<section class="plan-card plan-card--${kind}" aria-labelledby="plan-${kind}">
-        <h3 id="plan-${kind}">${esc(name)}${kind === 'priority' ? '<span class="plan-card__badge">Recommended</span>' : ''}</h3>
-        <p class="plan-card__blurb">${esc(blurb)}</p>
-        <dl class="plan-card__nums">
-          <div><dt>Cash margin, 3 seasons</dt><dd class="plan-card__big">${money(p.expectedGM)}</dd></div>
-          <div><dt>In a bad year (1 in 10)</dt><dd>${money(p.p10GM)}</dd></div>
-          <div><dt>Soil health at the end</dt><dd><span class="meter" aria-hidden="true"><span style="width:${Math.max(0, Math.min(100, soil))}%"></span></span>${soil}/100</dd></div>
-          ${kind === 'current' ? '<div><dt>Beats keeping going</dt><dd>–</dd></div>' : `<div><dt>Beats keeping going</dt><dd>${Math.round((p.probBeatsCurrent ?? 0) * 100)}% of years</dd></div>`}
-        </dl>
-        <button class="btn btn--quiet btn--small plan-card__show" type="button" data-show="${kind}">Show on the island</button>
-      </section>`;
+  // ---- "Your rotation" ----
+
+  // the parts that follow the plan on show, each in a host of its own so a switch redraws only them
+  const PARTS = {
+    farm: () => farmBtn(),
+    switch: () => switchPart(),
+    ribbon: () => ribbonPart(),
+    check: () => checkPart(),
+    money: () => moneyPart(),
+    detail: () => detailPart(),
+    watch: () => watchPart(),
+  };
+  const host = (part, tag = 'div', cls = '') => `<${tag} class="rot-host rot-host--${part}${cls ? ` ${cls}` : ''}">${PARTS[part]()}</${tag}>`;
+
+  function farmBtn() {
+    if (!onFutures) return '';
+    // Manami's pick runs her walk; any other plan opens on the island as it is
+    const act = selected === 'priority' ? 'data-act="futures"' : `data-show="${esc(selected)}"`;
+    return `<button class="btn btn--primary btn--small plans__farm" type="button" ${act}>${FARM_ICON}See it on the farm</button>`;
+  }
+
+  /** "Your plan" is on the switch only while the picks differ by field. */
+  function fixSelected() {
+    if (selected === 'mix' && !isMixed()) selected = uniform() || 'priority';
+  }
+
+  function switchPart() {
+    mixShown = isMixed();
+    const kinds = ['current', 'maxProfit', 'priority', ...(mixShown ? ['mix'] : [])];
+    const all = Object.fromEntries(kinds.map((k) => [k, rotFor(k)]));
+    return mods.rr.switchHtml(cmp, all[selected], selected, { showMix: mixShown, rots: all });
+  }
+
+  function ribbonPart() {
+    const rot = rotFor(selected);
+    const place = mods.cc.placeOf(data.farm);
+    const stories = Object.fromEntries((rot.fields || []).map((f) => [f.id, mods.rr.storyHtml(rot, cmp, f.id, { choice, place, years: rot.years })]));
+    return mods.rr.ribbonHtml(rot, { selectedKind: selected, open: openStories, stories });
+  }
+
+  function checkPart() {
+    const base = selected === 'current' ? 'priority' : 'current';
+    const rows = mods.rv.checkRows(rotFor(selected), rotFor(base));
+    return mods.rr.checkHtml(rows, { baseLabel: selected === 'current' ? 'my pick' : 'keeping going' });
+  }
+
+  /** The one money line; until Manami's words for it are in, the plain numbers. */
+  function moneyPart() {
+    const said = mods.rv.moneyLine(cmp, selected, mixScore, choice);
+    if (said) return `<p class="rot-money__line">${esc(said)}</p>`;
+    const [cash, bad] = mods.cf.tiles(cmp, selected, mixScore, choice);
+    if (cash.value == null) return '<p class="rot-money__line">Working out what your plan earns…</p>';
+    return `<p class="rot-money__line">About ${esc(money(cash.value))} over 3 seasons. In a bad year, 1 in 10, about ${esc(money(bad.value))}.</p>`;
+  }
+
+  /** Money detail: the plans' four numbers, then the price of the pick and the nitrogen left. */
+  function detailPart() {
+    const { cf, fv } = mods;
+    const kinds = ['current', 'maxProfit', 'priority', ...(isMixed() ? ['mix'] : [])];
+    const cell = (v, f) => (v == null ? '…' : f(v));
+    const rows = kinds.map((kind) => {
+      const [cash, bad, soil, beats] = cf.tiles(cmp, kind, mixScore, choice);
+      const on = kind === selected;
+      return `<tr${on ? ' class="is-on"' : ''}><th scope="row">${esc(planName(kind))}${on ? '<span class="sr-only"> (on show)</span>' : ''}</th>`
+        + `<td>${cell(cash.value, money)}</td><td>${cell(bad.value, money)}</td><td>${cell(soil.value, (v) => `${v}/100`)}</td>`
+        + `<td>${kind === 'current' ? '–' : cell(beats.value, (v) => `${v}% of years`)}</td></tr>`;
     }).join('');
+    const lines = [fv.priceLine(cmp.price), fv.vsProfitLine(cmp), fv.nCarriedLine(cmp, selected, mixScore, choice)].filter(Boolean);
+    return `<div class="rot-money__wrap"><table class="rot-money__table"><caption class="sr-only">Money for each plan, over 3 seasons</caption>
+      <thead><tr><th scope="col">Plan</th><th scope="col">Cash margin, 3 seasons</th><th scope="col">In a bad year (1 in 10)</th><th scope="col">Soil score in ${cmp.years[2]}</th><th scope="col">Beats keeping going</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>${lines.map((l) => `<p class="rot-money__note">${esc(l)}</p>`).join('')}`;
+  }
 
-    const rows = pick.paddocks.map((pd) => {
-      const cells = PLANS.map(({ kind, name }) => {
-        const p = planOf(kind).paddocks.find((x) => x.paddockId === pd.paddockId);
-        const on = (choice[pd.paddockId] || 'priority') === kind;
-        return `<td><button type="button" class="plan-cell${on ? ' is-on' : ''}" role="radio" aria-checked="${on}" data-field="${esc(pd.paddockId)}" data-kind="${kind}"
-          aria-label="${esc(pd.name)}: ${esc(name)}, ${esc(p.sequence.map((c) => CROP_NAME[c] || c).join(', '))}">${seqCell(planOf(kind).plan.sequences[pd.paddockId], years)}</button></td>`;
-      }).join('');
-      return `<tr><th scope="row"><span class="plan-field__name">${esc(pd.name)}</span><span class="plan-field__acres">${Math.round(pd.acres)} ac</span></th>${cells}</tr>`;
-    }).join('');
+  /** Watch out: the plan on show's warnings, grouped by field. */
+  function watchPart() {
+    const rows = mods.fv.watchRows(cmp, selected, choice);
+    const head = `<p class="plans__src">On ${esc(planName(selected))}.</p>`;
+    if (!rows.length) return `${head}<p class="plans__none">Nothing to watch on this plan.</p>`;
+    // (in the ribbon's order, so a field is found where it was seen)
+    const order = mods.rs.orderFields(cmp);
+    const fields = [...cmp.fields].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+    const groups = fields.map((f) => [f, rows.filter((r) => r.id === f.id)]).filter(([, rs]) => rs.length);
+    return head + groups.map(([f, rs]) => `<h4 class="rot-watch__h">${esc(f.name)}</h4><ul class="plans__list plans__list--risk">${rs.map((r) => `<li>${esc(r.text.startsWith(`${f.name} · `) ? r.text.slice(f.name.length + 3) : r.text)}</li>`).join('')}</ul>`).join('');
+  }
 
-    const list = (items, cls) => items.length ? `<ul class="plans__list ${cls}">${items.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '<p class="plans__none">Nothing to note.</p>';
-    const gaps = [...new Set([...data.gaps, ...(pick.informationGaps || []), ...(pick.localReview || [])])];
+  const list = (items, cls) => (items.length ? `<ul class="plans__list ${cls}">${items.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '<p class="plans__none">Nothing to note.</p>');
 
-    body.innerHTML = `${tabs()}<div role="tabpanel" id="plansView" aria-labelledby="plansTab-compare">
-      <div class="plans__manami"><img src="${MANAMI_SVG}" alt="" width="40" height="36"><p>${manami}</p>${farmBtn}</div>
-      <div class="plans__cards">${cards}</div>
-      <p class="plans__price">${esc(result.priceOfPriorities.summary)}</p>
+  function renderRotation() {
+    fixSelected();
+    const { fv, rv, cf, rr } = mods;
+    const said = rv.headline(cmp) || 'Here’s what each field grows over the next three seasons.';
+    const gaps = fv.gapLines(cmp);
+    const fieldGaps = cmp.fields.flatMap((f) => (gaps.byField[f.id] || []).map((g) => `${f.name}: ${g}`));
+    const calGaps = mods.cc.gapsFor ? mods.cc.gapsFor(mods.cc.placeOf(data.farm)) : rr.calendarGaps();
+    const known = [fv.weatherLine(cmp.weather), ...gaps.farm, ...fieldGaps, ...calGaps];
+    const raw = cf.fineprint(cmp, 'priority', mixScore, choice);
+    const own = Object.entries(raw).filter(([, items]) => items.length)
+      .map(([k, items]) => `<h4 class="rot-raw__h">${esc(k)}</h4>${list(items, 'plans__list--raw')}`).join('');
+    const why = [fv.weightsLine(cmp.weights), fv.nLine(cmp, 'priority', choice)].filter(Boolean);
 
-      <h3 class="plans__h">Field by field <span class="plans__sub">${years.join(' · ')}. Pick a plan for each field.</span></h3>
-      <div class="plans__tablewrap">
-        <table class="plans__table">
-          <thead><tr><th scope="col">Field</th>${PLANS.map((p) => `<th scope="col">${esc(p.name)}</th>`).join('')}</tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-      <div class="plans__mix" aria-live="polite"><span id="plansMix">${mixLine()}</span>
-        <button class="btn btn--primary btn--small" type="button" data-act="save">Use this plan</button></div>
+    body.innerHTML = `${tabs()}<div class="plans__rot" role="tabpanel" id="plansView" aria-labelledby="plansTab-rotation">
+      <div class="plans__manami"><img src="${MANAMI_SVG}" alt="" width="40" height="36"><p>${esc(said)}</p>${host('farm', 'span', 'plans__farmhost')}</div>
+      ${host('switch')}
+      ${host('ribbon')}
+      ${host('check')}
+      <section class="rot-money" aria-labelledby="rotMoneyH"><h3 class="plans__h" id="rotMoneyH">Money</h3>${host('money')}
+        <details class="plans__more rot-money__detail"><summary>Money detail</summary>${host('detail')}</details></section>
 
-      <details class="plans__more" open><summary>Why Manami picked this</summary>${list(pick.reasons || [], 'plans__list--why')}</details>
-      <details class="plans__more"><summary>Watch out for</summary>${list(pick.risks || [], 'plans__list--risk')}</details>
-      <details class="plans__more"><summary>Good to know</summary>
-        <p class="plans__src">Weather: ${esc(data.weather.source)}, ${data.weather.years} growing seasons.</p>${list(gaps, 'plans__list--gap')}</details></div>`;
+      <details class="plans__more"><summary>Why my pick</summary>${why.map((l) => `<p class="rot-why">${esc(l)}</p>`).join('')}</details>
+      <details class="plans__more"><summary>Watch out</summary>${host('watch')}</details>
+      <details class="plans__more"><summary>Good to know</summary>${list(known.filter(Boolean), 'plans__list--gap')}
+        <p class="plans__src"><button class="linkish" type="button" data-go="calendar">Where the sowing dates come from</button></p></details>
+      <details class="plans__more"><summary>The planner’s own words</summary><div class="rot-raw">${own || '<p class="plans__none">Nothing to note.</p>'}</div></details>
+      <div class="plans__mix plans__mix--sticky" aria-live="polite"><span id="plansMix">${mixLine()}</span>
+        <button class="btn btn--primary btn--small" type="button" data-act="save">Use this plan</button></div></div>`;
     scoreMix();
   }
 
-  /** "Your mix: Manami's pick on every field" or "Your mix: ..." with its score once worked out. */
+  /** The focusable a redraw should hand focus back to, as a selector (null: not in a redrawn part). */
+  function focusSelector(a) {
+    if (!a?.closest || !body.contains(a)) return null;
+    if (a.closest('.rib-switch__seg')) return `.rib-switch__seg[data-kind="${attrSel(a.closest('.rib-switch__seg').dataset.kind)}"]`;
+    const cell = a.closest('.plan-cell');
+    if (cell) return `.plan-cell[data-field="${attrSel(cell.dataset.field)}"][data-kind="${attrSel(cell.dataset.kind)}"]`;
+    const row = a.closest('.rib__open');
+    if (row) return `.rib__open[data-field="${attrSel(row.dataset.field)}"]`;
+    if (a.closest('.plans__farm')) return '.plans__farm';
+    return null;
+  }
+
+  /** Redraws the parts that follow the plan on show (all of them, or the ones named), keeping focus. */
+  function refreshShown(parts = Object.keys(PARTS)) {
+    if (view !== 'rotation' || !mods || !cmp) return;
+    // new plans came in since this was drawn (the island asked for them, say): the parts on show
+    // belong to the old ones, so it all redraws (now if it's open, else on the next open)
+    if (cmpData !== data) { if (!root.hidden) render(); return; }
+    fixSelected();
+    const sel = focusSelector(document.activeElement);
+    for (const part of parts) {
+      const el = body.querySelector(`.rot-host--${part}`);
+      if (el) el.innerHTML = PARTS[part]();
+    }
+    if (sel) body.querySelector(sel)?.focus({ preventScroll: true });
+  }
+
+  /** The switch picked another plan to show. */
+  function select(kind) {
+    if (!kind || kind === selected) return;
+    selected = kind;
+    refreshShown();
+  }
+
+  // ---- "When to sow" ----
+
+  function renderCalendar() {
+    const rot = rotFor(selected);
+    const place = mods.cc.placeOf(data.farm);
+    const inner = mods.cv.calendarTabHtml({ rot, cmp, place, season: calSeason }) || '<p class="plans__none">I don’t have the sowing dates ready yet.</p>';
+    // the dates follow the plan on show on Your rotation, so say which one it is
+    const forPlan = `<p class="plans__calfor">Dates for <b>${esc(mods.rr.PLAN_NAME[selected] || 'Manami’s pick')}</b>. Change the plan on Your rotation.</p>`;
+    body.innerHTML = `${tabs()}<div class="plans__cal" role="tabpanel" id="plansView" aria-labelledby="plansTab-calendar">${forPlan}${inner}</div>`;
+    const el = body.querySelector('.plans__cal');
+    if (!el) return;
+    disposeView = mods.cv.wireCalendarTab(el, {
+      onSeason: (s) => {
+        if (s === calSeason) return;
+        calSeason = s;
+        render();
+        body.querySelector('.plans__cal [role="radio"][aria-checked="true"]')?.focus({ preventScroll: true });
+      },
+    });
+  }
+
+  /** "Your plan: Manami's pick on every field" or "Your plan: a mix of plans" with its score once worked out. */
   function mixLine(score) {
     const kinds = new Set(Object.values(choice));
     const what = kinds.size === 1 ? `${PLANS.find((p) => p.kind === [...kinds][0]).name} on every field` : 'a mix of plans';
@@ -310,34 +545,54 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
     if (!evaluateMix) return;
     try {
       const score = await evaluateMix(mixedPlan());
-      if (id === mixRun && mixEl()) mixEl().innerHTML = mixLine(score);
+      if (id !== mixRun) return;
+      mixScore = score;
+      if (mixEl()) mixEl().innerHTML = mixLine(score);
+      // the mix's numbers on show: its money line, its check (the soil at the end) and its detail row
+      refreshShown(selected === 'mix' ? ['check', 'money', 'detail'] : ['detail']);
     } catch { /* keep the line without a number */ }
+  }
+
+  /** Switches tab (and focuses the new one). */
+  function goTo(v) {
+    if (!v) return;
+    if (view !== v) { view = v; render(); }
+    body.querySelector(`.plans__tab[data-view="${v}"]`)?.focus();
   }
 
   body.addEventListener('keydown', (e) => {
     const t = e.target.closest?.('.plans__tab');
-    if (!t || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+    if (!t) return;
+    const v = nextTab(view, e.key);
+    if (!v) return;
     e.preventDefault();
-    view = view === 'compare' ? 'build' : 'compare';
-    render();
-    body.querySelector(`.plans__tab[data-view="${view}"]`)?.focus();
+    goTo(v);
   });
+
+  /** Manami's answer to a pick, in the story's live line. */
+  function sayPicked(id) {
+    const f = cmp?.fields.find((x) => x.id === id);
+    const el = body.querySelector(`[id="picked-${attrSel(id)}"]`);
+    if (!f || !el || !mods) return;
+    el.textContent = '';
+    // (a moment later, so a story drawn again just now is in the reading tree before it speaks)
+    setTimeout(() => { el.textContent = mods.fv.pickedLine(f.name, choice[id]); }, 60);
+  }
 
   body.addEventListener('click', (e) => {
     const tab = e.target.closest('.plans__tab');
-    if (tab) {
-      if (view !== tab.dataset.view) { view = tab.dataset.view; render(); body.querySelector(`.plans__tab[data-view="${view}"]`)?.focus(); }
-      return;
-    }
+    if (tab) { goTo(tab.dataset.view); return; }
     if (e.target.closest('.plans__build')) return; // the builder handles its own buttons
+    const go = e.target.closest('[data-go]');
+    if (go) { goTo(go.dataset.go); return; }
     const cell = e.target.closest('.plan-cell');
     if (cell) {
-      choice[cell.dataset.field] = cell.dataset.kind;
-      body.querySelectorAll(`.plan-cell[data-field="${CSS.escape(cell.dataset.field)}"]`).forEach((b) => {
-        const on = b.dataset.kind === cell.dataset.kind;
-        b.classList.toggle('is-on', on);
-        b.setAttribute('aria-checked', String(on));
-      });
+      const id = cell.dataset.field;
+      choice[id] = cell.dataset.kind;
+      mixScore = null;
+      syncCells(id);
+      afterChoice();
+      sayPicked(id);
       scoreMix();
       return;
     }
@@ -351,15 +606,16 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
     }
     const show = e.target.closest('[data-show]');
     if (show && onFutures) {
-      // the island opens on that plan, without the walk
+      // the island opens on that plan (or on the farmer's own mix), without the walk
       handOff();
       close({ restoreFocus: false });
       onFutures(show.dataset.show, { reel: false });
       return;
     }
     if (show) {
-      const plan = planOf(show.dataset.show).plan;
-      const name = PLANS.find((p) => p.kind === show.dataset.show).name;
+      const kind = show.dataset.show;
+      const plan = kind === 'mix' ? mixedPlan() : planOf(kind).plan;
+      const name = kind === 'mix' ? 'Your plan' : PLANS.find((p) => p.kind === kind).name;
       close({ restoreFocus: false });
       onPreview?.({ label: name, plan, startYear: firstSeason(today()), keysByYear: [0, 1, 2].map((i) => new Map(Object.entries(plan.sequences).map(([id, s]) => [id, APP_CROP[s[i].main] || 'other']))) });
       return;

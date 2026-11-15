@@ -8,6 +8,7 @@
 //     which owns those lights and mixes this in on top of the season's own look)
 //   the sky behind the island: dawn and dusk colours, night blue, stars, the moon and the sun's glow
 //   lamps that come on one by one at dusk and go off at dawn, and lit windows that brighten
+//   the lighthouse's lantern and its slowly turning beam (view.beacons: src/island/lighthouse.js)
 //   unlit things (foam, snow) dimmed so nothing glows by accident
 //
 //   const dn = createDayNight(view, { seasons, lamps, mode, hour, clock })
@@ -44,6 +45,7 @@ const smooth = (a, b, v) => { const t = Math.max(0, Math.min(1, (v - a) / (b - a
  */
 export function createDayNight(view, { seasons, lamps = [], mode = 'live', hour = 12, clock = () => new Date() } = {}) {
   const { lights, scene, root } = view;
+  const beacons = view.beacons || [];
   const wallHour = () => { const d = clock(); return hourOf(d) + d.getSeconds() / 3600; };
   let how = mode;
   let h = how === 'live' ? wallHour() : wrapHour(hour);
@@ -126,6 +128,8 @@ export function createDayNight(view, { seasons, lamps = [], mode = 'live', hour 
       l.pool.visible = k > 0.001;
       if (l.light) l.light.intensity = 2.2 * k;
     }
+    // the lighthouse: its lantern glows and the beam turns while it's dark
+    for (const b of beacons) b.update(dt, night);
 
     // the sky: stars, the moon and the sun's glow, moving across from right (east) to left (west)
     const across = (p) => 84 - 68 * p; // % from the left
@@ -175,6 +179,7 @@ export function createDayNight(view, { seasons, lamps = [], mode = 'live', hour 
         l.halo.visible = l.pool.visible = false;
         if (l.light) l.light.intensity = 0;
       }
+      for (const b of beacons) b.update(-1, 0);
       for (const name of Object.keys(cssShown)) root.style.removeProperty(name);
       root.classList.remove('is-night');
     },

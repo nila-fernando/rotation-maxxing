@@ -21,12 +21,23 @@
 // onUse(record, { from }) gets the JarRecord (src/plan/jarTest.js toRecord); onRemove(fieldId, { from })
 // "Stop using it". session is a Map fieldId -> this session's photo and layers, so "See your jar"
 // comes back to them. All the jar logic is in src/plan/jarTest.js; this file is the DOM round it.
+//
+// When the app's server reads jars (server/ai/jar.js), a chosen photo goes straight to Manami
+// (Claude's vision, src/plan/jarAi.js) and skips the box: her layers land on step 3 like the
+// algorithm's. The How to step says the photo goes to Anthropic's Claude before one is picked, with
+// "Read it on this device instead". If she can't read it, the photo step offers another photo or
+// "Read it without AI" (the algorithm). The sample jar is always read by the algorithm.
 import {
   LAYER_TYPES, LAYER_TYPE_ORDER, setLayerType, splitLayer, mergeLayerUp, boundaryLines,
   WORK_MAX, SAMPLE_BOX, defaultBox, cleanBox, nudgeBox, boxLabel, edgeLabel, analysePhoto, safeMove, withElapsed,
   markByHand, verdict, layerRows, layersLabel, toRecord, warnLines, reasonLine, JAR_LINES,
 } from '../plan/jarTest.js';
 import { paintSampleJar } from '../plan/jarSample.js';
+import { jarAiAvailable, readJarWithAi, readingToAnalysis, readingLines, photoForAi, failLine, JAR_AI_LINES } from '../plan/jarAi.js';
+import { aiEndpoint } from '../ai/runner.js';
+
+/** Where Manami reads jars: this site's /api/ai (or VITE_AI_ENDPOINT); null when that is 'off'. */
+const JAR_AI_ENDPOINT = aiEndpoint(import.meta.env?.VITE_AI_ENDPOINT, import.meta.env?.BASE_URL);
 import { JAR, CAMERA, IMAGE, SPLIT, MERGE } from '../ui/jarIcons.js';
 import { ACTION_ICONS } from '../ui/futureIcons.js';
 import { asset } from '../ui/asset.js';
@@ -89,7 +100,7 @@ function segHtml(name, labelId, options, value) {
  * @param {(info: { from: string }) => void} [o.onOpen]   [o.onClose]
  * @param {Map} [o.session]   fieldId -> this session's photo and layers
  */
-export function createJarPanel({ getFields, isDemoFarm = () => false, getMapTexture = () => null, onUse, onRemove, onOpen, onClose, session = new Map() }) {
+export function createJarPanel({ getFields, isDemoFarm = () => false, getMapTexture = () => null, onUse, onRemove, onOpen, onClose, session = new Map(), aiEndpoint: jarEndpoint = JAR_AI_ENDPOINT }) {
   const $ = (id) => document.getElementById(id);
   const root = $('jar');
   const title = $('jarTitle');
@@ -134,6 +145,21 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
   let dpr = 1;
   let resultSig = '';
   let announceTimer = 0;
+  // Manami's reading: whether the server reads jars (null until asked), the farmer's choice, a failed try
+  let aiOk = null;
+  let aiAsked = null;
+  let aiUse = true;
+  let aiFailed = false;
+  let aiCtl = null;
+  const aiApplies = () => aiOk === true && aiUse;
+  const howtoLines = () => (aiApplies() ? [JAR_AI_LINES.howto, JAR_AI_LINES.consent] : aiOk === true ? [JAR_AI_LINES.local] : [JAR_LINES.howto]);
+  function askAi() {
+    if (aiAsked) return;
+    aiAsked = jarAiAvailable(jarEndpoint).then((ok) => {
+      aiOk = ok;
+      if (ok && !root.hidden && step === 'howto') { says = howtoLines(); render(); }
+    });
+  }
 
   const fields = () => getFields?.() || [];
   const fieldOf = (id) => fields().find((f) => f.id === id) || null;
@@ -166,8 +192,9 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
       says = [JAR_LINES.earlier];
     } else {
       step = 'howto';
-      says = [JAR_LINES.howto];
+      says = howtoLines();
     }
+    askAi();
     const wasHidden = root.hidden;
     root.hidden = false;
     document.body.classList.add('jar-open');
@@ -185,6 +212,9 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
     note = '';
     busy = false;
     resultSig = '';
+    aiFailed = false;
+    aiCtl?.abort();
+    aiCtl = null;
   }
 
   function close({ restore = true } = {}) {
@@ -262,7 +292,8 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
         ${coarse.matches ? `<label class="btn btn--primary jar-file">${CAMERA}<span>Take a photo</span><input type="file" accept="image/*" capture="environment" class="sr-only" data-key="camera"></label>` : ''}
         <label class="btn ${coarse.matches ? 'btn--quiet' : 'btn--primary'} jar-file">${IMAGE}<span>Choose a photo</span><input type="file" accept="image/*" class="sr-only" data-key="file"></label>
         <button class="btn btn--quiet" type="button" data-act="sample" data-key="sample">${JAR}<span>Try a sample jar</span></button>
-      </div>`;
+      </div>
+      ${aiOk === true ? `<button class="linkish" type="button" data-act="${aiUse ? 'noai' : 'useai'}" data-key="aiuse">${aiUse ? 'Read it on this device instead' : 'Let Manami read it'}</button>` : ''}`;
     foot.innerHTML = '<button class="btn btn--quiet btn--small" type="button" data-act="close" data-key="fclose">Close</button>';
   }
 
@@ -287,7 +318,8 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
         </div>
       </div>`;
     foot.innerHTML = `<button class="btn btn--quiet btn--small" type="button" data-act="back" data-key="fback">${ACTION_ICONS.arrowLeft}<span>Back</span></button>
-      <button class="btn btn--primary btn--small" type="button" data-act="find" data-key="find"${busy ? ' aria-disabled="true"' : ''}>${busy ? 'Reading…' : 'Find the layers'}</button>`;
+      ${aiFailed && !busy ? `<label class="btn btn--quiet btn--small jar-file">${IMAGE}<span>Try another photo</span><input type="file" accept="image/*" class="sr-only" data-key="retake"></label>` : ''}
+      <button class="btn btn--primary btn--small" type="button" data-act="find" data-key="find"${busy ? ' aria-disabled="true"' : ''}>${busy ? 'Reading…' : aiFailed ? 'Read it without AI' : 'Find the layers'}</button>`;
     canvas.tabIndex = 0;
     canvas.setAttribute('role', 'img');
     canvas.setAttribute('aria-describedby', 'jarBoxHelp');
@@ -624,6 +656,7 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
       const d = g.getImageData(0, 0, w, h);
       if (id !== run || root.hidden) return;
       usePhoto({ data: d.data, width: w, height: h }, c, false, defaultBox(w, h));
+      if (aiApplies() && img && !sample) readWithAi();
     } catch (e) {
       if (id !== run || root.hidden) return;
       console.warn('jar test: could not open the photo', e);
@@ -681,6 +714,47 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
     }, 40);
   }
 
+  /** Sends the photo to Manami; her layers go to step 3, or the photo step says why not. */
+  async function readWithAi() {
+    if (busy || !img || !photo) return;
+    busy = true;
+    aiFailed = false;
+    says = [JAR_AI_LINES.reading];
+    note = '';
+    render();
+    const id = ++run;
+    aiCtl?.abort();
+    const ctl = aiCtl = new AbortController();
+    let out;
+    try {
+      out = await readJarWithAi(jarEndpoint, { image: photoForAi(photo), elapsed, fieldName: nameOf(fieldId) }, { signal: ctl.signal });
+    } catch (e) {
+      out = { error: 'photo' };
+    }
+    if (id !== run || root.hidden || ctl.signal.aborted) return;
+    busy = false;
+    aiCtl = null;
+    const read = out.reading && out.reading.usable ? readingToAnalysis(out.reading, img, elapsed) : null;
+    if (read?.analysis) {
+      analysis = read.analysis;
+      box = analysis.box;
+      step = 'layers';
+      says = readingLines(out.reading, true);
+      render();
+      title.focus({ preventScroll: true });
+      return;
+    }
+    aiFailed = true;
+    if (out.reading?.box) {
+      // her box, when she gave one, is a start for reading it without AI
+      const b = cleanBox({ x0: out.reading.box.x0 * img.width, x1: out.reading.box.x1 * img.width, y0: out.reading.box.y0 * img.height, y1: out.reading.box.y1 * img.height }, img.width, img.height);
+      if (b) box = b;
+    }
+    says = out.reading ? readingLines(out.reading, false) : [failLine(out.error)];
+    render();
+    foot.querySelector('[data-act="find"]')?.focus({ preventScroll: true });
+  }
+
   // ---------------------------------------------------------------- the layers
 
   function edit(fn) {
@@ -723,7 +797,7 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
       // that field's jar from earlier, or a fresh start for one without
       const saved = fieldOf(fieldId)?.jar;
       if (saved || session.get(fieldId)) open({ fieldId, step: 'result', from });
-      else { resetWork(); step = 'howto'; says = [JAR_LINES.howto]; render(); }
+      else { resetWork(); step = 'howto'; says = howtoLines(); render(); }
       select.focus();
       return;
     }
@@ -744,9 +818,11 @@ export function createJarPanel({ getFields, isDemoFarm = () => false, getMapText
     switch (b.dataset.act) {
       case 'close': close(); break;
       case 'sample': trySample(); break;
+      case 'noai': aiUse = false; says = howtoLines(); render(); break;
+      case 'useai': aiUse = true; says = howtoLines(); render(); break;
       case 'back':
         if (step === 'layers') { step = 'photo'; says = [JAR_LINES.box]; note = ''; render(); }
-        else if (step === 'photo') { step = 'howto'; says = [JAR_LINES.howto]; render(); }
+        else if (step === 'photo') { aiCtl?.abort(); aiCtl = null; busy = false; aiFailed = false; run++; step = 'howto'; says = howtoLines(); render(); }
         break;
       case 'nudge': nudge(Number(b.dataset.d)); break;
       case 'reset': if (img) setBox(sample ? cleanBox(SAMPLE_BOX, img.width, img.height) : cleanBox(defaultBox(img.width, img.height), img.width, img.height)); break;

@@ -7,7 +7,7 @@
 //                       renderer stub
 //   plannedView(input)  a real island the way the reveal builds it (src/screens/reveal.js): the
 //                       plan (planIsland), the terrain with its grass tufts, every field's real
-//                       paddock and gate, the barn, silo, farmhouse, windmill (and its sails), the
+//                       paddock and gate, the barn, silo, farmhouse, lighthouse, windmill (and its sails), the
 //                       trees, a lamp by each gate, the upgrade pads and a few sheep
 //   demoFields, fifteenFields()   the demo farm's 5 fields, and 15 (two copies 3 km away)
 import { readFileSync } from 'node:fs';
@@ -22,6 +22,8 @@ globalThis.matchMedia ??= () => ({ matches: false, addEventListener() {}, remove
 const { makeFarmLamp, LAMP_FOOTPRINT } = await import('./lamps.js');
 const { makeBarn, makeSilo, makeWindmill, makeTree, FOOTPRINT } = await import('./props.js');
 const { makeFarmhouse, BUILDING_FOOTPRINT } = await import('./buildings.js');
+const { makeLighthouse } = await import('./lighthouse.js');
+const { openGround, placeLighthouse, placeWindmill } = await import('./landmarks.js');
 const { planIsland } = await import('./plan.js');
 const { buildIslandTerrain, levelHeight } = await import('./terrain.js');
 const { makeFieldPaddock } = await import('./paddocks.js');
@@ -174,20 +176,13 @@ export function plannedView(input = demoFields, { seed = SEED, home = HOME } = {
   }
   const pad = plan.slots.filter((sl) => sl.kind === 'building').sort((a, b) => Math.hypot(a.at[0] - at[0], a.at[1] - at[1]) - Math.hypot(b.at[0] - at[0], b.at[1] - at[1]))[0];
   if (pad) { addProp(makeFarmhouse(), pad.at, Math.min(PROP_SCALE, pad.r / BUILDING_FOOTPRINT.farmhouse), 0, 'farmhouse'); pad.filled = 'farmhouse'; }
-  // the windmill on the highest open ground, turned toward the camera's side (+z)
+  // the lighthouse on the highest point and the windmill on other high ground (src/island/landmarks.js)
   const field = terrain.field;
   const [cx, cz] = field.center;
   const radius = field.maxCoast;
-  const millR = FOOTPRINT.windmill * PROP_SCALE;
-  let best = null;
-  for (let x = cx - radius; x <= cx + radius; x += 0.25) {
-    for (let z = cz - radius; z <= cz + radius; z += 0.25) {
-      if (field.isFree(x, z, millR, { strict: true }) === false || inField(x, z, millR + 0.25) || onSlot(x, z, millR + 0.15) || !clearOfProps(x, z, millR)) continue;
-      const score = heightAt(x, z) + (z - cz) * 0.012 - Math.hypot(x - cx, z - cz) * 0.004;
-      if (!best || score > best.score) best = { x, z, score };
-    }
-  }
-  if (best) addProp(makeWindmill(), [best.x, best.z], PROP_SCALE, Math.atan2(cx - best.x, cz + 12 - best.z), 'windmill');
+  const open = openGround({ terrain, plan, obstacles });
+  const lighthouse = placeLighthouse({ terrain, plan, obstacles, open, addProp: (o, at, sc, ry, key) => addProp(o, at, sc, ry, key), make: makeLighthouse, props, scale: PROP_SCALE });
+  placeWindmill({ terrain, plan, obstacles, open, addProp: (o, at, sc, ry, key) => addProp(o, at, sc, ry, key), make: makeWindmill, lighthouse, scale: PROP_SCALE });
   // trees on the tree pads
   const kinds = ['tulip-green', 'round', 'pine', 'blossom', 'tulip-yellow', 'round'];
   plan.slots.filter((sl) => sl.kind === 'tree').forEach((sl, i) => {

@@ -19,7 +19,7 @@ import { CROP_STYLE, cropKeyFor } from '../island/crops.js';
 import { findFieldBySourceId, getField } from './farmData.js';
 import { FLAG_CONFIG, erosionRisk, flagsFor, shownFlags, statusFor } from './flags.js';
 import { mapTexture } from '../vendor/rotation-maxxing/data/ssurgo.ts';
-import { textureBucket } from '../plan/farmInput.js';
+import { textureBucket, usableJar } from '../plan/farmInput.js';
 import { cdlAvailable } from './cdlHistory.js';
 
 /** The 8 CSB years shown in the crop history. */
@@ -63,11 +63,13 @@ export function buildFieldReport(field, { demo = null, weather = null, profile =
   const byYear = new Map();
   for (const c of demo?.cropHistory || []) if (c?.crop != null) byYear.set(Number(c.year), c.crop);
   for (const [y, c] of Object.entries(field.crops || {})) if (c != null) byYear.set(Number(y), c);
+  for (const y of field.cropsCleared || []) byYear.delete(Number(y)); // the farmer said "not sure"
+  const byFarmer = new Set(field.cropsByFarmer || []); // years the farmer set themselves (src/fields/cropEdits.js)
   const history = HISTORY_YEARS.map((year) => {
     const crop = byYear.has(year) ? byYear.get(year) : null;
     const key = crop == null ? null : cropKeyFor(crop);
     const label = crop == null ? null : key === 'other' ? titleCase(crop) : CROP_STYLE[key]?.label || titleCase(crop);
-    return { year, crop, key, label };
+    return { year, crop, key, label, byFarmer: byFarmer.has(year) };
   });
   const known = history.filter((h) => h.crop != null).map(({ year, crop }) => ({ year, crop }));
 
@@ -96,7 +98,10 @@ export function buildFieldReport(field, { demo = null, weather = null, profile =
   const irrigated = !!profile?.irrigatedFieldIds?.includes(field.id);
   const jar = field.jar
     ? { ...field.jar, mapTexture: soil?.texture ?? null,
-        sameAsMap: soil?.texture ? textureBucket(soil.texture) === mapTexture(field.jar.sandPct, field.jar.clayPct) : false }
+        sameAsMap: soil?.texture ? textureBucket(soil.texture) === mapTexture(field.jar.sandPct, field.jar.clayPct) : false,
+        // the planner uses a jar's texture only on top of the field's soil survey (no stand-in soil)
+        planned: !!field.soil?.land && usableJar(field.jar),
+        noSurvey: !field.soil?.land }
     : null;
   return {
     id: field.id,
@@ -114,6 +119,7 @@ export function buildFieldReport(field, { demo = null, weather = null, profile =
     status: known.length || soil || slope || rain ? statusFor(flags, cfg) : 'unknown',
     placeholder: {}, // nothing is a stand-in any more
     cdlYears: field.cdlYears || [],
+    cropsEdited: byFarmer.size > 0, // the farmer changed some years (they can put USDA's back)
     cdlOff: !cdl, // the missing years can't be looked up from this site (no CropScape proxy)
     jar,
     planWeather: planWeather ?? null,

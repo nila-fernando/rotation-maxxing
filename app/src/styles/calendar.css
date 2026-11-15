@@ -1,0 +1,96 @@
+/* The "When to sow" tab and the season strip (src/screens/cropCalendarView.js, src/ui/seasonStrip.js). Track B. */
+:root {
+  --cal-usual: #cdebd3;          /* the usual sowing run (Handbook 628), soft green */
+  --cal-best: #4f9d63;           /* the best window (Iowa State), solid green */
+  --cal-harvest: #e7bf55;        /* the harvest run, gold */
+  --cal-cover: #9fbf8f;          /* a cover crop's seeding run, sage */
+  --cal-insurance: #9c714f;      /* the last day for full insurance, wood brown */
+  --cal-half: #24502f;           /* the recent halfway tick */
+  --cal-frost: #5f8fb8;          /* frost medians */
+  --cal-month-line: #ead8c0;
+  --cal-text: var(--ink-soft, #8b6a52);
+}
+
+/* ---- the season strip ---- */
+.season-strip { display: block; width: 100%; max-width: 300px; height: auto; overflow: visible; }
+.season-strip .ss-month { stroke: var(--cal-month-line); stroke-width: 1; }
+.season-strip .ss-initial { fill: var(--cal-text); font: 700 8px/1 var(--font); }
+.season-strip .ss-note { fill: var(--cal-text); font: 600 7px/1 var(--font); paint-order: stroke; stroke: var(--cream, #fdf4e6); stroke-width: 2px; stroke-linejoin: round; }
+.season-strip .ss-usual { fill: var(--cal-usual); }
+.season-strip .ss-best { fill: var(--cal-best); }
+.season-strip .ss-harvest { fill: var(--cal-harvest); }
+.season-strip .ss-cover { fill: var(--cal-cover); }
+.season-strip .ss-half { stroke: var(--cal-half); stroke-width: 1.6; stroke-linecap: round; }
+.season-strip .ss-insurance { stroke: var(--cal-insurance); stroke-width: 1.4; stroke-dasharray: 2 2; }
+.season-strip .ss-icon--insurance { color: var(--cal-insurance); }
+.season-strip .ss-icon--frost { color: var(--cal-frost); }
+
+/* ---- the tab ---- */
+.cal { display: grid; gap: 14px; font-size: 14px; line-height: 1.45; color: var(--ink); }
+.cal-h { font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+
+.cal-seasons { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--tile); box-shadow: inset 0 0 0 2px var(--tile-line); justify-self: start; }
+.cal-seasons__btn { min-width: 64px; height: 34px; padding: 0 14px; border: 0; border-radius: 999px; background: transparent; font: 600 14.5px/1 var(--font); color: var(--ink-soft); cursor: pointer; }
+.cal-seasons__btn[aria-checked="true"] { background: var(--cream); color: var(--ink); box-shadow: 0 2px 0 var(--tile-line); }
+
+.cal-say { padding: 12px 14px; border: 2px solid #e6cfa9; border-radius: 16px; background: #fff8ea; font-size: 15px; }
+
+.cal-month { margin-top: 10px; font-size: 14px; font-weight: 700; color: var(--ink); }
+.cal-month:first-of-type { margin-top: 0; }
+.cal-month__say { margin: 2px 0 6px; font-size: 13.5px; color: var(--ink-soft); }
+.cal-joblist { list-style: none; display: grid; gap: 6px; }
+.cal-job { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 7px 10px; border-radius: 12px; background: var(--cream); border: 2px solid var(--tile-line); }
+.cal-job__when { font-weight: 700; white-space: nowrap; }
+.cal-job__icon { display: inline-grid; width: 18px; height: 18px; color: var(--green-dark); }
+.cal-job--harvest .cal-job__icon { color: #a77d1f; }
+.cal-job__icon svg { width: 18px; height: 18px; }
+.cal-job .plan-crop { width: 26px; height: 26px; border-radius: 8px; }
+.cal-job .plan-crop svg { width: 18px; height: 18px; }
+.cal-job__what { font-weight: 600; }
+.cal-job__where { color: var(--ink-soft); min-width: 0; }
+.cal-sep { color: var(--tile-line); }
+.cal-src { margin-left: auto; }
+.cal-job > .cal-sep:has(+ .cal-src) { display: none; } /* the source chip sits at the far right: no dangling dot before it */
+
+.cal-crops__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; } /* fit: two crops share the width */
+.cal-crop { display: grid; gap: 8px; padding: 12px; border-radius: 16px; background: var(--cream); border: 2px solid var(--tile-line); min-width: 0; }
+.cal-crop__name { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; }
+.cal-crop__acres { margin-left: auto; font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+.cal-dl { display: grid; gap: 4px; }
+.cal-dl__row { display: grid; grid-template-columns: minmax(0, 9.5em) minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.cal-dl dt { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); }
+.cal-dl dd { display: flex; flex-wrap: nowrap; align-items: baseline; gap: 4px 6px; font-weight: 600; }
+.cal-dl dd .cal-src { flex: none; margin-left: auto; } /* the chip stays on the date's line, at the right */
+.cal-crop__say { font-size: 13px; color: var(--ink-soft); }
+.cal-crop--gap .cal-crop__say { color: var(--ink); }
+
+.cal-frost { display: flex; align-items: flex-start; gap: 8px; font-size: 13.5px; }
+.cal-frost__icon { flex: none; display: inline-grid; width: 20px; height: 20px; color: var(--cal-frost); }
+.cal-frost__icon svg { width: 20px; height: 20px; }
+
+.cal-handoffs__list { list-style: none; display: grid; gap: 6px; }
+.cal-handoff { padding: 8px 10px 8px 12px; border-left: 4px solid var(--cal-best); border-radius: 6px; background: #fbf3e4; font-size: 13.5px; }
+.cal-handoff--tight { border-left-color: var(--cal-harvest); }
+.cal-handoff--clash { border-left-color: var(--rose-dark); }
+
+.cal-gap { display: grid; gap: 8px; }
+.cal-gap__line, .cal-empty { color: var(--ink-soft); }
+
+.cal-sources { font-size: 13px; }
+.cal-sources summary { cursor: pointer; font-weight: 700; color: var(--ink); padding: 4px 0; }
+.cal-sources__list, .cal-sources__gaps { display: grid; gap: 6px; margin: 6px 0 0 18px; }
+.cal-sources__item a, .cal-sources__more a { color: var(--green-ink); font-weight: 600; }
+.cal-sources__caveat { display: block; color: var(--ink-soft); }
+.cal-sources__gaps-title { margin-top: 10px; font-weight: 700; }
+.cal-sources__note, .cal-sources__more { margin-top: 8px; color: var(--ink-soft); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .cal-seasons__btn { transition: background-color .12s ease, color .12s ease; }
+}
+
+@media (max-width: 480px) {
+  .cal-dl__row { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .cal-src { margin-left: 0; }
+  .cal-crops__grid { grid-template-columns: minmax(0, 1fr); }
+  .cal-seasons__btn { min-width: 0; padding: 0 12px; }
+}

@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv } from 'vite';
 import { handle as proxyHandle } from '../proxy/cropscape/worker.js';
+import { aiServerPlugin } from './server/ai/vitePlugin.js';
 
 // CropScape (USDA Cropland Data Layer) sends no CORS header, so the browser asks us and we ask it
 // (src/data/cdlHistory.js). The dev server and `npm run preview` proxy /cropscape themselves.
@@ -52,14 +53,21 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, root, 'VITE_');
   const cdlProxy = env.VITE_CDL_PROXY ?? (mode === 'pages' ? '' : '/cropscape');
   const nassProxyBase = env.VITE_NASS_PROXY ?? (mode === 'pages' ? '' : '/nass');
-  // server side only (loadEnv with the 'NASS_' prefix never reaches import.meta.env)
-  const nassKey = process.env.NASS_API_KEY || loadEnv(mode, root, 'NASS_').NASS_API_KEY || '';
+  // Where the page asks Manami: blank = this site's own /api/ai; off on the GitHub Pages build
+  // (no server there) unless VITE_AI_ENDPOINT is set.
+  const aiEndpoint = env.VITE_AI_ENDPOINT || (mode === 'pages' ? 'off' : '');
+  // Ask Manami's server (server/ai) gets every .env value, read here on the server only; the page
+  // only ever gets the VITE_ values defined below.
+  const serverEnv = loadEnv(mode, root, '');
+  // server side only (never defined into the page)
+  const nassKey = process.env.NASS_API_KEY || serverEnv.NASS_API_KEY || '';
   return {
     define: {
       'import.meta.env.VITE_CDL_PROXY': JSON.stringify(cdlProxy),
       'import.meta.env.VITE_NASS_PROXY': JSON.stringify(nassProxyBase),
+      'import.meta.env.VITE_AI_ENDPOINT': JSON.stringify(aiEndpoint),
     },
-    plugins: [nassProxy(nassKey)],
+    plugins: [aiServerPlugin(serverEnv), nassProxy(nassKey)],
     server: { port: 5173, strictPort: true, proxy: cropscape },
     preview: { proxy: cropscape },
     build: { target: 'es2022', chunkSizeWarningLimit: 1200 },

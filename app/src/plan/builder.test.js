@@ -77,3 +77,30 @@ describe('instant checks', () => {
     assert.equal(summarise([]), '');
   });
 });
+
+describe('the timing lens (opt-in)', () => {
+  const place = { state: 'IA', fips: '19169' };
+  const timed = createChecker(farm, market, { timing: place });
+  const plain = createChecker(farm, market);
+  it('wheat sown right after corn clashes with the last day for full insurance: Careful', () => {
+    // East place (f5) grew corn last season
+    const w = timed.at(emptyPlan(farm), 'f5', 0, 'winter-wheat');
+    const t = w.find((x) => x.lens === 'timing');
+    assert.ok(t, JSON.stringify(w));
+    assert.equal(t.severity, 2);
+    assert.equal(t.reason, 'Corn comes off around mid October, and the last day for full insurance on wheat in most of Iowa is Oct 20. That’s too tight. Wheat fits better after oats.');
+  });
+  it('wheat after beans is tight (a Note); corn after beans has no timing warning', () => {
+    let p = setCell(emptyPlan(farm), 'f5', 0, 'soybeans');
+    const t = timed.at(p, 'f5', 1, 'winter-wheat').find((x) => x.lens === 'timing');
+    assert.equal(t.severity, 1);
+    assert.match(t.reason, /right at the end of wheat’s best window/);
+    p = setCell(p, 'f5', 1, 'corn');
+    assert.ok(!timed.at(p, 'f5', 1, 'corn').some((x) => x.lens === 'timing'));
+  });
+  it('is off unless asked for, so the plans’ own warnings don’t move', () => {
+    assert.ok(!plain.at(emptyPlan(farm), 'f5', 0, 'winter-wheat').some((x) => x.lens === 'timing'));
+    const p = setCell(emptyPlan(farm), 'f5', 0, 'winter-wheat');
+    assert.ok(![...plain.all(p).values()].flat().some((x) => x.lens === 'timing'));
+  });
+});
