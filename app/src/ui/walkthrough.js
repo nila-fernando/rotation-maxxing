@@ -255,6 +255,23 @@ export const STEPS = [
     try: { text: 'Tap it to have a look. I’ll wait here until you close it.', wait: 'accountVisited' },
   },
   {
+    id: 'updates',
+    clear: ['futures'],
+    target: ['#notifBtn'],
+    side: 'bottom',
+    title: 'Farm updates',
+    body: 'The bell tells you about frost, heavy rain, strong wind and heat at your farm this week, how recent seasons’ rain compares with normal, and anything waiting on you.',
+  },
+  {
+    id: 'checkin',
+    optional: true,
+    clear: ['checkup', 'plans', 'futures'],
+    target: ['#hubSeason'],
+    side: 'right',
+    title: 'How did the season go?',
+    body: 'Once a harvest is in, tell me how each field did. I compare it with that year’s real weather and tune your next three seasons to how your fields really do.',
+  },
+  {
     id: 'done',
     clear: ['futures'],
     target: ['#hubHelp'],

@@ -54,7 +54,7 @@ describe('the steps', () => {
       'welcome', 'fields', 'checkup', 'history', 'read', 'land', 'season', 'jar', 'time', 'ask',
       'plan', 'rotation', 'take', 'calendar', 'farm',
       'futPlans', 'futCard', 'futNotes', 'futSave',
-      'account', 'done',
+      'account', 'updates', 'checkin', 'done',
     ]);
   });
 
@@ -135,8 +135,8 @@ describe('the steps', () => {
     assert.deepEqual(STEPS.filter((s) => s.tab).map((s) => [s.id, s.tab]), [['rotation', 'rotation'], ['take', 'rotation'], ['calendar', 'calendar'], ['farm', 'rotation']]);
   });
 
-  it('only leave out AI steps (and the year bar) when they aren’t there: everything later is required', () => {
-    assert.deepEqual(STEPS.filter((s) => s.optional).map((s) => s.id), ['read', 'time', 'ask', 'take']);
+  it('only leave out AI steps, the year bar and the season check-in (there once a harvest is in) when they aren’t there', () => {
+    assert.deepEqual(STEPS.filter((s) => s.optional).map((s) => s.id), ['read', 'time', 'ask', 'take', 'checkin']);
     assert.deepEqual(STEPS.filter((s) => s.ai).map((s) => [s.id, s.ai]), [['read', 'field'], ['ask', 'chat'], ['take', 'plan']]);
     for (const s of STEPS.filter((x) => x.ai)) assert.ok(s.optional, s.id);
   });
