@@ -54,8 +54,11 @@ const titleCase = (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1);
  * @param {object|null} [o.profile] farmProfile ({ irrigatedFieldIds })
  * @param {object|null} [o.planWeather] { water, frost } lines from the latest plans, passed through
  * @param {boolean} [o.cdl]          whether CropScape can be reached from this site (no on GitHub Pages)
+ * @param {object} [o.status]        where each source has got to for this field (src/data/loadStatus.js):
+ *   { crops, soil, slope, rain, greenness: { state: 'loading'|'done'|'none'|'failed', reason } }, so an
+ *   empty section can say "still checking", "no data here" or "couldn't reach"
  */
-export function buildFieldReport(field, { demo = null, weather = null, profile = null, cfg = FLAG_CONFIG, planWeather = null, cdl = cdlAvailable() } = {}) {
+export function buildFieldReport(field, { demo = null, weather = null, profile = null, cfg = FLAG_CONFIG, planWeather = null, cdl = cdlAvailable(), status = {} } = {}) {
   // crop history: the outline's own years first, the demo record's for any it lacks
   const byYear = new Map();
   for (const c of demo?.cropHistory || []) if (c?.crop != null) byYear.set(Number(c.year), c.crop);
@@ -120,12 +123,14 @@ export function buildFieldReport(field, { demo = null, weather = null, profile =
     cdlOff: !cdl, // the missing years can't be looked up from this site (no CropScape proxy)
     jar,
     planWeather: planWeather ?? null,
+    sources: Object.fromEntries(['crops', 'soil', 'slope', 'rain', 'greenness'].map((k) => [k, status?.[k]?.state ?? null])),
   };
 }
 
 /**
- * The report for an app field: its demo record (for real CSB crop years only) and its fetched rain.
+ * The report for an app field: its demo record (for real CSB crop years only), its fetched rain,
+ * and where each source has got to for it (status).
  */
-export function fieldReportFor(field, { profile = null, planWeather = null } = {}) {
-  return buildFieldReport(field, { demo: demoRecordFor(field), weather: field.rain || null, profile, planWeather });
+export function fieldReportFor(field, { profile = null, planWeather = null, status = {} } = {}) {
+  return buildFieldReport(field, { demo: demoRecordFor(field), weather: field.rain || null, profile, planWeather, status });
 }

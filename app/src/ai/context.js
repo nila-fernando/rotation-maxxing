@@ -7,6 +7,7 @@
 
 import { moneyAbout } from '../ui/money.js';
 import { CROP_NAME, PLANS } from '../plan/planNames.js';
+import { marketSummary } from '../data/market.js';
 
 const firstSeason = (d) => (d.getMonth() >= 7 ? d.getFullYear() + 1 : d.getFullYear());
 const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -97,7 +98,9 @@ export function plansSummary(data, today = new Date()) {
       })),
     };
   }).filter(Boolean);
-  return { ready: true, years, weather: data.weather ? { source: data.weather.source ?? null, years: data.weather.years ?? null } : null, plans };
+  // the prices the plans were worked out with, and where they're from (USDA NASS, or a named stand-in)
+  const prices = marketSummary(data.marketData);
+  return { ready: true, years, weather: data.weather ? { source: data.weather.source ?? null, years: data.weather.years ?? null } : null, ...(prices ? { prices } : {}), plans };
 }
 
 const MAX_CHARS = 12_000;

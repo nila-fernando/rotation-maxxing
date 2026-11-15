@@ -15,17 +15,20 @@ import './styles.css';
 import { INTRO, LANDING_URL, SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 import { DEMO_FARM } from './data/demoFarm.js';
 import * as farmData from './data/farmData.js';
-import { fillCropHistory, withCdlYears } from './data/cdlHistory.js';
-import { fillSoil, withSoil } from './data/soilSurvey.js';
-import { fillSlope, withSlope } from './data/terrain.js';
-import { farmRain, withRain } from './data/rain.js';
-import { fillNdvi, withNdvi } from './data/greenness.js';
+import { withCdlYears } from './data/cdlHistory.js';
+import { withSoil } from './data/soilSurvey.js';
+import { withSlope } from './data/terrain.js';
+import { withRain } from './data/rain.js';
+import { withNdvi } from './data/greenness.js';
+import { createMarkets, standInMarket } from './data/market.js';
+import { startFarmLoad } from './data/farmLoad.js';
+import { farmRunners } from './data/farmSources.js';
 import { centroid, featureCollection, feature as turfFeature } from '@turf/turf';
 import { demoRecordFor, fieldReportFor, HISTORY_YEARS, SOURCES } from './data/fieldReport.js';
 import { createPlanner } from './plan/planner.js';
 import { JAR_LINES } from './plan/jarTest.js';
 import { fieldWeatherNote, weatherKey } from './plan/weatherWords.js';
-import { plannerFarm } from './plan/farmInput.js';
+import { farmIrrigation, plannerFarm } from './plan/farmInput.js';
 import { createJars, jarKeepOuts } from './island/jarProps.js';
 import { createSeaLife } from './island/seaLife.js';
 import { createCheckIn, CROPS } from './screens/checkin.js';
@@ -158,8 +161,7 @@ const fieldsStep = createFieldsStep({
         maxZoom: 16, duration: 0.9,
       });
     }
-    startFieldFill(fields);
-    checkIn.start({ fields });
+    checkIn.start({ fields, load: startFieldFill(fields) });
   },
   onChangeLocation: () => {
     fieldsStep.stop();
@@ -167,44 +169,67 @@ const fieldsStep = createFieldsStep({
   },
 });
 
-// Each field's own data, fetched while the check-in runs. Nothing here is a stand-in: what doesn't
-// arrive stays missing and the check-up says so.
-//   crop history  USDA Cropland Data Layer (live USDA outlines have 2023 only; AI and drawn: none)
-//   soil          USDA NRCS SSURGO at a point in each field
-//   slope         elevation tiles (USGS 3DEP in the US)
-//   rain          NASA POWER at the middle of the farm
-//   greenness     NASA HLS via Planetary Computer: slow (one request per field per pass), so the
-//                 reveal doesn't wait for it; the check-up shows it once it's in
-const FIELD_FILL_GRACE_MS = 8000;
-let fieldFill = null;
+// The farm's own data, fetched while the check-in runs, each source within its own time limit and
+// with a live status the checklist and the check-up show (src/data/farmLoad.js, farmSources.js).
+// Nothing here is a stand-in: what doesn't arrive stays missing and the check-up says so.
+//   crops      USDA Cropland Data Layer (live USDA outlines have 2023 only; AI and drawn: none)
+//   soil       USDA NRCS SSURGO at a point in each field
+//   slope      elevation tiles (USGS 3DEP in the US)
+//   rain       NASA POWER at the middle of the farm
+//   greenness  NASA HLS via Planetary Computer (one request per field per pass)
+//   market     the county's crops, yields and prices from USDA NASS (src/data/market.js)
+const MERGE = { crops: withCdlYears, soil: withSoil, slope: withSlope, rain: withRain, greenness: withNdvi };
+let farmLoad = null;
 function startFieldFill(fields) {
+  farmLoad?.cancel(); // a newer pick replaces the last one's late answers
   const known = (f) => Object.fromEntries((demoRecordFor(f)?.cropHistory || []).map((c) => [c.year, c.crop]));
-  const apply = (merge) => (filled) => {
-    if (fieldFill !== job || !filled || !Object.keys(filled).length) return; // a newer pick replaced this one
-    app.fields = merge(app.fields, filled);
-    persist();
-    if (app.island) paintStatuses(); // landed after the reveal: the flags can use it
-    if (fieldPanel.openId) fieldPanel.update(reportFor(fieldPanel.openId));
-  };
-  const warn = (what) => (err) => console.warn(what, err);
-  const middle = fields.length ? centroid(featureCollection(fields.map((f) => turfFeature(f.geometry)))).geometry.coordinates : null;
-  const haveRain = fields.length > 0 && fields.every((f) => f.rain); // (a saved farm: only what's missing is fetched)
-  const job = Promise.all([
-    fillCropHistory(fields, { years: HISTORY_YEARS, known }).then(apply(withCdlYears)).catch(warn('CDL crop history')),
-    fillSoil(fields).then(apply(withSoil)).catch(warn('SSURGO soil')),
-    fillSlope(fields).then(apply(withSlope)).catch(warn('Slope')),
-    middle && !haveRain ? farmRain(middle).then(apply(withRain)).catch(warn('NASA POWER rain')) : null,
-  ]);
-  fieldFill = job;
-  fillNdvi(fields).then(apply(withNdvi)).catch(warn('HLS greenness'));
+  const runners = farmRunners({ markets, known });
+  // a saved farm: only what's missing is fetched (the other sources skip fields that already have theirs)
+  if (fields.length > 0 && fields.every((f) => f.rain)) runners.rain = async ({ settle }) => settle('done');
+  const load = startFarmLoad({
+    fields,
+    point: farmPoint(fields),
+    runners,
+    current: () => app.fields,
+    onData: (key, filled) => {
+      if (farmLoad !== load || !MERGE[key] || !filled) return;
+      app.fields = MERGE[key](app.fields, filled);
+      persist();
+      if (app.island) paintStatuses(); // landed after the reveal: the flags can use it
+    },
+  });
+  // the check-up's "Still checking…", "Couldn't reach…" and the data itself, as each source settles
+  load.tracker.subscribe(() => { if (farmLoad === load && fieldPanel.openId) fieldPanel.update(reportFor(fieldPanel.openId)); });
+  farmLoad = load;
+  return load;
+}
+
+/** The middle of the farm ([lng, lat]), or null with no fields. */
+function farmPoint(fields) {
+  return fields?.length ? centroid(featureCollection(fields.map((f) => turfFeature(f.geometry)))).geometry.coordinates : null;
+}
+
+// the farm's market data: its county (FCC), the crops grown there and their USDA NASS yields and
+// prices, fetched for where the farm really is (src/data/market.js). When NASS or the county lookup
+// can't be reached (or this site has no NASS connection), the bundled late-2025 Iowa price levels
+// stand in, and every gap line says so; when NASS answers that it has nothing here, no plans.
+const markets = createMarkets({ thisYear: () => today().getFullYear() });
+async function farmMarket() {
+  const point = farmPoint(app.fields);
+  const practice = farmIrrigation(app.fields, app.farmProfile) === 'irrigated' ? 'irrigated' : 'non-irrigated';
+  // the load already found NASS out of reach: don't keep the plans waiting on it again
+  const known = farmLoad?.tracker.get('market');
+  if (known?.state === 'failed' && String(farmLoad.point) === String(point)) return standInMarket(known.reason, { practice });
+  const m = await markets.forFarm(point, { practice });
+  return !m.ok && m.failed ? standInMarket(m.reason, { practice }) : m;
 }
 
 // the rotation planner (src/vendor/rotation-maxxing), in a Web Worker
 const planner = createPlanner();
 /** Three plans for the next 3 seasons for the farm as it stands (see src/plan/planner.js). */
-const planSeasons = () => planner.plans({ fields: app.fields, place: app.farm, profile: app.farmProfile, county: farmData.getCounty(), firstSeason: firstSeason(today()) });
+const planSeasons = async () => planner.plans({ fields: app.fields, place: app.farm, profile: app.farmProfile, market: await farmMarket(), firstSeason: firstSeason(today()) });
 /** Scores a plan picked field by field (or built by hand) on the farm as it stands. */
-const evaluateMix = (plan) => planner.evaluate({ fields: app.fields, place: app.farm, profile: app.farmProfile, county: farmData.getCounty(), plan, firstSeason: firstSeason(today()) });
+const evaluateMix = async (plan) => planner.evaluate({ fields: app.fields, place: app.farm, profile: app.farmProfile, market: await farmMarket(), plan, firstSeason: firstSeason(today()) });
 
 /** Manami steps aside (out of sight and the tab order) while the check-up, the plans or the jar test are open. */
 function syncManami() {
@@ -227,7 +252,7 @@ function weatherPlans() {
   if (!m || m.data !== data || m.fields !== app.fields || m.profile !== app.farmProfile || m.place !== app.farm) {
     let ok = false;
     try {
-      const now = plannerFarm({ fields: app.fields, place: app.farm, profile: app.farmProfile, firstSeason: firstSeason(today()) }).farm;
+      const now = plannerFarm({ fields: app.fields, place: app.farm, profile: app.farmProfile, firstSeason: firstSeason(today()), market: data.marketData }).farm;
       ok = weatherKey(now) === weatherKey(data.farm);
     } catch (e) { console.error('weather plans', e); }
     weatherMemo = { data, fields: app.fields, profile: app.farmProfile, place: app.farm, ok };
@@ -248,7 +273,8 @@ function reportFor(id) {
     const irrigated = !!app.farmProfile?.irrigatedFieldIds?.includes(f.id);
     planWeather = data ? fieldWeatherNote(data, f.id, { startYear: firstSeason(today()), irrigated }) : null;
   } catch (e) { console.error('weather note', e); }
-  return fieldReportFor(f, { profile: app.farmProfile, planWeather });
+  const status = farmLoad ? Object.fromEntries(['crops', 'soil', 'slope', 'rain', 'greenness'].map((k) => [k, farmLoad.tracker.fieldState(k, id)])) : {};
+  return fieldReportFor(f, { profile: app.farmProfile, planWeather, status });
 }
 /** Colours every status dot in the hub's list from Manami's flags. */
 function paintStatuses() {
@@ -303,6 +329,8 @@ const fieldPanel = createFieldPanel({
   },
   onAsk: (id, opener) => askManami.open({ focus: { kind: 'field', field_id: id, name: nameOf(id) }, opener }),
   onCrops: (id, edits) => setCrops(id, edits),
+  // "Try again" on a source that couldn't be reached: ask it again for whatever failed
+  onRetry: (id, source) => { farmLoad?.retry(source).then(() => { if (fieldPanel.openId) fieldPanel.update(reportFor(fieldPanel.openId)); }); },
   onJar: (id, mode) => {
     if (mode === 'remove') removeJar(id, { from: 'checkup' });
     else jarPanel.open({ fieldId: id, step: mode === 'open' ? 'result' : 'howto', from: 'checkup' });
@@ -823,8 +851,7 @@ const checkIn = createCheckIn({
     app.farmProfile = profile;
     persist();
     console.log('farmProfile', profile);
-    // the island shows each field's newest crop and how many years we checked: give CDL a moment
-    if (fieldFill) await Promise.race([fieldFill, new Promise((r) => setTimeout(r, FIELD_FILL_GRACE_MS))]);
+    // (the check-in only ends once every data source has settled, so the island has the crop years)
     startReveal();
   },
 });
@@ -971,9 +998,9 @@ function openSaved(snap) {
   app.fields = snap.fields;
   app.farmProfile = snap.profile;
   if (snap.picks) plansPanel.setChoice(snap.picks);
-  startFieldFill(app.fields);
+  const load = startFieldFill(app.fields);
   if (!snap.profile) {
-    checkIn.start({ fields: app.fields });
+    checkIn.start({ fields: app.fields, load });
     return;
   }
   restoredLine = `Welcome back to ${farmName(snap.farm)}! Everything’s just as you left it.`;
@@ -1109,7 +1136,7 @@ function offerSaved(snapOrRow, { signedIn = false } = {}) {
   });
 }
 
-if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, jarPanel, tour, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now(), ambience, weather: farmWeather, whale: () => seaLife?.whale(), seaLife: () => seaLife, local, sync, auth, account }; // for poking at in the console
+if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, markets, farmMarket, jarPanel, tour, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now(), ambience, weather: farmWeather, whale: () => seaLife?.whale(), seaLife: () => seaLife, local, sync, auth, account }; // for poking at in the console
 
 // ---------------------------------------------------------------- the first five seconds
 (async function intro() {
@@ -1125,10 +1152,12 @@ if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsSt
     introDone = true;
     await wait(600);
     app.fields = testFields(Number(params.get(key)) || 5);
-    startFieldFill(app.fields);
+    const load = startFieldFill(app.fields);
     app.farmProfile = { priorities: ['profit'], irrigatedFieldIds: [], excludedCrops: noCropsParam() };
     fieldsStep.hold();
-    startReveal({ instant: key === 'hub' });
+    // ?hub goes straight in (the data fills in behind); ?reveal shows the checklist until it's all in
+    if (key === 'hub') startReveal({ instant: true });
+    else if (await checkIn.wait({ load })) startReveal();
     return;
   }
   if (params.has('demo')) { // dev shortcut: ?demo flies to the demo farm, ?demo=land lands at once

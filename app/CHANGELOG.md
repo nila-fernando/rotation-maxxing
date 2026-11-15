@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- **Plans use your farm's own market data.** The crops to choose from are the ones grown in your
+  county (USDA Census of Agriculture and NASS county surveys), yields are NASS county, state or US
+  averages (dryland or irrigated where NASS splits them), and prices are your state's latest NASS
+  marketing-year prices. "Good to know" lists every source, and says per-acre costs are US
+  figures, not local. Before, every farm was planned with the demo farm's Iowa prices and crop list.
+- **Prices you can trace.** "Money detail" lists each crop's price the plans used and where it's
+  from, and Ask Manami can tell you too. If USDA NASS can't be reached (or the site isn't connected
+  to it yet), the plans use bundled late-2025 Iowa price levels instead and say so in every line:
+  "Good to know", "Money detail" and Ask Manami. If NASS has nothing for your county, there are no
+  plans and Manami says why.
+- **The loading checklist is real.** Each data source (crop history, soil, slope, rain, greenness,
+  local crops and prices) shows where it has really got to: checking, done, no data here, or
+  couldn't reach, each with its own time limit. A field's check-up says "Still checking…" or "I
+  couldn't reach…" with Try again, instead of an empty section.
+- **NASS through the proxy.** The Cloudflare Worker in `proxy/cropscape/` now also serves
+  `/nass/` with the Quick Stats key as a Worker secret; set `VITE_NASS_PROXY` to turn it on for the
+  live site. Locally, `NASS_API_KEY` in the environment or `app/.env.local`.
+
 ## v0.11.1 (2026-11-15)
 
 ### What's new

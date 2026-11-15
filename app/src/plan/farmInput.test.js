@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
-import { getCounty, getFarm, getFields } from '../data/farmData.js';
+import { getFarm, getFields } from '../data/farmData.js';
 import { generatePlans, checkPlacement, evaluatePlan, planFromCrops } from '../vendor/rotation-maxxing/algorithm/index.ts';
 import { scenariosFromDailyWeather } from '../vendor/rotation-maxxing/algorithm/climate.ts';
 import { historyFor, historyUpTo, landFor, outerRing, plannerFarm, plannerMarket, plannerPriorities, stateOf, textureBucket, usableJar } from './farmInput.js';
@@ -9,6 +9,7 @@ import { plansKey } from './planner.js';
 import { analysePhoto, toRecord, verdict } from './jarTest.js';
 import { paintSampleJar } from './jarSample.js';
 import { fieldData } from '../../test/fieldData.mjs';
+import { demoMarket } from '../../test/marketFixture.mjs';
 
 // the app's demo fields, as the field step hands them on
 const appFields = () => getFields().map((f) => ({
@@ -20,7 +21,7 @@ const ames = () => JSON.parse(readFileSync(new URL('../vendor/rotation-maxxing/f
 
 describe('the planner farm from the app', () => {
   it('maps every demo field: outline, acres, soil, slope, last 3 years oldest first', () => {
-    const { farm, gaps } = plannerFarm({ fields: appFields(), place: DEMO_PLACE, profile: { priorities: ['profit'], irrigatedFieldIds: [], excludedCrops: [] } });
+    const { farm, gaps } = plannerFarm({ market: demoMarket, fields: appFields(), place: DEMO_PLACE, profile: { priorities: ['profit'], irrigatedFieldIds: [], excludedCrops: [] } });
     assert.equal(farm.state, 'IA');
     assert.equal(farm.paddocks.length, 5);
     assert.equal(farm.constraints.irrigation, 'dryland');
@@ -38,11 +39,11 @@ describe('the planner farm from the app', () => {
       assert.ok(p.polygon.lngLat.length >= 3);
       assert.ok(p.availableCrops.includes('corn') && p.availableCrops.includes('fallow'));
     }
-    assert.ok(gaps.some((g) => /Corn Belt crops/.test(g)));
+    assert.ok(gaps.some((g) => /^Crops to choose from/.test(g))); // the market's own lines come first
   });
   it('drops crops the farmer said they can\'t grow, and marks an all-irrigated farm', () => {
     const fields = appFields();
-    const { farm } = plannerFarm({ fields, place: DEMO_PLACE, profile: { excludedCrops: ['wheat', 'alfalfa'], irrigatedFieldIds: fields.map((f) => f.id) } });
+    const { farm } = plannerFarm({ market: demoMarket, fields, place: DEMO_PLACE, profile: { excludedCrops: ['wheat', 'alfalfa'], irrigatedFieldIds: fields.map((f) => f.id) } });
     assert.ok(!farm.paddocks[0].availableCrops.includes('winter-wheat'));
     assert.ok(!farm.paddocks[0].availableCrops.includes('alfalfa'));
     assert.equal(farm.constraints.irrigation, 'irrigated');
@@ -50,14 +51,14 @@ describe('the planner farm from the app', () => {
   it('a field with no soil data gets no stand-in: it is left out of the plans, and says so', () => {
     const field = { id: 'field-1', name: 'Back 80', acres: 80, crops: { 2023: 'Corn' }, geometry: { type: 'Polygon', coordinates: [[[-97, 40], [-96.99, 40], [-96.99, 40.01], [-97, 40.01], [-97, 40]]] } };
     const place = { lat: 40, lon: -97, label: 'Seward County', detail: 'Nebraska, United States' };
-    assert.throws(() => plannerFarm({ fields: [field], place }), /No soil data is available for this field/);
-    const { farm, gaps } = plannerFarm({ fields: [...appFields(), field], place: DEMO_PLACE });
+    assert.throws(() => plannerFarm({ market: demoMarket, fields: [field], place }), /No soil data is available for this field/);
+    const { farm, gaps } = plannerFarm({ market: demoMarket, fields: [...appFields(), field], place: DEMO_PLACE });
     assert.equal(farm.paddocks.length, 5);
     assert.ok(!farm.paddocks.some((p) => p.id === 'field-1'));
     assert.ok(gaps.includes('Back 80: no soil data is available (the soil survey has nothing at this spot), so this field is left out of the plans.'), gaps.join(' | '));
     // a survey but no slope from the elevation tiles or the survey: also left out
     const noSlope = { ...field, soil: { ...appFields()[0].soil, gaps: ['SSURGO reports no slope for this map unit; enter it manually.'] } };
-    const r = plannerFarm({ fields: [...appFields(), noSlope], place: DEMO_PLACE });
+    const r = plannerFarm({ market: demoMarket, fields: [...appFields(), noSlope], place: DEMO_PLACE });
     assert.ok(r.gaps.some((g) => /Back 80: no slope data is available/.test(g)));
   });
   it('helpers', () => {
@@ -72,7 +73,7 @@ describe('the planner farm from the app', () => {
     assert.deepEqual(historyFor({ crops: { 2022: 'Oats', 2023: 'Corn', 2024: 'Soybeans', 2025: 'Corn' } }, null), ['corn', 'soybeans', 'corn']);
     assert.deepEqual(plannerPriorities({ priorities: ['soil-health', 'profit'] }), { profit: 70, soilHealth: 85, water: 40, risk: 40 });
     assert.deepEqual(plannerPriorities(null), { profit: 85, soilHealth: 40, water: 40, risk: 40 });
-    const m = plannerMarket(getCounty());
+    const m = plannerMarket(demoMarket);
     assert.equal(m.corn.localPrice, 4.2);
     assert.equal(m['winter-wheat'].localPrice, 5.3);
     assert.equal(m.hay, undefined);
@@ -83,14 +84,14 @@ describe('history lined up with the first planned season', () => {
   it("fills the seasons the record doesn't reach yet with the rotation continued, and says so", () => {
     // the demo record ends in 2025; planning from 2027 means 2026 is filled in
     const fields = appFields();
-    const { farm, gaps } = plannerFarm({ fields, place: DEMO_PLACE, firstSeason: 2027 });
+    const { farm, gaps } = plannerFarm({ market: demoMarket, fields, place: DEMO_PLACE, firstSeason: 2027 });
     const f4 = farm.paddocks.find((p) => p.id === 'f4'); // corn 2023, soybeans 2024, corn 2025
     assert.deepEqual(f4.history, ['soybeans', 'corn', 'soybeans']); // 2024, 2025, then 2026 continued
     const f5 = farm.paddocks.find((p) => p.id === 'f5'); // corn every year
     assert.deepEqual(f5.history, ['corn', 'corn', 'corn']);
     assert.ok(gaps.some((g) => /South 40: 2026's crop isn't on record yet/.test(g)), gaps.join(' | '));
     // planning from 2026 needs nothing filled in
-    const same = plannerFarm({ fields, place: DEMO_PLACE, firstSeason: 2026 });
+    const same = plannerFarm({ market: demoMarket, fields, place: DEMO_PLACE, firstSeason: 2026 });
     assert.deepEqual(same.farm.paddocks.find((p) => p.id === 'f4').history, ['corn', 'soybeans', 'corn']);
     assert.ok(!same.gaps.some((g) => /isn't on record yet/.test(g)));
   });
@@ -101,12 +102,12 @@ describe('history lined up with the first planned season', () => {
 });
 
 describe('the planner on the demo farm (real NASA POWER weather for Ames, offline)', () => {
-  const { farm } = plannerFarm({ fields: appFields(), place: DEMO_PLACE, profile: { priorities: ['profit', 'soil-health'] } });
+  const { farm } = plannerFarm({ market: demoMarket, fields: appFields(), place: DEMO_PLACE, profile: { priorities: ['profit', 'soil-health'] } });
   const t0 = performance.now();
   const climate = scenariosFromDailyWeather(farm, ames());
   const poolMs = performance.now() - t0;
   const t1 = performance.now();
-  const result = generatePlans(farm, plannerPriorities({ priorities: ['profit', 'soil-health'] }), plannerMarket(getCounty()), climate.scenarios, { seed: 7 });
+  const result = generatePlans(farm, plannerPriorities({ priorities: ['profit', 'soil-health'] }), plannerMarket(demoMarket), climate.scenarios, { seed: 7 });
   const planMs = performance.now() - t1;
 
   it('builds a weather pool from the bundled 2000-2024 record', () => {
@@ -130,9 +131,9 @@ describe('the planner on the demo farm (real NASA POWER weather for Ames, offlin
   });
   it('drag-and-drop checks and a farmer-built plan work on the same farm', () => {
     const plan = planFromCrops(Object.fromEntries(farm.paddocks.map((p) => [p.id, ['corn', 'corn', 'corn']])));
-    const w = checkPlacement(farm, plan, 'f5', 0, 'corn', { market: plannerMarket(getCounty()) });
+    const w = checkPlacement(farm, plan, 'f5', 0, 'corn', { market: plannerMarket(demoMarket) });
     assert.ok(w.some((x) => x.lens === 'repeat' || x.lens === 'pest'), JSON.stringify(w));
-    const mine = evaluatePlan(farm, plan, plannerPriorities(null), plannerMarket(getCounty()), climate.scenarios, { seed: 7 });
+    const mine = evaluatePlan(farm, plan, plannerPriorities(null), plannerMarket(demoMarket), climate.scenarios, { seed: 7 });
     assert.equal(mine.kind, 'custom');
   });
   it(`is quick enough to run off the main thread (pool ${Math.round(poolMs)} ms, plans ${Math.round(planMs)} ms)`, () => {
@@ -154,8 +155,8 @@ describe('a jar test sets the field\u2019s soil texture, and nothing else', () =
 
   it('West 140: silt by the soil survey, loam by the sample jar; drainage, water, organic matter, pH and slope unchanged', () => {
     const fields = appFields();
-    const plain = plannerFarm({ fields, place: DEMO_PLACE });
-    const jarred = plannerFarm({ fields: withJar(fields, 'f2', sampleRecord()), place: DEMO_PLACE });
+    const plain = plannerFarm({ market: demoMarket, fields, place: DEMO_PLACE });
+    const jarred = plannerFarm({ market: demoMarket, fields: withJar(fields, 'f2', sampleRecord()), place: DEMO_PLACE });
     assert.equal(paddock(plain.farm, 'f2').land.texture, 'silt');
     assert.equal(paddock(jarred.farm, 'f2').land.texture, 'loam');
     for (const k of KEPT) assert.deepEqual(paddock(jarred.farm, 'f2').land[k], paddock(plain.farm, 'f2').land[k], k);
@@ -186,16 +187,16 @@ describe('a jar test sets the field\u2019s soil texture, and nothing else', () =
       const l = landFor(west, jar);
       assert.equal(l.land.texture, 'silt', name);
       assert.equal(l.jar, undefined, name);
-      const { farm, gaps } = plannerFarm({ fields: withJar(appFields(), 'f2', jar), place: DEMO_PLACE });
+      const { farm, gaps } = plannerFarm({ market: demoMarket, fields: withJar(appFields(), 'f2', jar), place: DEMO_PLACE });
       assert.equal(paddock(farm, 'f2').land.texture, 'silt', name);
       assert.ok(!gaps.some((g) => /jar test/.test(g)), name);
     }
   });
   it('says so in the gaps, word for word', () => {
-    const { gaps } = plannerFarm({ fields: withJar(appFields(), 'f2', sampleRecord()), place: DEMO_PLACE });
+    const { gaps } = plannerFarm({ market: demoMarket, fields: withJar(appFields(), 'f2', sampleRecord()), place: DEMO_PLACE });
     assert.ok(gaps.includes('West 140: soil texture from your jar test (clay loam, a sample jar) instead of the soil survey (silty clay loam).'), gaps.join(' | '));
     const adjusted = { ...sampleRecord(), adjusted: true, confidence: 'adjusted', sample: false };
-    const g2 = plannerFarm({ fields: withJar(appFields(), 'f2', adjusted), place: DEMO_PLACE }).gaps;
+    const g2 = plannerFarm({ market: demoMarket, fields: withJar(appFields(), 'f2', adjusted), place: DEMO_PLACE }).gaps;
     assert.ok(g2.includes('West 140: soil texture from your jar test (clay loam, adjusted by you) instead of the soil survey (silty clay loam).'), g2.join(' | '));
   });
   it('a field with no soil survey: a jar test alone isn\u2019t enough to plan with (no drainage or water holding)', () => {
@@ -206,22 +207,22 @@ describe('a jar test sets the field\u2019s soil texture, and nothing else', () =
       warnings: [],
     };
     const field = { id: 'field-9', name: 'Field 9', acres: 40, crops: { 2025: 'Corn' }, geometry: { type: 'Polygon', coordinates: [[[-97, 40], [-96.99, 40], [-96.99, 40.01], [-97, 40.01], [-97, 40]]] } };
-    const { farm, gaps } = plannerFarm({ fields: [...appFields(), { ...field, jar: loam }], place: DEMO_PLACE });
+    const { farm, gaps } = plannerFarm({ market: demoMarket, fields: [...appFields(), { ...field, jar: loam }], place: DEMO_PLACE });
     assert.ok(!farm.paddocks.some((p) => p.id === 'field-9'));
     assert.ok(gaps.some((g) => /^Field 9: no soil data is available/.test(g)), gaps.join(' | '));
     assert.equal(landFor({ ...field, jar: loam }).land, null);
   });
   it('the plans are worked out again after a jar test, even where the texture bucket stays the same', () => {
-    const P = plannerPriorities(null), M = plannerMarket(getCounty());
+    const P = plannerPriorities(null), M = plannerMarket(demoMarket);
     for (const id of ['f2', 'f1']) {
-      const plain = plannerFarm({ fields: appFields(), place: DEMO_PLACE });
-      const jarred = plannerFarm({ fields: withJar(appFields(), id, sampleRecord(id)), place: DEMO_PLACE });
+      const plain = plannerFarm({ market: demoMarket, fields: appFields(), place: DEMO_PLACE });
+      const jarred = plannerFarm({ market: demoMarket, fields: withJar(appFields(), id, sampleRecord(id)), place: DEMO_PLACE });
       assert.notEqual(plansKey(jarred.farm, jarred.gaps, P, M, 1), plansKey(plain.farm, plain.gaps, P, M, 1), id);
       assert.notEqual(JSON.stringify([jarred.farm, jarred.gaps, P, M, 1]), JSON.stringify([plain.farm, plain.gaps, P, M, 1]), id);
     }
     // Home place (f1): clay loam on the map and by the jar, the same bucket, so only the gaps differ
-    const plain = plannerFarm({ fields: appFields(), place: DEMO_PLACE });
-    const jarred = plannerFarm({ fields: withJar(appFields(), 'f1', sampleRecord('f1')), place: DEMO_PLACE });
+    const plain = plannerFarm({ market: demoMarket, fields: appFields(), place: DEMO_PLACE });
+    const jarred = plannerFarm({ market: demoMarket, fields: withJar(appFields(), 'f1', sampleRecord('f1')), place: DEMO_PLACE });
     assert.equal(textureBucket('clay loam'), 'loam');
     assert.deepEqual(jarred.farm, plain.farm);
     assert.notDeepEqual(jarred.gaps, plain.gaps);
@@ -238,15 +239,15 @@ describe('a jar test sets the field\u2019s soil texture, and nothing else', () =
 describe('the farm’s county (FIPS) for the crop calendar', () => {
   it('the demo farm carries Story County, 19169, onto the planner farm', async () => {
     assert.equal(getFarm().fips, '19169');
-    const { farm } = plannerFarm({ fields: appFields(), place: DEMO_PLACE });
+    const { farm } = plannerFarm({ market: demoMarket, fields: appFields(), place: DEMO_PLACE });
     assert.equal(farm.fips, '19169');
     assert.equal(farm.state, 'IA');
   });
   it('a place with its own FIPS keeps it; a place without one gets none', () => {
     const field = { id: 'field-1', name: 'Back 80', acres: 80, crops: { 2023: 'Corn' }, soil: appFields()[0].soil, geometry: { type: 'Polygon', coordinates: [[[-97, 40], [-96.99, 40], [-96.99, 40.01], [-97, 40.01], [-97, 40]]] } };
-    assert.equal(plannerFarm({ fields: [field], place: { lat: 40, lon: -97, detail: 'Nebraska, United States', fips: '31159' } }).farm.fips, '31159');
-    assert.equal('fips' in plannerFarm({ fields: [field], place: { lat: 40, lon: -97, detail: 'Nebraska, United States' } }).farm, false);
-    assert.equal('fips' in plannerFarm({ fields: [field], place: { lat: 40, lon: -97, fips: 'Story' } }).farm, false);
+    assert.equal(plannerFarm({ market: demoMarket, fields: [field], place: { lat: 40, lon: -97, detail: 'Nebraska, United States', fips: '31159' } }).farm.fips, '31159');
+    assert.equal('fips' in plannerFarm({ market: demoMarket, fields: [field], place: { lat: 40, lon: -97, detail: 'Nebraska, United States' } }).farm, false);
+    assert.equal('fips' in plannerFarm({ market: demoMarket, fields: [field], place: { lat: 40, lon: -97, fips: 'Story' } }).farm, false);
   });
   it('the planner ignores it: the demo plans’ pinned totals are unchanged', async () => {
     const { demoData, START_YEAR } = await import('../../test/futuresDemo.mjs');

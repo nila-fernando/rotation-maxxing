@@ -23,6 +23,7 @@
 import { APP_CROP } from '../plan/farmInput.js';
 import { createPlanBuilder } from './planBuilder.js';
 import { money } from '../ui/money.js';
+import { marketPriceLine } from '../data/market.js';
 import { PLANS } from '../plan/planNames.js';
 import { asset } from '../ui/asset.js';
 // the calendar is already in the main bundle (the builder's palette reads its sowing windows), so it's not lazy
@@ -162,7 +163,7 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
     // if the farm changed since last time, the old plans stay on show (greyed) while new ones are worked out
     const pending = planSeasons();
     let settled = false;
-    pending.finally(() => { settled = true; }).catch(() => {});
+    pending.finally(() => { settled = true; }).catch(() => {}); // (the error is shown below)
     await Promise.resolve();
     if (data && !settled) setBusy(true);
     try {
@@ -175,7 +176,10 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
     } catch (e) {
       if (id !== run) return;
       setBusy(false);
-      body.innerHTML = `<p class="plans__error">I couldn’t work out the plans this time (${esc(e.message)}). Try again in a moment.</p>`;
+      body.innerHTML = e?.code === 'no-market'
+        // no prices or yields for this farm: said plainly, with why (nothing is planned on stand-ins)
+        ? `<p class="plans__error">${esc(e.message)} Without them I can’t work out what each crop would earn here, so there are no plans to show.</p>`
+        : `<p class="plans__error">I couldn’t work out the plans this time (${esc(e.message)}). Try again in a moment.</p>`;
     }
   }
 
@@ -422,7 +426,7 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
         + `<td data-label="Cash margin, 3 seasons">${cell(cash.value, money)}</td><td data-label="In a bad year">${cell(bad.value, money)}</td><td data-label="Soil score in ${cmp.years[2]}">${cell(soil.value, (v) => `${v}/100`)}</td>`
         + `<td data-label="Beats keeping going">${kind === 'current' ? '–' : cell(beats.value, (v) => `${v}% of years`)}</td></tr>`;
     }).join('');
-    const lines = [fv.priceLine(cmp.price), fv.vsProfitLine(cmp), fv.nCarriedLine(cmp, selected, mixScore, choice)].filter(Boolean);
+    const lines = [marketPriceLine(data.marketData), fv.priceLine(cmp.price), fv.vsProfitLine(cmp), fv.nCarriedLine(cmp, selected, mixScore, choice)].filter(Boolean);
     return `<div class="rot-money__wrap"><table class="rot-money__table"><caption class="sr-only">Money for each plan, over 3 seasons</caption>
       <thead><tr><th scope="col">Plan</th><th scope="col">Cash margin, 3 seasons</th><th scope="col">In a bad year (1 in 10)</th><th scope="col">Soil score in ${cmp.years[2]}</th><th scope="col">Beats keeping going</th></tr></thead>
       <tbody>${rows}</tbody></table></div>${lines.map((l) => `<p class="rot-money__note">${esc(l)}</p>`).join('')}`;

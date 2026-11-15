@@ -1,12 +1,14 @@
 // Turns what the app knows about a farm into the rotation planner's inputs
 // (src/vendor/rotation-maxxing, see its docs/API.md):
 //
-//   plannerFarm({ fields, place, profile })   -> { farm, gaps }   Farm: paddocks with land, history, crops
-//   plannerPriorities(profile)                -> Priorities       { profit, soilHealth, water, risk } 0-100
-//   plannerMarket(county)                     -> Market           county prices per crop
+//   plannerFarm({ fields, place, profile, market }) -> { farm, gaps }   Farm: paddocks with land, history, crops
+//   plannerPriorities(profile)                      -> Priorities       { profit, soilHealth, water, risk } 0-100
+//   plannerMarket(market)                           -> Market           NASS prices per crop
 //
-// Everything here is plain data (no three.js, no DOM), so it can be sent to the planner's Web Worker.
-// Where the app has no value, a stand-in is used and said so in `gaps` (shown with the plans).
+// `market` is the farm's own market data (src/data/market.js: crops grown in its county, NASS yields
+// and prices). Everything here is plain data (no three.js, no DOM), so it can be sent to the
+// planner's Web Worker. Where the app has no value, nothing stands in: the field or crop is left
+// out and `gaps` (shown with the plans) says so.
 import { mapTexture } from '../vendor/rotation-maxxing/data/ssurgo.ts';
 import { continueHistory } from '../vendor/rotation-maxxing/algorithm/plans.ts';
 import { cropKeyFor } from '../island/crops.js';
@@ -42,12 +44,24 @@ export const APP_CROP = {
   canola: 'canola', 'dry-beans': 'drybeans',
 };
 
-/**
- * The crops a Corn Belt farm can usually get seed for and sell (the roadmap's "only crops grown in
- * the county"). A stand-in until there's per-county data: Story County, Iowa grows corn, soybeans,
- * oats, wheat and alfalfa; cereal rye is the planner's winter cover crop.
- */
-export const COUNTY_CROPS = ['corn', 'soybeans', 'oats', 'winter-wheat', 'alfalfa', 'cereal-rye', 'fallow'];
+/** The crops every farm can choose besides its cash crops: a winter cover crop and resting a field. */
+export const ALWAYS_CROPS = ['cereal-rye', 'fallow'];
+
+/** Thrown when there's no market data for the farm: the plans panel says so plainly. */
+export class NoMarketData extends Error {
+  constructor(reason, { retryable = false } = {}) {
+    super(`No price or yield data is available for this farm: ${reason}.`);
+    this.code = 'no-market';
+    this.reason = reason;
+    this.retryable = retryable; // it couldn't be reached: asking again may work
+  }
+}
+
+/** 'irrigated' when every field is, else 'dryland' (the planner plans one water regime per farm). */
+export function farmIrrigation(fields, profile) {
+  const irrigated = new Set(profile?.irrigatedFieldIds || []);
+  return fields.length > 0 && fields.every((f) => irrigated.has(f.id)) ? 'irrigated' : 'dryland';
+}
 
 /** The check-in's crop answers (keys in src/screens/checkin.js) -> planner crop ids. */
 const EXCLUDE = { corn: ['corn'], soybeans: ['soybeans'], wheat: ['winter-wheat', 'spring-wheat'], oats: ['oats'], alfalfa: ['alfalfa'], sorghum: ['sorghum'] };
@@ -178,11 +192,11 @@ const STATE_NAMES = { IA: 'Iowa', IL: 'Illinois', IN: 'Indiana', NE: 'Nebraska',
  * @param {object} [o.place]    the farm's search place ({ lat, lon, label, detail, demo })
  * @param {object} [o.profile]  farmProfile ({ irrigatedFieldIds, excludedCrops })
  */
-export function plannerFarm({ fields, place = null, profile = null, firstSeason = null }) {
-  const gaps = [];
+export function plannerFarm({ fields, place = null, profile = null, firstSeason = null, market = null }) {
+  if (!market?.ok) throw new NoMarketData(market?.reason || 'the farm’s market data hasn’t been looked up', { retryable: !!market?.failed });
+  const gaps = [...(market.gaps || [])];
   const excluded = new Set((profile?.excludedCrops || []).flatMap((k) => EXCLUDE[k] || []));
-  const available = COUNTY_CROPS.filter((c) => !excluded.has(c));
-  gaps.push('Crops to choose from: the usual Corn Belt crops (corn, soybeans, oats, wheat, alfalfa) until county seed data is in.');
+  const available = [...market.crops, ...ALWAYS_CROPS].filter((c, i, all) => !excluded.has(c) && all.indexOf(c) === i);
   const skipped = [];
   const paddocks = fields.map((f) => {
     const demo = demoRecordFor(f);
@@ -225,7 +239,7 @@ export function plannerFarm({ fields, place = null, profile = null, firstSeason 
     throw new Error(`No soil data is available for ${fields.length === 1 ? 'this field' : 'any of these fields'} yet, so there's nothing to plan`);
   }
   const irrigated = new Set(profile?.irrigatedFieldIds || []);
-  const allIrrigated = fields.length > 0 && fields.every((f) => irrigated.has(f.id));
+  const allIrrigated = farmIrrigation(fields, profile) === 'irrigated';
   if (irrigated.size && !allIrrigated) gaps.push('Some fields are irrigated: the planner treats the whole farm as dryland for now.');
   const lats = paddocks.flatMap((p) => p.polygon.lngLat.map((c) => c[1]));
   const farm = {
@@ -233,8 +247,9 @@ export function plannerFarm({ fields, place = null, profile = null, firstSeason 
     paddocks,
     constraints: { irrigation: allIrrigated ? 'irrigated' : 'dryland' },
   };
-  const state = place?.demo ? 'IA' : stateOf(place);
+  const state = market.county?.state || (place?.demo ? 'IA' : stateOf(place));
   if (state) farm.state = state;
+  if (market.baseYields && Object.keys(market.baseYields).length) farm.baseYields = market.baseYields;
   // the county (5-digit FIPS) for the crop calendar's county rows (insurance dates, frost); the demo
   // farm's comes from its data file. The planner itself doesn't read it.
   const fips = place?.fips ?? (place?.demo ? getFarm()?.fips : null);
@@ -254,15 +269,16 @@ export function plannerPriorities(profile) {
 }
 
 /**
- * County prices -> the planner's Market. One price everywhere (no separate local buyer or freight)
- * and no demand cap, since the demo data has county cash prices only.
+ * The farm's NASS prices (src/data/market.js) -> the planner's Market. One price everywhere (no
+ * separate local buyer or freight) and no demand cap: NASS has state and US prices received only.
+ * Only crops with a fetched price are in it.
  */
-export function plannerMarket(county) {
-  const market = {};
-  for (const [key, price] of Object.entries(county?.prices || {})) {
-    const id = PLANNER_CROP[key];
-    if (!id || !Number.isFinite(price)) continue;
-    market[id] = { localDemand: 1e9, localPrice: price, distantPrice: price, freightPerUnit: 0 };
+export function plannerMarket(market) {
+  const out = {};
+  for (const [id, p] of Object.entries(market?.prices || {})) {
+    const price = typeof p === 'number' ? p : p?.price;
+    if (!Number.isFinite(price) || price <= 0) continue;
+    out[id] = { localDemand: 1e9, localPrice: price, distantPrice: price, freightPerUnit: 0 };
   }
-  return market;
+  return out;
 }

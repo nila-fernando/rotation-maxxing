@@ -44,10 +44,34 @@ const cap = (s) => (s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) :
 const inches = (mm) => (mm / MM_PER_IN).toFixed(1);
 const CONFIDENCE = { high: 'High confidence', medium: 'Medium confidence', low: 'Low confidence', adjusted: 'Adjusted by you' };
 
-/** The line under a crop history with years missing; on a site with no CropScape proxy, it says why. */
-export function historyGap(knownYears, cdlOff = false) {
+/**
+ * The line under a crop history with years missing, and why: on a site with no CropScape proxy;
+ * still checking; CropScape couldn't be reached; or it has nothing mapped for those years.
+ * state: the crop history's load state for the field (src/data/loadStatus.js), when known.
+ */
+export function historyGap(knownYears, cdlOff = false, state = null) {
   const have = knownYears ? `${knownYears} of 8 years on record.` : 'No crop records for this field yet.';
-  return cdlOff ? `${have} The rest come from CropScape, and I can’t reach it from this site yet.` : have;
+  if (cdlOff) return `${have} The rest come from CropScape, and I can’t reach it from this site yet.`;
+  if (state === 'loading') return `${have} I’m still checking CropScape for the rest.`;
+  if (state === 'failed') return `${have} I couldn’t reach CropScape for the rest.`;
+  if (state === 'done' || state === 'none') return `${have} CropScape has no crop mapped here for the other years.`;
+  return have;
+}
+
+/** Who each section's data comes from, for "Still checking …" and "I couldn't reach …". */
+const SOURCE_NAME = { soil: 'USDA’s soil survey', slope: 'the elevation tiles', rain: 'NASA POWER', greenness: 'NASA’s satellite imagery' };
+
+/**
+ * What an empty section says, from where its source has got to: still checking, couldn't reach it
+ * (with Try again), or the source's own "no data here" line.
+ */
+export function emptyLine(source, state, noneText) {
+  if (state === 'loading') return `<p class="ck-empty ck-empty--wait"><span class="ck-spin" aria-hidden="true"></span>Still checking ${esc(SOURCE_NAME[source])}…</p>`;
+  if (state === 'failed') {
+    return `<p class="ck-empty ck-empty--failed">I couldn’t reach ${esc(SOURCE_NAME[source])} just now.</p>
+      <button class="btn btn--quiet btn--small ck-retry" type="button" data-retry="${source}">Try again</button>`;
+  }
+  return `<p class="ck-empty">${noneText}</p>`;
 }
 
 /**
@@ -170,6 +194,7 @@ export function ndviCurve(ndvi) {
  * @param {(id: string, name: string) => string} o.onRename   saves; returns the name actually kept
  * @param {(id: string, on: boolean) => void} o.onIrrigated
  * @param {(id: string, mode: 'new'|'open'|'remove') => void} [o.onJar]   the jar strip's buttons
+ * @param {(id: string, source: string) => void} [o.onRetry]   "Try again" on a source that couldn't be reached
  * @param {() => void} o.onClose
  */
 // a speech bubble, for "Ask about this field"
@@ -228,7 +253,7 @@ export function readHtml(st) {
     <p class="ck-read__note">From Claude, an AI, reading this field’s data. It can be wrong.</p></div>`;
 }
 
-export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onCrops, onClose, fieldRead = null }) {
+export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onCrops, onRetry, onClose, fieldRead = null }) {
   const root = document.getElementById('checkup');
   const head = document.getElementById('checkupHead');
   const body = document.getElementById('checkupBody');
@@ -274,6 +299,11 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onCrops,
   body.addEventListener('click', (e) => {
     const b = e.target.closest?.('[data-jar]');
     if (b && report) onJar?.(report.id, b.dataset.jar);
+    const r = e.target.closest?.('[data-retry]');
+    if (r && report) {
+      r.disabled = true;
+      onRetry?.(report.id, r.dataset.retry);
+    }
     const h = e.target.closest?.('[data-hist]');
     if (h && report) histAction(h.dataset.hist);
     if (e.target.closest?.('[data-read]') && report && fieldRead) askRead();
@@ -348,6 +378,7 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onCrops,
 
   function render(r) {
     const ph = r.placeholder || {};
+    const src = r.sources || {};
     // each year: its crop icon, with the crop's name in a tooltip on hover, focus or tap
     const history = r.history.map((h) => (h.crop == null
       ? `<li class="hist hist--none" tabindex="0" data-year="${h.year}" data-crop-tip="No record" data-crop-sub="${h.year}"><span class="hist__icon" aria-hidden="true"></span><span class="hist__year" aria-hidden="true">${String(h.year).slice(-2)}</span><span class="sr-only">${h.year}: no record</span></li>`
@@ -365,7 +396,7 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onCrops,
           <button class="btn btn--quiet btn--small" type="button" data-hist="cancel">Cancel</button>
         </div>`
       : `<ol class="history" aria-label="Crops by year">${history}</ol>
-        ${knownYears < r.history.length ? `<p class="ck-caption">${historyGap(knownYears, r.cdlOff)}</p>` : ''}
+        ${knownYears < r.history.length ? `<p class="ck-caption">${historyGap(knownYears, r.cdlOff, src.crops)}</p>${!r.cdlOff && src.crops === 'failed' ? '<button class="btn btn--quiet btn--small ck-retry" type="button" data-retry="crops">Try again</button>' : ''}` : ''}
         ${r.cropsEdited ? '<p class="ck-caption hist-mine"><span class="hist-mine__dot" aria-hidden="true"></span>Years with a dot are from you.</p>' : ''}
         <div class="hist-edit__btns">
           <button class="btn btn--quiet btn--small" type="button" data-hist="edit">${EDIT_ICON}<span>Edit crop history</span></button>
@@ -382,14 +413,14 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onCrops,
           ${fact('Organic matter', Number.isFinite(r.soil.organicMatterPct) ? `${r.soil.organicMatterPct}%` : 'Unknown')}
           ${fact('Water-holding capacity', Number.isFinite(r.soil.waterHoldingIn) ? `${r.soil.waterHoldingIn} in` : 'Unknown')}
         </dl>`
-      : empty('No soil data available for this field.');
+      : emptyLine('soil', src.soil, 'No soil survey data here: USDA hasn’t surveyed this spot.');
 
     const slope = r.slope
       ? `<div class="slope">
           <p><b class="slope__pct">${r.slope.pct.toFixed(1)}%</b> <span class="slope__label">average</span></p>
           <p class="risk risk--${r.slope.risk}"><span class="risk__dot" aria-hidden="true"></span>${RISK_TEXT[r.slope.risk]}</p>
         </div>`
-      : empty('No slope data available for this field.');
+      : emptyLine('slope', src.slope, 'No elevation data here, so no slope.');
 
     // Manami's weather words from the latest plans (none until there are plans)
     const pw = r.planWeather || {};
@@ -399,7 +430,7 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onCrops,
     const rain = (r.rain
       ? `${rainSparkline(r.rain)}
          <p class="ck-caption">Last ${r.rain.recentYears} years: <b>${inches(r.rain.recentAvg)} in</b> a season vs <b>${inches(r.rain.avg30)} in</b> normal</p>`
-      : empty('No rain data available for this farm.')) + weather;
+      : emptyLine('rain', src.rain, 'NASA POWER has no full rain record here.')) + weather;
 
     const says = r.shown.length
       ? `<ul class="flags">${r.shown.map((f) => `<li class="flag flag--${f.level}"><span class="flag__dot" aria-hidden="true"></span>${esc(f.text)}</li>`).join('')}</ul>`
@@ -432,7 +463,7 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onCrops,
       ${section('ckSoil', 'Soil', '', r.soil ? chip('SSURGO', ph.soil) : '', soil + jarStrip(r.jar, jarSaid?.id === r.id ? jarSaid.text : ''))}
       ${section('ckSlope', 'Slope', '', r.slope ? chip('DEM', ph.slope) : '', slope)}
       ${section('ckRain', 'Rain trend', 'Apr–Sep', r.rain ? chip('POWER', ph.rain) : '', rain)}
-      ${section('ckGreen', 'Greenness', 'last season', r.ndvi ? chip('HLS', ph.ndvi) : '', r.ndvi ? ndviCurve(r.ndvi) : empty('No satellite greenness for this field yet (it can take a minute to arrive).'))}
+      ${section('ckGreen', 'Greenness', 'last season', r.ndvi ? chip('HLS', ph.ndvi) : '', r.ndvi ? ndviCurve(r.ndvi) : emptyLine('greenness', src.greenness, 'Too few clear satellite passes over this field last season for a greenness curve.'))}
       ${Object.values(ph).some(Boolean) ? '<p class="ck-legend"><span class="src-chip src-chip--demo" aria-hidden="true">ABC</span> Dotted chips are demo stand-ins until the live data is connected.</p>' : ''}`;
   }
 
@@ -476,10 +507,11 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onCrops,
   function update(r) {
     if (!report || report.id !== r.id) return;
     const active = document.activeElement;
-    const keepFocus = active && root.contains(active) ? (active.matches('.checkup__irrigated') ? '.checkup__irrigated' : active.matches('.checkup__name') ? '.checkup__name' : active.matches('[data-jar]') ? `[data-jar="${active.dataset.jar}"]` : active.matches('[data-hist]') ? `[data-hist="${active.dataset.hist}"]` : active.matches('[data-hist-year]') ? `[data-hist-year="${active.dataset.histYear}"]` : null) : null;
+    const keepFocus = active && root.contains(active) ? (active.matches('.checkup__irrigated') ? '.checkup__irrigated' : active.matches('.checkup__name') ? '.checkup__name' : active.matches('[data-jar]') ? `[data-jar="${active.dataset.jar}"]` : active.matches('[data-hist]') ? `[data-hist="${active.dataset.hist}"]` : active.matches('[data-hist-year]') ? `[data-hist-year="${active.dataset.histYear}"]` : active.matches('[data-retry]') ? `[data-retry="${active.dataset.retry}"]` : null) : null;
     open(r);
-    // (a jar button that went with the redraw: its strip's first button instead)
-    if (keepFocus) (root.querySelector(keepFocus) || (keepFocus.startsWith('[data-jar') ? root.querySelector('[data-jar]') : null))?.focus({ preventScroll: true });
+    // (a jar button that went with the redraw: its strip's first button instead; a Try again that
+    // went because the data came in: the close button, so focus stays in the panel)
+    if (keepFocus) (root.querySelector(keepFocus) || (keepFocus.startsWith('[data-jar') ? root.querySelector('[data-jar]') : keepFocus.startsWith('[data-retry') ? closeBtn : null))?.focus({ preventScroll: true });
   }
 
   /** A short line under the jar strip ("Okay, West 140 is back on the soil map."), read out too. */

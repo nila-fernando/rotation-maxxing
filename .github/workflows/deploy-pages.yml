@@ -34,11 +34,13 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm ci
       - run: npm test
-      # under the /rotation-maxxing/ base path; CropScape history stays off unless the
-      # VITE_CDL_PROXY repository variable points at a proxy (see app/README.md)
+      # under the /rotation-maxxing/ base path; CropScape history and NASS prices/yields stay off
+      # unless the VITE_CDL_PROXY / VITE_NASS_PROXY repository variables point at the proxy (see
+      # app/README.md). The NASS key itself lives only in the Worker, never here.
       - run: npm run build:pages
         env:
           VITE_CDL_PROXY: ${{ vars.VITE_CDL_PROXY }}
+          VITE_NASS_PROXY: ${{ vars.VITE_NASS_PROXY }}
           # Supabase (sign-in, saved farms) and the AI endpoint: public values, set as repository
           # variables (see supabase/README.md). Blank until they're set; the app works without them.
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}

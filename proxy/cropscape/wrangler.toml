@@ -1,4 +1,5 @@
-# Cloudflare Worker: CORS proxy for USDA CropScape (see README.md)
+# Cloudflare Worker: proxy for USDA CropScape and NASS Quick Stats (see README.md)
+# The NASS API key is a secret, never a var here:  npx wrangler@4 secret put NASS_API_KEY
 name = "cropscape-proxy"
 main = "worker.js"
 compatibility_date = "2026-11-01"
