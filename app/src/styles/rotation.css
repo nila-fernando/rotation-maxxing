@@ -5,7 +5,7 @@
 
 .plans {
   --rib-old: .5;            /* the faded past seasons */
-  --rib-name-w: 168px;      /* the field column */
+  --rib-name-w: 248px;      /* the field column: wide enough for a field's verdict on one line */
   --rib-cell-w: 58px;
   --rib-corn: #e3b23c;
   --rib-beans: #7fb069;
@@ -55,16 +55,17 @@
 
 .rib__fieldc { padding: 0; text-align: left; }
 .rib__open {
-  width: 100%; min-height: 48px; display: grid; grid-template-columns: 1fr auto; grid-template-areas: "name chev" "acres chev" "verdict chev";
+  /* name and acres on one line, the verdict under them on one line */
+  width: 100%; min-height: 48px; display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: "name acres chev" "verdict verdict chev";
   align-items: center; column-gap: 6px; padding: 6px 8px 6px 10px; border-radius: 14px 0 0 14px; text-align: left;
 }
 .rib__open:hover { background: var(--tile-hover); }
 .plans .rib__open:focus-visible { outline: 3px solid var(--green-dark); outline-offset: -3px; box-shadow: none; }
 .rib__name { grid-area: name; font-size: 15px; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
-.rib__acres { grid-area: acres; font-size: 12px; color: var(--ink-soft); }
+.rib__acres { grid-area: acres; align-self: baseline; font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
 .rib__verdict {
-  grid-area: verdict; justify-self: start; margin-top: 3px; padding: 1px 7px; border-radius: 8px; max-width: 100%;
-  font-size: 11.5px; font-weight: 600; line-height: 1.3; background: #eef8ec; color: var(--green-ink); box-shadow: inset 0 0 0 1.5px #a9d6b4;
+  grid-area: verdict; justify-self: start; margin-top: 3px; padding: 1px 8px; border-radius: 999px; max-width: 100%;
+  font-size: 11.5px; font-weight: 600; line-height: 1.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: #eef8ec; color: var(--green-ink); box-shadow: inset 0 0 0 1.5px #a9d6b4;
 }
 .rib__verdict--keepsSame, .rib__verdict--repeatsLater, .rib__verdict--onceMore { background: #fff1dc; color: #7a4a17; box-shadow: inset 0 0 0 1.5px #e7bf86; }
 .rib__chev { grid-area: chev; width: 18px; height: 18px; color: var(--ink-soft); transition: transform .15s; }
@@ -199,8 +200,11 @@
 }
 
 /* ---- narrower ---- */
+@media (max-width: 1100px) {
+  .plans { --rib-name-w: 200px; }
+}
 @media (max-width: 900px) {
-  .plans { --rib-name-w: 136px; }
+  .plans { --rib-name-w: 168px; }
   .story__seasons { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
@@ -208,9 +212,9 @@
   .rib .rib__y--old { display: none; }        /* 2025 goes; 2026 stays, faded */
   .rib__foot { display: none; }               /* the split as a list instead, under the table */
   .rib-splitlist { display: block; }
-  .rib__open { padding: 5px 4px 5px 7px; column-gap: 2px; grid-template-columns: 1fr auto; }
+  .rib__open { padding: 5px 4px 5px 7px; column-gap: 2px; grid-template-columns: 1fr auto; grid-template-areas: "name chev" "acres chev" "verdict chev"; }
   .rib__name { font-size: 13.5px; }
-  .rib__verdict { font-size: 10.5px; padding: 1px 5px; }
+  .rib__verdict { font-size: 10.5px; padding: 1px 5px; border-radius: 8px; white-space: normal; } /* (a phone's narrow column: it may wrap) */
   .rib__chev { width: 14px; height: 14px; }
   .rib .plan-crop { width: 26px; height: 26px; border-radius: 8px; }
   .rib .plan-crop svg { width: 18px; height: 18px; }

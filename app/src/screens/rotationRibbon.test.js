@@ -54,7 +54,7 @@ describe('the ribbon', () => {
     assert.doesNotMatch(html, /role="grid"|tabindex/); // a plain table: no grid, no roving focus in the cells
     // the row button names the crops for the shared tip, the verdict chip rides in it
     assert.match(html, /data-crop-tip-list="2027 Soybeans;2028 Corn;2029 Soybeans"/);
-    assert.match(html, /rib__verdict--nowTurns">Was corn on corn, now turns</);
+    assert.match(html, /rib__verdict--nowTurns" title="Was corn on corn, now turns">Was corn on corn, now turns</);
   });
 
   it('shows no money', () => {
