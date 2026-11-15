@@ -10,9 +10,11 @@
  * buyers, equipment, tillage, tile drainage, irrigation. Any field value the
  * caller passes wins over fetched data.
  */
-import { scenariosFromDailyWeather } from '../algorithm/climate';
+import { buildWeather, type ClimateTrendsFile } from '../algorithm/climateAdjust';
+import type { WeatherSource } from '../algorithm/update';
 import { lngLatToLocal, polygonArea, SQ_M_PER_ACRE } from '../algorithm/geometry';
-import type { CropId, DailyWeather, Farm, FarmConstraints, Land, LngLat, Paddock, StateCode, Tillage, WeatherScenario } from '../algorithm/types';
+import { isEnsemble } from '../algorithm/types';
+import type { CropId, DailyWeather, Farm, FarmConstraints, Land, LngLat, Paddock, StateCode, Tillage, WeatherInput, WeatherScenario } from '../algorithm/types';
 import { fetchCdlHistory } from './cdl';
 import { fetchPowerDaily, type FetchFn } from './power';
 import { fetchSoilAtPoint } from './ssurgo';
@@ -42,12 +44,28 @@ export interface BuildFarmInput {
   weatherYears: [number, number];
   /** CDL years for history (default: the 3 years before the last weather year + 1). */
   historyYears?: number[];
+  /**
+   * The season being planned (the frontend passes the current planning season).
+   * The weather is adjusted to this year. If missing: last weather year + 1, with a gap.
+   */
+  targetYear?: number;
+  /** Precomputed NEX-GDDP-CMIP6 trends for this location (src/data/cmip6/<site>.json). */
+  climateTrends?: ClimateTrendsFile;
+  /** Default 'present' when climateTrends are given, otherwise 'none'. */
+  weatherAdjustment?: 'none' | 'present';
 }
 
 export interface BuiltFarm {
   farm: Farm;
+  /** Pass this to generatePlans / evaluatePlan (a raw pool, or a present-climate ensemble). */
+  weather: WeatherInput;
+  /** The deterministic (mean) pool, for callers that only want WeatherScenario[]. */
   scenarios: WeatherScenario[];
-  weather: DailyWeather;
+  /** Pass to createFarmState so replan() re-adjusts the weather to each new season. */
+  weatherSource: WeatherSource;
+  targetYear: number;
+  /** The raw NASA POWER daily record. */
+  daily: DailyWeather;
   /** Where each field's data came from, for the evidence panel. */
   provenance: Record<string, { soil: string; history: string[] }>;
   gaps: string[];
@@ -118,7 +136,21 @@ export async function buildFarm(input: BuildFarmInput, fetchFn: FetchFn = fetch 
     ...(input.confirmedBuyers ? { confirmedBuyers: input.confirmedBuyers } : {}),
     ...(input.constraints ? { constraints: input.constraints } : {}),
   };
-  const climate = scenariosFromDailyWeather(farm, power.weather);
-  gaps.push(...climate.gaps);
-  return { farm, scenarios: climate.scenarios, weather: power.weather, provenance, gaps: [...new Set(gaps)] };
+  const mode = input.weatherAdjustment ?? (input.climateTrends ? 'present' : 'none');
+  const built = buildWeather(farm, power.weather, {
+    ...(input.climateTrends ? { trends: input.climateTrends } : {}),
+    ...(input.targetYear !== undefined ? { targetYear: input.targetYear } : {}),
+    weatherAdjustment: mode,
+  });
+  gaps.push(...built.gaps);
+  return {
+    farm,
+    weather: built.weather,
+    scenarios: isEnsemble(built.weather) ? built.weather.mean : built.weather,
+    weatherSource: { daily: power.weather, ...(input.climateTrends ? { trends: input.climateTrends } : {}), weatherAdjustment: mode },
+    targetYear: built.targetYear,
+    daily: power.weather,
+    provenance,
+    gaps: [...new Set(gaps)],
+  };
 }

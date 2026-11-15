@@ -34,7 +34,11 @@ import type {
   Term,
   WeatherScenario,
   YearResult,
+  WeatherAdjustmentMeta,
+  WeatherInput,
 } from './types';
+import { isEnsemble } from './types';
+import { ADJUSTMENT_GAPS } from './climateAdjust';
 
 export interface ModelOptions {
   /** Default: TraitYieldModel. */
@@ -73,6 +77,9 @@ export interface ModelContext {
   previousPlan: Record<PaddockId, (CropId | null)[]> | null;
   /** Aridity and the water-scarcity factor applied to the water slider. */
   water: WaterScarcity;
+  /** Climate-model members for Monte Carlo (present-climate adjustment), or null. */
+  members: { model: string; pool: WeatherScenario[] }[] | null;
+  adjustment: WeatherAdjustmentMeta | null;
   /** Gaps that apply to the whole run (market, weather). */
   globalGaps: string[];
 }
@@ -80,12 +87,14 @@ export interface ModelContext {
 export function createContext(
   farm: Farm | PreparedFarm,
   market: Market,
-  scenarios: WeatherScenario[],
+  weatherInput: WeatherInput,
   options: ModelOptions = {},
 ): ModelContext {
+  const ensemble = isEnsemble(weatherInput) ? weatherInput : null;
+  const scenarios = ensemble ? ensemble.mean : (weatherInput as WeatherScenario[]);
   const prepared = 'adjacency' in farm ? farm : prepareFarm(farm);
   const crops = options.crops ?? CROP_BY_ID;
-  const globalGaps: string[] = [];
+  const globalGaps: string[] = ensemble ? [...ADJUSTMENT_GAPS] : [];
   const prices: Record<CropId, PriceInfo | null> = {};
   for (const c of Object.values(crops)) {
     const { info, gap } = priceInfo(market, c);
@@ -118,6 +127,8 @@ export function createContext(
     totalAcres: paddocks.reduce((a, p) => a + p.acres, 0),
     paddockIndex: new Map(paddocks.map((p, i) => [p.id, i])),
     previousPlan: options.previousPlan ?? null,
+    members: ensemble ? ensemble.members : null,
+    adjustment: ensemble ? ensemble.adjustment : null,
     water: waterScarcity(
       expected.climate?.precipMm ?? null,
       expected.climate?.et0Mm ?? null,

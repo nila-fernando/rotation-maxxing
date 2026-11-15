@@ -263,6 +263,35 @@ export interface WeatherScenario {
   sources?: string[];
 }
 
+/**
+ * Weather pools adjusted to the present climate (NEX-GDDP-CMIP6 trends). Accepted
+ * wherever WeatherScenario[] is: the deterministic search uses `mean`; Monte
+ * Carlo picks one member (climate model) per sample.
+ */
+export interface WeatherEnsemble {
+  mean: WeatherScenario[];
+  members: { model: string; pool: WeatherScenario[] }[];
+  adjustment: WeatherAdjustmentMeta;
+}
+
+export interface WeatherAdjustmentMeta {
+  method: 'present';
+  targetYear: number;
+  oldestYear: number;
+  models: string[];
+  gridCell: { lat: number; lng: number };
+  /** Shift applied to the oldest pool year, per variable and month, with a likely-noise flag. */
+  shifts: { variable: string; month: number; shift: number; unit: string; likelyNoise: boolean }[];
+  /** Ready-to-show sentence. */
+  summary: string;
+}
+
+export type WeatherInput = WeatherScenario[] | WeatherEnsemble;
+
+export function isEnsemble(w: WeatherInput): w is WeatherEnsemble {
+  return !Array.isArray(w);
+}
+
 export interface FreezeEventSummary {
   date: string;
   stage: string;

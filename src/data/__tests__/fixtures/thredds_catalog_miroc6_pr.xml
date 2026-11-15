@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<catalog xmlns="http://www.unidata.ucar.edu/namespaces/thredds/InvCatalog/v1.0" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.2">
+  <service name="all" serviceType="compound" base="">
+    <service name="odap" serviceType="OpenDAP" base="/thredds/dodsC/" />
+    <service name="http" serviceType="HTTPServer" base="/thredds/fileServer/" />
+    <service name="ncss" serviceType="NetcdfSubset" base="/thredds/ncss/grid/" />
+    <service name="wms" serviceType="WMS" base="/thredds/wms/" />
+  </service>
+  <service name="partial" serviceType="compound" base="">
+    <service name="odap" serviceType="OpenDAP" base="/thredds/dodsC/" />
+    <service name="ncss" serviceType="NetcdfSubset" base="/thredds/ncss/grid/" />
+    <service name="wms" serviceType="WMS" base="/thredds/wms/" />
+  </service>
+  <service name="partialnoncss" serviceType="compound" base="">
+    <service name="odap" serviceType="OpenDAP" base="/thredds/dodsC/" />
+    <service name="wms" serviceType="WMS" base="/thredds/wms/" />
+  </service>
+  <dataset name="MIROC6/historical/r1i1p1f1/pr/">
+    <property name="DatasetScan" value="true" />
+    <metadata inherited="true">
+      <serviceName>all</serviceName>
+    </metadata>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1950_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1950_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1950_v2.0.nc">
+      <dataSize units="Mbytes">210.3</dataSize>
+      <date type="modified">2025-06-10T12:55:10.392Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1951_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1951_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1951_v2.0.nc">
+      <dataSize units="Mbytes">213.3</dataSize>
+      <date type="modified">2025-06-10T12:55:05.119Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1952_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1952_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1952_v2.0.nc">
+      <dataSize units="Mbytes">210.5</dataSize>
+      <date type="modified">2025-06-10T12:55:16.704Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1953_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1953_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1953_v2.0.nc">
+      <dataSize units="Mbytes">210.9</dataSize>
+      <date type="modified">2025-06-10T12:53:38.176Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1954_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1954_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1954_v2.0.nc">
+      <dataSize units="Mbytes">211.3</dataSize>
+      <date type="modified">2025-06-10T12:55:19.795Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1955_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1955_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1955_v2.0.nc">
+      <dataSize units="Mbytes">210.0</dataSize>
+      <date type="modified">2025-06-10T12:54:33.301Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1956_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1956_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1956_v2.0.nc">
+      <dataSize units="Mbytes">209.7</dataSize>
+      <date type="modified">2025-06-10T12:54:39.142Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1957_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1957_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1957_v2.0.nc">
+      <dataSize units="Mbytes">210.7</dataSize>
+      <date type="modified">2025-06-10T12:54:37.756Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1958_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1958_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1958_v2.0.nc">
+      <dataSize units="Mbytes">209.9</dataSize>
+      <date type="modified">2025-06-10T12:53:31.218Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1959_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1959_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1959_v2.0.nc">
+      <dataSize units="Mbytes">211.9</dataSize>
+      <date type="modified">2025-06-10T12:53:46.393Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1960_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1960_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1960_v2.0.nc">
+      <dataSize units="Mbytes">211.1</dataSize>
+      <date type="modified">2025-06-10T12:55:24.471Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1961_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1961_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1961_v2.0.nc">
+      <dataSize units="Mbytes">214.0</dataSize>
+      <date type="modified">2025-06-10T12:53:04.044Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1962_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1962_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1962_v2.0.nc">
+      <dataSize units="Mbytes">210.6</dataSize>
+      <date type="modified">2025-06-10T12:55:25.242Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1963_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1963_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1963_v2.0.nc">
+      <dataSize units="Mbytes">213.2</dataSize>
+      <date type="modified">2025-06-10T12:53:38.297Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1964_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1964_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1964_v2.0.nc">
+      <dataSize units="Mbytes">212.6</dataSize>
+      <date type="modified">2025-06-10T12:53:59.618Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1965_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1965_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1965_v2.0.nc">
+      <dataSize units="Mbytes">209.6</dataSize>
+      <date type="modified">2025-06-10T12:54:30.853Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1966_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1966_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1966_v2.0.nc">
+      <dataSize units="Mbytes">212.4</dataSize>
+      <date type="modified">2025-06-10T12:55:16.728Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1967_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1967_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1967_v2.0.nc">
+      <dataSize units="Mbytes">210.8</dataSize>
+      <date type="modified">2025-06-10T12:54:43.621Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1968_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1968_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1968_v2.0.nc">
+      <dataSize units="Mbytes">211.5</dataSize>
+      <date type="modified">2025-06-10T12:54:27.855Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1969_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1969_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1969_v2.0.nc">
+      <dataSize units="Mbytes">210.0</dataSize>
+      <date type="modified">2025-06-10T12:54:45.893Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1970_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1970_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1970_v2.0.nc">
+      <dataSize units="Mbytes">213.0</dataSize>
+      <date type="modified">2025-06-10T12:53:08.097Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1971_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1971_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1971_v2.0.nc">
+      <dataSize units="Mbytes">211.2</dataSize>
+      <date type="modified">2025-06-10T12:54:38.288Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1972_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1972_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1972_v2.0.nc">
+      <dataSize units="Mbytes">213.3</dataSize>
+      <date type="modified">2025-06-10T12:55:51.667Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1973_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1973_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1973_v2.0.nc">
+      <dataSize units="Mbytes">211.0</dataSize>
+      <date type="modified">2025-06-10T12:54:43.838Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1974_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1974_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1974_v2.0.nc">
+      <dataSize units="Mbytes">211.0</dataSize>
+      <date type="modified">2025-06-10T12:55:52.647Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1975_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1975_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1975_v2.0.nc">
+      <dataSize units="Mbytes">210.0</dataSize>
+      <date type="modified">2025-06-10T12:53:57.751Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1976_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1976_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1976_v2.0.nc">
+      <dataSize units="Mbytes">210.2</dataSize>
+      <date type="modified">2025-06-10T12:55:54.028Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1977_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1977_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1977_v2.0.nc">
+      <dataSize units="Mbytes">209.7</dataSize>
+      <date type="modified">2025-06-10T12:53:56.466Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1978_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1978_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1978_v2.0.nc">
+      <dataSize units="Mbytes">212.4</dataSize>
+      <date type="modified">2025-06-10T12:55:12.187Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1979_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1979_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1979_v2.0.nc">
+      <dataSize units="Mbytes">209.8</dataSize>
+      <date type="modified">2025-06-10T12:53:44.023Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1980_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1980_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1980_v2.0.nc">
+      <dataSize units="Mbytes">213.0</dataSize>
+      <date type="modified">2025-06-10T12:55:10.835Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1981_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1981_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1981_v2.0.nc">
+      <dataSize units="Mbytes">214.7</dataSize>
+      <date type="modified">2025-06-10T12:54:29.834Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1982_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1982_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1982_v2.0.nc">
+      <dataSize units="Mbytes">212.0</dataSize>
+      <date type="modified">2025-06-10T12:55:29.395Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1983_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1983_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1983_v2.0.nc">
+      <dataSize units="Mbytes">211.0</dataSize>
+      <date type="modified">2025-06-10T12:53:40.851Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1984_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1984_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1984_v2.0.nc">
+      <dataSize units="Mbytes">211.0</dataSize>
+      <date type="modified">2025-06-10T12:55:13.552Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1985_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1985_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1985_v2.0.nc">
+      <dataSize units="Mbytes">212.3</dataSize>
+      <date type="modified">2025-06-10T12:54:41.528Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1986_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1986_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1986_v2.0.nc">
+      <dataSize units="Mbytes">210.9</dataSize>
+      <date type="modified">2025-06-10T12:53:55.507Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1987_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1987_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1987_v2.0.nc">
+      <dataSize units="Mbytes">212.3</dataSize>
+      <date type="modified">2025-06-10T12:55:19.675Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1988_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1988_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1988_v2.0.nc">
+      <dataSize units="Mbytes">212.2</dataSize>
+      <date type="modified">2025-06-10T12:54:22.718Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1989_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1989_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1989_v2.0.nc">
+      <dataSize units="Mbytes">212.5</dataSize>
+      <date type="modified">2025-06-10T12:53:51.488Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1990_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1990_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1990_v2.0.nc">
+      <dataSize units="Mbytes">212.6</dataSize>
+      <date type="modified">2025-06-10T12:54:35.152Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1991_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1991_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1991_v2.0.nc">
+      <dataSize units="Mbytes">210.5</dataSize>
+      <date type="modified">2025-06-10T12:55:15.788Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1992_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1992_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1992_v2.0.nc">
+      <dataSize units="Mbytes">212.4</dataSize>
+      <date type="modified">2025-06-10T12:55:24.214Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1993_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1993_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1993_v2.0.nc">
+      <dataSize units="Mbytes">210.6</dataSize>
+      <date type="modified">2025-06-10T12:54:34.960Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1994_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1994_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1994_v2.0.nc">
+      <dataSize units="Mbytes">213.3</dataSize>
+      <date type="modified">2025-06-10T12:55:24.881Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1995_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1995_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1995_v2.0.nc">
+      <dataSize units="Mbytes">212.7</dataSize>
+      <date type="modified">2025-06-10T12:53:34.720Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1996_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1996_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1996_v2.0.nc">
+      <dataSize units="Mbytes">214.4</dataSize>
+      <date type="modified">2025-06-10T12:54:36.955Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1997_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1997_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1997_v2.0.nc">
+      <dataSize units="Mbytes">211.7</dataSize>
+      <date type="modified">2025-06-10T12:55:18.587Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1998_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1998_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1998_v2.0.nc">
+      <dataSize units="Mbytes">211.2</dataSize>
+      <date type="modified">2025-06-10T12:54:42.199Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_1999_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1999_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_1999_v2.0.nc">
+      <dataSize units="Mbytes">211.5</dataSize>
+      <date type="modified">2025-06-10T12:53:52.835Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_2000_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2000_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2000_v2.0.nc">
+      <dataSize units="Mbytes">211.8</dataSize>
+      <date type="modified">2025-06-10T12:54:29.615Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_2001_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2001_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2001_v2.0.nc">
+      <dataSize units="Mbytes">212.4</dataSize>
+      <date type="modified">2025-06-10T12:55:07.944Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_2002_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2002_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2002_v2.0.nc">
+      <dataSize units="Mbytes">213.1</dataSize>
+      <date type="modified">2025-06-10T12:55:54.961Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_2003_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2003_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2003_v2.0.nc">
+      <dataSize units="Mbytes">213.7</dataSize>
+      <date type="modified">2025-06-10T12:54:45.762Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_2004_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2004_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2004_v2.0.nc">
+      <dataSize units="Mbytes">212.2</dataSize>
+      <date type="modified">2025-06-10T12:53:49.321Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_2005_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2005_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2005_v2.0.nc">
+      <dataSize units="Mbytes">212.7</dataSize>
+      <date type="modified">2025-06-10T12:55:49.520Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_2006_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2006_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2006_v2.0.nc">
+      <dataSize units="Mbytes">213.7</dataSize>
+      <date type="modified">2025-06-10T12:53:41.623Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_2007_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2007_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2007_v2.0.nc">
+      <dataSize units="Mbytes">214.6</dataSize>
+      <date type="modified">2025-06-10T12:55:56.738Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_2008_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2008_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2008_v2.0.nc">
+      <dataSize units="Mbytes">214.1</dataSize>
+      <date type="modified">2025-06-10T12:54:24.221Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_2009_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2009_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2009_v2.0.nc">
+      <dataSize units="Mbytes">212.9</dataSize>
+      <date type="modified">2025-06-10T12:55:31.138Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_2010_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2010_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2010_v2.0.nc">
+      <dataSize units="Mbytes">213.8</dataSize>
+      <date type="modified">2025-06-10T12:53:42.982Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_2011_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2011_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2011_v2.0.nc">
+      <dataSize units="Mbytes">216.0</dataSize>
+      <date type="modified">2025-06-10T12:54:01.793Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_2012_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2012_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2012_v2.0.nc">
+      <dataSize units="Mbytes">214.1</dataSize>
+      <date type="modified">2025-06-10T12:53:33.315Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_2013_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2013_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2013_v2.0.nc">
+      <dataSize units="Mbytes">211.4</dataSize>
+      <date type="modified">2025-06-10T12:55:06.919Z</date>
+    </dataset>
+    <dataset name="pr_day_MIROC6_historical_r1i1p1f1_gn_2014_v2.0.nc" ID="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2014_v2.0.nc" urlPath="AMES/NEX/GDDP-CMIP6/MIROC6/historical/r1i1p1f1/pr/pr_day_MIROC6_historical_r1i1p1f1_gn_2014_v2.0.nc">
+      <dataSize units="Mbytes">210.9</dataSize>
+      <date type="modified">2025-06-10T12:53:50.082Z</date>
+    </dataset>
+  </dataset>
+</catalog>

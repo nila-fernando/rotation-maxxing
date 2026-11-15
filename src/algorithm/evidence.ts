@@ -39,6 +39,16 @@ export const DATA_SOURCES: Record<string, SourceInfo> = {
     url: null,
     covers: 'Local and distant prices, freight, local demand',
   },
+  nexGddpCmip6: {
+    title: 'NASA NEX-GDDP-CMIP6 (NASA NCCS, CC0); Thrasher et al. 2022, Scientific Data 9, 262. Models: MIROC6, MPI-ESM1-2-HR, MRI-ESM2-0, IPSL-CM6A-LR, ACCESS-CM2 (historical + SSP2-4.5)',
+    url: 'https://doi.org/10.1038/s41597-022-01393-4',
+    covers: 'Monthly climate trends 1995-2035 used to shift the NASA POWER record to the present climate',
+  },
+  ipccAr6Ecs: {
+    title: 'IPCC AR6 WG1 Chapter 7 Supplementary Material, Table 7.SM.5 (ECS by model); SPM A.4.4 (very likely range 2-5 C)',
+    url: 'https://www.ipcc.ch/report/ar6/wg1/downloads/report/IPCC_AR6_WGI_Chapter07_SM.pdf',
+    covers: 'Climate sensitivity used to select the five models',
+  },
   farmerReport: {
     title: "The farmer's own end-of-season reports",
     url: null,

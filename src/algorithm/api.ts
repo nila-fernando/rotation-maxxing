@@ -44,7 +44,7 @@ import type {
   Priorities,
   ReferenceBounds,
   Term,
-  WeatherScenario,
+  WeatherInput,
 } from './types';
 
 export interface GenerateOptions extends ModelOptions {
@@ -211,6 +211,7 @@ function buildResult(
   if (mc.p10 < 0) risks.push(`In a bad run of years (P10) this plan loses ${money(-mc.p10)} over ${ctx.horizon} years.`);
 
   const reasons = [...extra.reasons];
+  if (ctx.adjustment) reasons.push(ctx.adjustment.summary);
   for (const pr of explained.paddocks) {
     for (const yr of pr.years) {
       const credit = yr.terms.find((t) => t.label.startsWith('N credit from'));
@@ -306,7 +307,7 @@ export function generatePlans(
   farm: Farm | PreparedFarm,
   priorities: Priorities,
   market: Market,
-  scenarios: WeatherScenario[],
+  scenarios: WeatherInput,
   options: GenerateOptions = {},
 ): GenerateResult {
   const ctx = createContext(farm, market, scenarios, options);
@@ -522,7 +523,7 @@ export function evaluatePlan(
   plan: Plan,
   priorities: Priorities,
   market: Market,
-  scenarios: WeatherScenario[],
+  scenarios: WeatherInput,
   options: EvaluateOptions = {},
 ): PlanResult {
   const ctx = createContext(farm, market, scenarios, options);

@@ -28,6 +28,8 @@ export interface Sample {
   shadeTolerance: Record<CropId, number>;
   /** Where freeze damage falls within its design range this sample (0-1), shared by every field and plan. */
   freezeU: number;
+  /** Climate model used this sample (present-climate adjustment), if any. */
+  member?: string;
 }
 
 export interface Draws {
@@ -47,8 +49,11 @@ export function drawSamples(ctx: ModelContext, n: number, rng: Rng): Draws {
   }
   const samples: Sample[] = [];
   for (let i = 0; i < n; i++) {
+    // One climate model per sample (common to every paddock and plan), then whole years from its pool.
+    const member = ctx.members && ctx.members.length ? ctx.members[uniformInt(rng, ctx.members.length)]! : null;
+    const yearPool = member ? member.pool : ctx.weatherPool;
     const weather: WeatherScenario[] = [];
-    for (let y = 0; y < ctx.horizon; y++) weather.push(ctx.weatherPool[uniformInt(rng, ctx.weatherPool.length)]!);
+    for (let y = 0; y < ctx.horizon; y++) weather.push(yearPool[uniformInt(rng, yearPool.length)]!);
     const price: Record<CropId, number[]> = {};
     for (const id of cropIds) {
       const path: number[] = [];
@@ -59,7 +64,7 @@ export function drawSamples(ctx: ModelContext, n: number, rng: Rng): Draws {
     for (const id of cropIds) {
       if (shadeTolerance(ctx.crops[id]!) === null) tol[id] = rng.next();
     }
-    samples.push({ weather, price, shadeTolerance: tol, freezeU: rng.next() });
+    samples.push({ weather, price, shadeTolerance: tol, freezeU: rng.next(), ...(member ? { member: member.model } : {}) });
   }
   return { samples, gaps: [...gaps] };
 }
