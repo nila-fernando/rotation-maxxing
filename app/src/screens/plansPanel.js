@@ -460,7 +460,7 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
     const why = [fv.weightsLine(cmp.weights), fv.nLine(cmp, 'priority', choice)].filter(Boolean);
 
     body.innerHTML = `${tabs()}<div class="plans__rot" role="tabpanel" id="plansView" aria-labelledby="plansTab-rotation">
-      <div class="plans__manami"><img src="${MANAMI_SVG}" alt="" width="40" height="36"><p>${esc(said)}</p>${host('farm', 'span', 'plans__farmhost')}</div>
+      <div class="plans__manami"><img src="${MANAMI_SVG}" alt="" width="40" height="36"><p>${esc(said)}${data?.learned && data.gaps?.[0]?.startsWith('I tuned') ? ` <span class="plans__tuned">${esc(data.gaps[0])}</span>` : ''}</p>${host('farm', 'span', 'plans__farmhost')}</div>
       ${aiTake ? '<section class="plans__take" hidden></section>' : ''}
       ${host('switch')}
       ${host('ribbon')}

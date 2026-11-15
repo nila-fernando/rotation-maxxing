@@ -7,7 +7,7 @@ import { createFakeSupabase, fakeTimers, memoryStorage } from '../../test/fakeSu
 import { makeSnapshot, readSnapshot, summaryOf, SNAPSHOT_VERSION } from './snapshot.js';
 import { createLocalStore, LOCAL_KEY } from './localStore.js';
 import { createScheduler } from './scheduler.js';
-import { farmRow, fieldRow, fieldDataRows, jarRow, planRow, profilePatch, snapshotFromRows, idFrom, stableJson } from './rows.js';
+import { farmRow, fieldRow, fieldDataRows, jarRow, planRow, profilePatch, seasonRows, snapshotFromRows, idFrom, stableJson } from './rows.js';
 import { createCloud, createSync, isTablesMissing } from './cloudSync.js';
 
 const USER = 'user-1';
@@ -289,6 +289,42 @@ describe('crop history edits in the account', () => {
     const row = db.tables.fields[0];
     assert.equal(row.crops[2025], 'Soybeans');
     assert.equal('crop_edits' in row, false);
+  });
+});
+
+describe('season reports in the account', () => {
+  const SEASON = { v: 1, season: 2026, savedAt: '2026-11-15T10:00:00.000Z', fields: { 'field-1': { crop: 'corn', yield: 201, events: ['drought'], notes: 'dry July' } } };
+
+  it('keep with the farm on this device', () => {
+    const s = makeSnapshot({ id: 'local-1', farm: PLACE, fields: appFields(), seasons: [SEASON] });
+    assert.deepEqual(readSnapshot(JSON.stringify(s)).seasons, [SEASON]);
+    assert.deepEqual(readSnapshot(JSON.stringify({ ...s, seasons: undefined })).seasons, []);
+  });
+
+  it('go up as one row per season, and come back the same', async () => {
+    const db = createFakeSupabase({ userId: USER });
+    const cloud = createCloud(db.client);
+    const s = makeSnapshot({ id: 'local-1', farm: PLACE, fields: appFields(), seasons: [SEASON], cloud: { [USER]: { id: 'c1' } } });
+    await cloud.push(s, USER, new Map());
+    assert.equal(db.tables.season_reports.length, 1);
+    assert.deepEqual(db.tables.season_reports[0].report, SEASON);
+    assert.equal(seasonRows(s, 'c1')[0].id, seasonRows(s, 'c1')[0].id, 'the same season always maps to the same row');
+    const back = await cloud.loadFarm('c1', USER, { localId: 'local-2' });
+    assert.deepEqual(back.seasons, [SEASON]);
+  });
+
+  it('stay on this device if the table isn’t there yet, and the farm still goes up', async () => {
+    const db = createFakeSupabase({ userId: USER });
+    db.noTables = ['season_reports'];
+    const cloud = createCloud(db.client);
+    const s = makeSnapshot({ id: 'local-1', farm: PLACE, fields: appFields(), seasons: [SEASON], cloud: { [USER]: { id: 'c1' } } });
+    const warn = console.warn;
+    console.warn = () => {};
+    try { await cloud.push(s, USER, new Map()); } finally { console.warn = warn; }
+    assert.equal(db.tables.farms.length, 1);
+    assert.equal(db.tables.fields.length, 3);
+    const back = await cloud.loadFarm('c1', USER, { localId: 'local-2' });
+    assert.deepEqual(back.seasons, []);
   });
 });
 

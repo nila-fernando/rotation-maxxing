@@ -1,3 +1,5 @@
+@import './styles/updates.css';
+@import './styles/season.css';
 @import './styles/crop-tip.css';
 @import './styles/rotation.css';
 @import './styles/calendar.css';
@@ -1407,8 +1409,9 @@ body:not(.plan-futures) .fut-chips { display: none; }
 
 /* the field card */
 .fut-card {
-  position: fixed; z-index: 27; right: var(--gutter); top: 72px; bottom: calc(var(--fut-dock-h, 200px) + 32px); width: var(--ck-w);
-  min-height: 260px; display: flex; flex-direction: column; overflow: hidden;
+  /* as tall as what it holds, up to the room above the dock (then its body scrolls) */
+  position: fixed; z-index: 27; right: var(--gutter); top: 72px; width: var(--ck-w);
+  max-height: calc(100vh - 72px - var(--fut-dock-h, 200px) - 32px); display: flex; flex-direction: column; overflow: hidden;
   background: var(--cream); border: 5px solid var(--wood); border-radius: 22px; color: var(--ink);
   box-shadow: 0 0 0 2px var(--wood-deep), 0 8px 0 -2px var(--wood-deep), 0 20px 40px rgb(60 40 80 / .28);
   animation: hub-in-right .45s var(--spring) both;
@@ -1493,8 +1496,21 @@ body:not(.plan-futures) .fut-chips { display: none; }
 .fut-notes__foot { flex: none; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; padding: 6px 12px 10px; border-top: 2px solid #ead8c0; }
 .fut-notes__foot .linkish { display: inline; margin: 0; }
 
-/* while the card is open Manami steps aside (her pick line shows in the card), so it can reach the dock */
-body.fut-card-open .manami { visibility: hidden; }
+/* wider screens: a field's card takes the faded field list's place (the full left column), instead of
+   squeezing into the corner above the dock; it's as tall as what it holds, up to that column */
+@media (min-width: 901px) {
+  .fut-card {
+    left: var(--gutter); right: auto; top: 72px; bottom: auto; width: var(--hub-w, 300px);
+    max-height: calc(100vh - 72px - 22px); animation-name: hub-in-left;
+  }
+  body.plan-futures.fut-card-open .hub-panel { visibility: hidden; }
+  /* in that narrower column each season stacks: its crop, the year, then the money an acre */
+  .fut-card .fut-cell { grid-template-columns: 1fr; justify-items: center; text-align: center; row-gap: 1px; }
+  .fut-card .fut-cell .plan-crop { grid-row: auto; }
+}
+/* while the card or the notes are open Manami steps aside (her words are in them), so she never
+   sits on top of their text and links */
+body.fut-card-open .manami, body.fut-notes-open .manami { visibility: hidden; }
 
 /* a clear keyboard ring on the cream (the global ring's halo is replaced) */
 .fut-dock :focus-visible, .fut-card :focus-visible, .fut-notes :focus-visible { outline: 3px solid var(--green-dark); outline-offset: 2px; box-shadow: none; }
@@ -1562,7 +1578,7 @@ body.fut-card-open .manami { visibility: hidden; }
   .fut-iconbtn { width: 40px; height: 38px; padding: 0; }
   .fut-iconbtn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .fut-plan, .fut-season { min-height: 34px; padding: 2px 8px; }
-  .fut-card { top: 8px; bottom: 8px; width: 300px; right: 8px; }
+  .fut-card { top: 8px; bottom: 8px; width: 300px; right: 8px; left: auto; max-height: none; animation-name: hub-in-right; }
   /* the dock stops short of the card (8px + 300px + 8px), so nothing in it sits hidden under the card */
   body.fut-card-open .fut-dock { right: 316px; }
   body.fut-card-open .fut-dock__row--mid { flex-wrap: wrap; }
@@ -1900,7 +1916,7 @@ body.is-touring .rotate-bubble--farm { visibility: hidden; }
 /* ------------------------------------------------------------------ your farms and signing in (src/screens/accountPanel.js) */
 /* the round button top right: on the opening globe and on the farm's hub (not while picking fields,
    during the check-in or the reveal, nor over the plans or the jar test) */
-body.is-hub { --acct-w: 56px; }
+body.is-hub { --acct-w: 112px; } /* (the bell and your-farms: "Plan my next seasons" sits left of both) */
 .acct-btn {
   position: fixed; z-index: 27; top: 16px; right: var(--gutter); width: 46px; height: 46px; display: none; place-items: center;
   border-radius: 50%; background: var(--cream); color: var(--ink); border: 3px solid var(--wood);
@@ -1978,7 +1994,7 @@ body.isle-planning .acct-btn { display: none; }
 .acct .btn:focus-visible, .acct-farm__del:focus-visible, .acct .linkish:focus-visible, .acct .checkup__close:focus-visible { outline: 3px solid var(--green-dark); outline-offset: 2px; box-shadow: none; }
 
 @media (max-width: 900px) and (min-height: 521px) {
-  body.is-hub { --acct-w: 50px; }
+  body.is-hub { --acct-w: 100px; }
   body.is-hub .acct-btn { top: 12px; width: 40px; height: 40px; }
   body.is-hub .acct { top: 62px; }
 }

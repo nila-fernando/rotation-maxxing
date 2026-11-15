@@ -5,6 +5,7 @@ import { copyPlan, createChecker, emptyCount, emptyPlan, isComplete, setCell, se
 import { plannerFarm, plannerMarket } from './farmInput.js';
 import { fieldData } from '../../test/fieldData.mjs';
 import { demoMarket } from '../../test/marketFixture.mjs';
+import { budget, medianMs } from '../../test/timing.mjs';
 
 const fields = getFields().map((f) => ({
   id: f.id, name: f.name, acres: f.acres, geometry: f.geometry, sourceIds: [f.sourceId],
@@ -65,11 +66,10 @@ describe('instant checks', () => {
   it('checks every filled season of a whole plan, fast', () => {
     let p = emptyPlan(farm);
     for (const f of farm.paddocks) for (let y = 0; y < 3; y++) p = setCell(p, f.id, y, y % 2 ? 'soybeans' : 'corn');
-    const t0 = performance.now();
     const all = check.all(p);
-    const ms = performance.now() - t0;
     assert.equal(all.size, 15);
-    assert.ok(ms < 200, `${ms} ms for 15 seasons`);
+    const ms = medianMs(() => check.all(p));
+    assert.ok(ms < budget(200), `${ms.toFixed(0)} ms for 15 seasons (limit ${budget(200)})`);
   });
   it('summaries', () => {
     assert.equal(summarise([{ severity: 2 }, { severity: 1 }, { severity: 2 }]), '2 careful, 1 note');

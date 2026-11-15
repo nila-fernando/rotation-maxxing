@@ -1,8 +1,13 @@
 // The rotation planner (src/vendor/rotation-maxxing) in a Web Worker, so working out plans never
 // stalls the 3D island.
 //
-// Messages in:  { id, type: 'plans', farm, priorities, market, demo, options }
-//               { id, type: 'evaluate', farm, plan, priorities, market, demo, options }
+// Messages in:  { id, type: 'plans', farm, priorities, market, demo, options, learn? }
+//               { id, type: 'evaluate', farm, plan, priorities, market, demo, options, learn? }
+//   learn: { farmBefore, reports } (src/plan/seasons.js): the farm as it stood before its first
+//   reported season, and the reports. They're replayed season by season (the planner's
+//   updateAfterSeason, with each season's real NASA POWER weather), and the fields' learned yield
+//   factors and the observed seasons are planned with. The reply then has result.learned:
+//   { log, notes, observed: [{ season, ok }] }.
 // Messages out: { id, ok: true, result, weather: { source, years, gaps } } or { id, ok: false, error }
 //
 // Weather: the demo farm uses the bundled NASA POWER record for Ames, Iowa (2000-2024, same county),
@@ -12,6 +17,7 @@
 import { CROP_BY_ID, evaluatePlan, generatePlans } from '../vendor/rotation-maxxing/algorithm/index.ts';
 import { scenariosFromDailyWeather } from '../vendor/rotation-maxxing/algorithm/climate.ts';
 import { fetchPowerDaily } from '../vendor/rotation-maxxing/data/power.ts';
+import { learnFrom, tuned } from './learn.js';
 import { cropIdsFor } from './cropIds.js';
 
 // the same record as the bundled Ames file (2000-2024: 24 growing seasons, each needing the year before)
@@ -83,6 +89,29 @@ function poolFor(farm, w, cropIds) {
   return pools.get(key);
 }
 
+// ---------------------------------------------------------------- learning from reported seasons
+const observedDaily = new Map(); // "lat,lng|season" -> Promise<DailyWeather | null>
+const farmCentre = (farm) => {
+  const lngs = farm.paddocks.flatMap((p) => p.polygon.lngLat.map((c) => c[0]));
+  return [farm.latitude, lngs.reduce((a, b) => a + b, 0) / Math.max(1, lngs.length)];
+};
+/** That season's real weather at the farm (with the year before it, for the soil water), or null. */
+function seasonDaily(farm, season) {
+  const [lat, lng] = farmCentre(farm);
+  const key = `${lat.toFixed(2)},${lng.toFixed(2)}|${season}`;
+  if (!observedDaily.has(key)) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20000);
+    const job = fetchPowerDaily(lat, lng, season - 1, season, (url, init) => fetch(url, { ...init, signal: ctrl.signal }))
+      .then((r) => r.weather)
+      .catch(() => null)
+      .finally(() => clearTimeout(timer));
+    job.then((w) => { if (!w) observedDaily.delete(key); }); // try again next time
+    observedDaily.set(key, job);
+  }
+  return observedDaily.get(key);
+}
+
 /** Removes "No local market data for X" notes about crops this farm doesn't grow or choose from. */
 function dropOtherCropNotes(result, cropIds) {
   const names = new Set(cropIds.map((id) => CROP_BY_ID[id]?.name).filter(Boolean));
@@ -92,7 +121,7 @@ function dropOtherCropNotes(result, cropIds) {
 }
 
 self.onmessage = async ({ data }) => {
-  const { id, type, farm, priorities, market, demo, plan, weatherHint, options = {} } = data;
+  const { id, type, farm, priorities, market, demo, plan, weatherHint, learn, options = {} } = data;
   try {
     const w = await weatherFor(farm, demo, type === 'evaluate' ? weatherHint : null);
     // The weather pool only needs this farm's crops (its choices and its history). Scoring keeps the
@@ -101,11 +130,17 @@ self.onmessage = async ({ data }) => {
     const cropIds = cropIdsFor(farm);
     const climate = poolFor(farm, w, cropIds);
     const weather = { source: w.source, years: climate.scenarios.length, gaps: [...w.gaps, ...climate.gaps], fallback: !!w.fallback };
+    // what the farmer's season reports taught the planner (null when there are none)
+    const learned = learn ? await learnFrom(learn, climate.scenarios, cropIds, (season) => seasonDaily(learn.farmBefore, season)) : null;
+    const planFarm = tuned(farm, learned);
+    const scenarios = learned?.weathers?.length ? [...climate.scenarios, ...learned.weathers] : climate.scenarios;
+    if (learned) weather.years = scenarios.length;
     let result;
-    if (type === 'plans') result = generatePlans(farm, priorities, market, climate.scenarios, options);
-    else if (type === 'evaluate') result = evaluatePlan(farm, plan, priorities, market, climate.scenarios, options);
+    if (type === 'plans') result = generatePlans(planFarm, priorities, market, scenarios, options);
+    else if (type === 'evaluate') result = evaluatePlan(planFarm, plan, priorities, market, scenarios, options);
     else throw new Error(`Unknown request: ${type}`);
     dropOtherCropNotes(result, cropIds);
+    if (learned) result.learned = { log: learned.log, notes: learned.notes, observed: learned.observed };
     self.postMessage({ id, ok: true, result, weather });
   } catch (e) {
     self.postMessage({ id, ok: false, error: e?.message || String(e) });

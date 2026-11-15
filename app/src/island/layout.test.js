@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as turf from '@turf/turf';
 import { layoutIsland, pointInRing } from './layout.js';
+import { budget, medianMs } from '../../test/timing.mjs';
 
 const demo = JSON.parse(readFileSync(new URL('../../data/demo-farm.json', import.meta.url), 'utf8'));
 const demoFields = demo.fields.map((f) => ({ id: f.id, geometry: f.geometry, elevationM: f.elevationM }));
@@ -315,10 +316,9 @@ describe('layoutIsland: speed and edge cases', () => {
     const verts = input.reduce((s, f) => s + f.geometry.coordinates[0].length, 0) / input.length;
     assert.ok(verts > 200, `only ${verts} vertices per field`);
     layoutIsland(input); // warm up the JIT
-    const t0 = performance.now();
+    const ms = medianMs(() => layoutIsland(input));
+    assert.ok(ms < budget(200), `took ${ms.toFixed(0)} ms (limit ${budget(200)})`);
     const r = layoutIsland(input);
-    const ms = performance.now() - t0;
-    assert.ok(ms < 200, `took ${ms.toFixed(0)} ms`);
     // The wobble makes touching neighbours overlap by a sliver in the input itself; those stay.
     assertNoOverlaps(r, true);
     assertInsideOutline(r);

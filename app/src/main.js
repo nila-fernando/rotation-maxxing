@@ -68,6 +68,10 @@ import { createAccountPanel } from './screens/accountPanel.js';
 import { weatherLine, weatherParam } from './island/weather.js';
 import { farmWeather } from './island/weatherState.js';
 import { startWeatherFeed } from './services/weatherFeed.js';
+import { assessmentLines, cleanReports, seasonsDue, seasonsOpen } from './plan/seasons.js';
+import { createSeasonCheckin } from './screens/seasonCheckin.js';
+import { createUpdatesPanel } from './screens/updatesPanel.js';
+import { buildUpdates, fetchForecast } from './notify/updates.js';
 
 const $ = (id) => document.getElementById(id);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -78,7 +82,7 @@ const params = new URLSearchParams(location.search);
 installCropTips();
 
 /** What the app knows so far; later steps add fields, answers and satellite data. */
-const app = { farm: null, fields: [], farmProfile: null };
+const app = { farm: null, fields: [], farmProfile: null, seasons: [] }; // seasons: the farmer's season reports (src/plan/seasons.js)
 
 // ---------------------------------------------------------------- saving the farm
 // On this device for everyone (src/save/localStore.js), as it changes: the fields once picked, the
@@ -114,6 +118,7 @@ function writeLocal() {
   const snap = makeSnapshot({
     id, farm: app.farm, fields: app.fields, profile: app.farmProfile, plan: app.plan,
     picks: plansPanel.getChoice(), cloud: local.get(id)?.cloud || {}, // (where it lives in the cloud is the store's to keep)
+    seasons: app.seasons,
   });
   if (local.put(snap)) sync.request(id);
 }
@@ -148,7 +153,7 @@ const fieldsStep = createFieldsStep({
   manami,
   onContinue: (fields) => {
     app.fields = fields;
-    if (!saveCtx && !devStart) saveCtx = { id: newId() }; // a new farm on this device (the others stay)
+    if (!saveCtx && !devStart) { saveCtx = { id: newId() }; app.seasons = []; } // a new farm on this device (the others stay)
     persist();
     localSaver.flush();
     fieldsStep.hold(); // the chosen fields stay drawn on the (dimmed) map
@@ -227,14 +232,14 @@ async function farmMarket() {
 // the rotation planner (src/vendor/rotation-maxxing), in a Web Worker
 const planner = createPlanner();
 /** Three plans for the next 3 seasons for the farm as it stands (see src/plan/planner.js). */
-const planSeasons = async () => planner.plans({ fields: app.fields, place: app.farm, profile: app.farmProfile, market: await farmMarket(), firstSeason: firstSeason(today()) });
+const planSeasons = async () => planner.plans({ fields: app.fields, place: app.farm, profile: app.farmProfile, market: await farmMarket(), firstSeason: firstSeason(today()), seasons: app.seasons });
 /** Scores a plan picked field by field (or built by hand) on the farm as it stands. */
-const evaluateMix = async (plan) => planner.evaluate({ fields: app.fields, place: app.farm, profile: app.farmProfile, market: await farmMarket(), plan, firstSeason: firstSeason(today()) });
+const evaluateMix = async (plan) => planner.evaluate({ fields: app.fields, place: app.farm, profile: app.farmProfile, market: await farmMarket(), plan, firstSeason: firstSeason(today()), seasons: app.seasons });
 
 /** Manami steps aside (out of sight and the tab order) while the check-up, the plans or the jar test are open. */
 function syncManami() {
   const cl = document.body.classList;
-  const away = cl.contains('checkup-open') || cl.contains('plans-open') || cl.contains('jar-open') || cl.contains('ask-open');
+  const away = cl.contains('checkup-open') || cl.contains('plans-open') || cl.contains('jar-open') || cl.contains('ask-open') || cl.contains('season-open');
   document.getElementById('manami').inert = away;
 }
 
@@ -291,6 +296,7 @@ const aiHost = {
   place: () => app.farm,
   plansData: () => plansPanel.data,
   savedPlan: () => (app.plan ? { source: app.plan.source === 'ai' ? 'ai' : app.plan.choice ? 'pick' : 'built', startYear: app.plan.startYear } : null),
+  seasons: () => app.seasons,
   today: () => today(),
 };
 // the routes the AI server answers ('chat', 'field', 'plan', 'jar'), for the tour's AI steps (asked once)
@@ -369,6 +375,7 @@ const plansPanel = createPlansPanel({
   aiTake: createPlanTake({ endpoint: AI_ENDPOINT, buildBody: () => planBody(aiHost), evaluate: evaluateMix }),
   onOpen: () => {
     jarPanel.close({ restore: false }); // (the jar test, if it was open over the farm)
+    seasonPanel?.close({ restore: false }); // (the season check-in, likewise)
     openSeq++; // a "See them on the farm" still loading stays shut
     planFutures?.stop(); // back from the plans on the island
     islandPlanner.stop(); // back from planning on the island, or opened over it
@@ -435,6 +442,7 @@ async function openFutures(kind, opts = {}) {
     evaluateMix,
     onStart: () => {
       islandPlanner.stop();
+      seasonPanel?.close({ restore: false });
       if (app.openFieldId) hub.overview(); // any field check-up closes (the plan view's camera takes over)
       document.getElementById('hubPanel').inert = true; // the field list waits while the plans are on the island
       syncManami(); // she's back in reach for the walk
@@ -511,6 +519,7 @@ const jarPanel = createJarPanel({
       if (el && !jarInert.has(el)) { jarInert.set(el, el.inert); el.inert = true; }
     }
     hub.session?.clearHover();
+    seasonPanel?.close({ restore: false });
     syncManami();
   },
   onClose: () => {
@@ -561,6 +570,93 @@ function setCrops(id, edits) {
   else hub.setRowCrop(id, null);
   paintStatuses();
   if (fieldPanel.openId === id) fieldPanel.update(reportFor(id));
+}
+
+// ---------------------------------------------------------------- the season check-in
+// Manami asks how a finished season went, field by field; the planner learns from it (src/plan/seasons.js)
+// and the next three seasons are planned on what it learned. A workspace, like the jar test.
+let seasonPanel = null;
+seasonPanel = createSeasonCheckin({
+  getFields: () => app.fields,
+  getReports: () => app.seasons,
+  today: () => today(),
+  onOpen: () => {
+    plansPanel.close();
+    jarPanel.close({ restore: false });
+    openSeq++;
+    planFutures?.stop();
+    islandPlanner.stop();
+    hub.overview();
+    $('hubPanel').inert = true; // the field list waits while it's open
+    syncManami();
+  },
+  onClose: () => {
+    $('hubPanel').inert = !!planFutures?.active || islandPlanner.active;
+    syncManami();
+    syncSeasonButton();
+  },
+  onSave: (report) => saveSeason(report),
+  onSeePlans: () => plansPanel.open(),
+});
+
+/** Keeps a season report, puts its crops in the fields' history, and re-plans with what it taught. */
+async function saveSeason(report) {
+  app.seasons = cleanReports([...app.seasons.filter((r) => r.season !== report.season), report]);
+  for (const [id, r] of Object.entries(report.fields)) if (r.crop) setCrops(id, { [report.season]: r.crop });
+  persist();
+  syncSeasonButton();
+  updatesPanel.refresh(); // (the check-in is no longer due)
+  const out = await planSeasons();
+  const entry = out.learned?.log?.find((e) => e.season === report.season);
+  const events = Object.fromEntries(Object.entries(report.fields).map(([id, f]) => [id, f.events]));
+  const lines = assessmentLines(entry, { names: new Map(app.fields.map((f) => [f.id, f.name])), events });
+  const seen = out.learned?.observed?.find((o) => o.season === report.season);
+  return { lines, weather: seen ? (seen.ok ? 'observed' : 'average') : null };
+}
+
+/** The hub's "How did 2026 go?" button: there once a season can be reported (or changed). */
+function syncSeasonButton() {
+  const btn = $('hubSeason');
+  if (!btn) return;
+  const open = app.island ? seasonsOpen(today(), app.fields, app.seasons) : [];
+  const due = app.island ? seasonsDue(today(), app.fields, app.seasons) : [];
+  btn.hidden = !open.length;
+  $('hubSeasonText').textContent = due.length ? `How did ${due[due.length - 1]} go?` : `Your ${open[open.length - 1]} season`;
+}
+$('hubSeason').addEventListener('click', () => seasonPanel.open());
+
+// ---------------------------------------------------------------- farm updates (the bell)
+// The week's weather at the farm (Open-Meteo), the rain trend (NASA POWER), and the season check-in
+// when it's due (src/notify/updates.js). The forecast is asked for once per farm per hour.
+let forecastFor = { key: null, at: 0, job: null };
+function farmForecast() {
+  const p = app.farm;
+  if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return Promise.resolve(null);
+  const key = `${p.lat.toFixed(2)},${p.lon.toFixed(2)}`;
+  if (forecastFor.key !== key || Date.now() - forecastFor.at > 3600e3) {
+    forecastFor = { key, at: Date.now(), job: fetchForecast({ lat: p.lat, lon: p.lon }) };
+    forecastFor.job.then((f) => { if (!f) forecastFor.at = 0; }); // (try again next time)
+  }
+  return forecastFor.job;
+}
+let updatesPanel = null;
+updatesPanel = createUpdatesPanel({
+  getUpdates: async () => buildUpdates({ today: today(), forecast: await farmForecast(), fields: app.fields, seasonsDue: seasonsDue(today(), app.fields, app.seasons) }),
+  onAction: (act) => { if (act === 'season') seasonPanel.open(); else if (act === 'plans') plansPanel.open(); },
+});
+
+/** Once per visit, when a season is due and nothing else is going on, Manami asks how it went. */
+const seasonAsked = new Set();
+function offerSeason() {
+  const due = seasonsDue(today(), app.fields, app.seasons);
+  const y = due[due.length - 1];
+  if (!y || !app.island || seasonAsked.has(`${saveCtx?.id ?? 'demo'}|${y}`) || tour.isOpen) return;
+  const cl = document.body.classList;
+  if (['plans-open', 'jar-open', 'plan-futures', 'checkup-open', 'ask-open', 'season-open'].some((c) => cl.contains(c))) return;
+  seasonAsked.add(`${saveCtx?.id ?? 'demo'}|${y}`);
+  manami.say(`${y}’s harvest is in. How did it go? Tell me, and I’ll tune your next three seasons.`, {
+    actions: [{ label: 'Tell Manami', primary: true, onClick: () => seasonPanel.open({ season: y }) }, { label: 'Later', onClick: () => {} }],
+  });
 }
 
 /** After a jar test came or went from the plan view: the plans again, on that field's card. */
@@ -798,6 +894,9 @@ const reveal = createReveal({
       const busy = plansPanel.isOpen || planFutures?.active || islandPlanner.active || document.body.classList.contains('jar-open');
       if (app.island === island && !busy) tour.maybeAutoStart();
     }, TOUR_AFTER_MS);
+    syncSeasonButton();
+    updatesPanel.refresh();
+    setTimeout(() => { if (app.island === island) offerSeason(); }, TOUR_AFTER_MS + 2600);
     // dev shortcut: ?hub=5&futures=1 opens the plans on the island with Manami's walk, &futures=explore without
     if (import.meta.env.DEV && params.has('futures') && !app.futuresShown) {
       app.futuresShown = true;
@@ -1001,6 +1100,7 @@ function openSaved(snap) {
   askManami.resetSaved(); // her last conversation about this farm, not the one on screen before
   local.setCurrent(snap.id);
   app.plan = snap.plan || null;
+  app.seasons = cleanReports(snap.seasons || []);
   restoring = true;
   try {
     globe.flyTo(snap.farm); // ('flying' then 'landed', at once)
@@ -1049,18 +1149,19 @@ function takeNote(key) {
 //   3. Popovers (the time of day, your farms) close as soon as anything else opens.
 //   4. Ask Manami is a side panel: a workspace opening closes it (Ask me / Ask about this field bring
 //      it back, on top of the check-up if one is open).
-const WORKSPACES = ['plans-open', 'jar-open', 'plan-futures', 'isle-planning'];
+const WORKSPACES = ['plans-open', 'jar-open', 'plan-futures', 'isle-planning', 'season-open'];
 const SHEETS = ['checkup-open', 'ask-open'];
 let surfacesWere = new Set();
 function syncSurfaces() {
   const cl = document.body.classList;
-  const now = new Set([...WORKSPACES, ...SHEETS, 'acct-open'].filter((c) => cl.contains(c)));
+  const now = new Set([...WORKSPACES, ...SHEETS, 'acct-open', 'notif-open'].filter((c) => cl.contains(c)));
   const opened = [...now].filter((c) => !surfacesWere.has(c));
   surfacesWere = now;
   if (opened.length) timeTravel.closeDay();
   if (opened.some((c) => c !== 'acct-open') && account?.isOpen) account.close({ restoreFocus: false });
+  if (opened.some((c) => c !== 'notif-open') && updatesPanel?.isOpen) updatesPanel.close({ restoreFocus: false });
   if (opened.some((c) => WORKSPACES.includes(c)) && askManami.isOpen) askManami.close();
-  const busy = cl.contains('plans-open') || cl.contains('jar-open');
+  const busy = cl.contains('plans-open') || cl.contains('jar-open') || cl.contains('season-open');
   const bar = $('timebar');
   if (bar && bar.inert !== busy) bar.inert = busy;
 }
@@ -1078,7 +1179,11 @@ for (const type of ['click', 'keydown']) {
   }, true);
 }
 // the time-of-day popover has no class on <body>: watch it, so the two popovers never show together
-new MutationObserver(() => { if (!$('dayPop').hidden && account?.isOpen) account.close({ restoreFocus: false }); })
+new MutationObserver(() => {
+  if ($('dayPop').hidden) return;
+  if (account?.isOpen) account.close({ restoreFocus: false });
+  if (updatesPanel?.isOpen) updatesPanel.close({ restoreFocus: false });
+})
   .observe($('dayPop'), { attributes: true, attributeFilter: ['hidden'] });
 
 account = createAccountPanel({

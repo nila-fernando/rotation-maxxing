@@ -13,6 +13,7 @@
 //   plan     the plan they saved { plan: { sequences }, startYear, choice? , source? ('built' | 'ai'), scores? }, or null
 //   picks    the plan picked per field in "Plan my next seasons" ({ fieldId: kind }), or null
 //   cloud    where this farm lives in each account that saved it: { [userId]: { id, synced?, gone? } }
+//   seasons  the farmer's season reports, oldest first (src/plan/seasons.js), or []
 // Photos from the jar test are never part of it (they stay in this session only).
 
 export const SNAPSHOT_VERSION = 1;
@@ -63,7 +64,7 @@ function plainPlan(p) {
  * @param {{ id: string, farm: object, fields: object[], profile?: object|null, plan?: object|null,
  *   picks?: object|null, cloud?: object, savedAt?: Date }} o
  */
-export function makeSnapshot({ id, farm, fields, profile = null, plan = null, picks = null, cloud = {}, savedAt = new Date() }) {
+export function makeSnapshot({ id, farm, fields, profile = null, plan = null, picks = null, cloud = {}, seasons = [], savedAt = new Date() }) {
   return {
     v: SNAPSHOT_VERSION,
     id,
@@ -74,6 +75,7 @@ export function makeSnapshot({ id, farm, fields, profile = null, plan = null, pi
     plan: plainPlan(plan),
     picks: isObj(picks) && Object.keys(picks).length ? plain(picks) : null,
     cloud: isObj(cloud) ? plain(cloud) : {},
+    seasons: Array.isArray(seasons) ? plain(seasons) || [] : [],
   };
 }
 
@@ -101,6 +103,7 @@ export function readSnapshot(raw) {
     plan: s.plan == null ? null : plainPlan(s.plan),
     picks: isObj(s.picks) ? s.picks : null,
     cloud: isObj(s.cloud) ? s.cloud : {},
+    seasons: Array.isArray(s.seasons) ? s.seasons : [],
   };
 }
 
