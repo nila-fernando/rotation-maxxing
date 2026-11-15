@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.11.0 (2026-11-15)
+
+### What's new
+
+- **The real weather on your farm.** The island now shows the weather at your farm right now:
+  rain, snow, fog, storms, clouds and wind, on top of the season and the time of day. It checks
+  again every 20 minutes, and when you're offline the farm just has a fair day. The time-of-day
+  popover has a Weather row if you want to try another look.
+- **Sea life round the island.** An orca, a pod of dolphins and little schools of fish swim round
+  the island, out of the way of the sheep when they go for a swim. Now and then, and sooner
+  on World Whale Day, a whale comes up for a moment. It's rare, so keep an eye on the sea.
+- **A lighthouse.** A striped lighthouse stands on the island's highest point, and at night its
+  lamp glows and a soft beam sweeps slowly round. The windmill moves to other high ground nearby,
+  and every festival dresses the lighthouse too.
+- **More crops.** Cotton, sunflowers, canola, rye, dry beans, spring wheat, potatoes, sugar beets,
+  peanuts, rice, vegetables, strawberries, berries, grapes, orchards, sugarcane and tobacco now
+  grow on the island as themselves, with their own icons and names. Cotton bursts white and rice
+  paddies drain as they ripen.
+
 ## v0.10.0 (2026-11-15)
 
 The first release on the web: https://nila-fernando.github.io/rotation-maxxing/

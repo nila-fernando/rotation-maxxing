@@ -434,7 +434,9 @@ describe('the hub camera', () => {
       for (let i = 0; i < 2000; i++) check(hubPose(f, rnd), f, HUB_TENTS[name]);
     }
     assert.ok(grid.before > 0, 'the hub limits alone do let the camera into a prop (else this test proves nothing)');
-    assert.ok(poses > 10000 && before > grid.before, `${before} of ${poses} clip with the hub limits alone`);
+    // (with the lighthouse on the top and the windmill on other high ground, the random poses can
+    // all clear them; the grid still finds the clips)
+    assert.ok(poses > 10000 && before >= grid.before, `${before} of ${poses} clip with the hub limits alone`);
     assert.equal(after, 0, `${after} of ${poses} poses still clip (${before} did before): ${worst.slice(0, 3).join('; ')}`);
     t.diagnostic(`${before} of ${poses} poses clipped with the hub limits alone (${grid.before} of ${grid.poses} on the grid); ${after} with its floor`);
   });
