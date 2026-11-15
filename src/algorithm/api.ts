@@ -2,6 +2,7 @@
  * Public API: generatePlans and evaluatePlan. checkPlacement lives in placement.ts.
  */
 import { localReviewFor } from './evidence';
+import { weatherRiskFrom } from './aridity';
 import {
   SWITCHING_PENALTY_WEIGHT,
   CANDIDATE_WEIGHT_SHIFT,
@@ -13,8 +14,9 @@ import {
   SHADE_WARNING_FRACTIONS,
 } from './constants';
 import { createContext, explainPlan, planSoilAt, sequenceStatics, type ExplainedPlan, type ModelContext, type ModelOptions, type SequenceStatics } from './farmModel';
+import { freezeRiskText } from './frost';
 import { screenCrops, sequenceViolation, UNSOURCED_LAND_CHECKS } from './filters';
-import { drawSamples, probBeats, simulate, summarise, type Draws, type McSummary } from './montecarlo';
+import { drawSamples, freezeRngFor, probBeats, simulate, summarise, type Draws, type McSummary } from './montecarlo';
 import {
   criteriaWeights,
   riskAdjusted,
@@ -43,7 +45,7 @@ import type {
   Priorities,
   ReferenceBounds,
   Term,
-  WeatherScenario,
+  WeatherInput,
 } from './types';
 
 export interface GenerateOptions extends ModelOptions {
@@ -203,9 +205,14 @@ function buildResult(
       risks.push(`${name}, year ${s.year + 1}: ${(s.fraction * 100).toFixed(1)}% of the paddock is in noon shade from a taller crop to the south.`);
     }
   }
+  const fr = ctx.expectedWeather.freezeRisk?.['winter-wheat'];
+  if (fr && fr.years > 0 && c.seqs.some((s) => s.includes('winter-wheat'))) {
+    risks.push(`Freeze risk: ${freezeRiskText(fr)} (K-State C646).`);
+  }
   if (mc.p10 < 0) risks.push(`In a bad run of years (P10) this plan loses ${money(-mc.p10)} over ${ctx.horizon} years.`);
 
   const reasons = [...extra.reasons];
+  if (ctx.adjustment) reasons.push(ctx.adjustment.summary);
   for (const pr of explained.paddocks) {
     for (const yr of pr.years) {
       const credit = yr.terms.find((t) => t.label.startsWith('N credit from'));
@@ -248,6 +255,7 @@ function buildResult(
       usesMarketInput: Object.keys(ctx.market).length > 0,
       steepPaddocks: ctx.paddocks.filter((p) => p.land.slopePct >= EROSION_WARNING_LEVELS[1]).map((p) => p.name),
     }),
+    weatherRisk: weatherRiskFrom(ctx.water),
     rankStability: extra.rankStability,
     reasons,
     risks: [...new Set(risks)],
@@ -300,7 +308,7 @@ export function generatePlans(
   farm: Farm | PreparedFarm,
   priorities: Priorities,
   market: Market,
-  scenarios: WeatherScenario[],
+  scenarios: WeatherInput,
   options: GenerateOptions = {},
 ): GenerateResult {
   const ctx = createContext(farm, market, scenarios, options);
@@ -362,7 +370,7 @@ export function generatePlans(
   if (!currentInPool && current.feasible) pool.push(current);
 
   // Stage 6: Monte Carlo with common random numbers.
-  const draws: Draws = drawSamples(ctx, options.mcSamples ?? MC_SAMPLES, rng);
+  const draws: Draws = drawSamples(ctx, options.mcSamples ?? MC_SAMPLES, rng, freezeRngFor(options.seed ?? 1));
   const simulateInto = (c: Candidate) => {
     c.mc ??= summarise(simulate(ctx, c.seqs, c.fixedMoney, draws));
   };
@@ -516,7 +524,7 @@ export function evaluatePlan(
   plan: Plan,
   priorities: Priorities,
   market: Market,
-  scenarios: WeatherScenario[],
+  scenarios: WeatherInput,
   options: EvaluateOptions = {},
 ): PlanResult {
   const ctx = createContext(farm, market, scenarios, options);
@@ -533,7 +541,7 @@ export function evaluatePlan(
   const statics = ctx.paddocks.map((p, i) => sequenceStatics(ctx, p, seqs[i]!, undefined, covers[i]));
   const mine = makeCandidate(ctx, seqs, statics, true);
   const { cand: current, gaps: currentGaps } = currentCandidate(ctx, allowedSets);
-  const draws = drawSamples(ctx, options.mcSamples ?? MC_SAMPLES, rng);
+  const draws = drawSamples(ctx, options.mcSamples ?? MC_SAMPLES, rng, freezeRngFor(options.seed ?? 1));
   mine.mc = summarise(simulate(ctx, mine.seqs, mine.fixedMoney, draws));
   current.mc = mine.key === current.key ? mine.mc : summarise(simulate(ctx, current.seqs, current.fixedMoney, draws));
 

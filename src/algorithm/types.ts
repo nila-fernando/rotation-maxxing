@@ -170,6 +170,36 @@ export interface Farm {
   /** Water and equipment limits. */
   constraints?: FarmConstraints;
   paddocks: Paddock[];
+  /**
+   * Local base (average-year) yields per crop, replacing the US average from
+   * croptraits.ts. buildFarm fills this from USDA NASS Quick Stats
+   * (county -> state -> national). Crops not listed use the US average.
+   */
+  baseYields?: Partial<Record<CropId, BaseYield>>;
+}
+
+/** An average-year yield for one crop at this farm, with where it came from. */
+export interface BaseYield {
+  /** Per acre, in the crop's yield unit. */
+  value: number;
+  /** Geographic level of the yield series used. */
+  level: 'county' | 'state' | 'national';
+  /** Place name, e.g. "Saline County, KS". */
+  place: string;
+  /** Practice the value represents. 'all' = NASS "all production practices" (no split available). */
+  practice: 'non-irrigated' | 'irrigated' | 'all';
+  /** Years averaged (most recent available, up to 5). */
+  years: number[];
+  /** All-practice yields for those years. */
+  allPracticeMean: number;
+  /**
+   * When the value is converted from all practices to one practice: the mean
+   * of (practice yield / all-practice yield) over the years NASS published both.
+   */
+  practiceRatio?: { value: number; years: number[]; level: 'county' | 'state' };
+  basis: Basis;
+  sources: string[];
+  note?: string;
 }
 
 /** Harvest/field equipment that some crops need (see EQUIPMENT_NEEDED in constants.ts). */
@@ -255,8 +285,63 @@ export interface WeatherScenario {
   erosivityR?: number;
   /** That calendar year's precipitation and FAO-56 reference ET0, mm (for the aridity index). */
   climate?: { precipMm: number; et0Mm: number };
+  /** Worst spring freeze event that season, per crop (winter wheat only), or null if checked and none. */
+  freeze?: Record<CropId, FreezeEventSummary | null>;
+  /** On the MEAN scenario only: how often freezes happened and their average yield factor. */
+  freezeRisk?: Record<CropId, FreezeRisk>;
   /** Evidence for this year, e.g. ['nasaPower', 'fao56', 'fao33']. */
   sources?: string[];
+}
+
+/**
+ * Weather pools adjusted to the present climate (NEX-GDDP-CMIP6 trends). Accepted
+ * wherever WeatherScenario[] is: the deterministic search uses `mean`; Monte
+ * Carlo picks one member (climate model) per sample.
+ */
+export interface WeatherEnsemble {
+  mean: WeatherScenario[];
+  members: { model: string; pool: WeatherScenario[] }[];
+  adjustment: WeatherAdjustmentMeta;
+}
+
+export interface WeatherAdjustmentMeta {
+  method: 'present';
+  targetYear: number;
+  oldestYear: number;
+  models: string[];
+  gridCell: { lat: number; lng: number };
+  /** Shift applied to the oldest pool year, per variable and month, with a likely-noise flag. */
+  shifts: { variable: string; month: number; shift: number; unit: string; likelyNoise: boolean }[];
+  /** Ready-to-show sentence. */
+  summary: string;
+}
+
+export type WeatherInput = WeatherScenario[] | WeatherEnsemble;
+
+export function isEnsemble(w: WeatherInput): w is WeatherEnsemble {
+  return !Array.isArray(w);
+}
+
+export interface FreezeEventSummary {
+  date: string;
+  stage: string;
+  tminF: number;
+  thresholdF: number;
+  /** C646 qualitative yield effect. */
+  effect: 'slight to moderate' | 'moderate to severe' | 'severe';
+}
+
+export interface FreezeRisk {
+  /** Years with a damaging freeze. */
+  years: number;
+  /** Years checked. */
+  of: number;
+  /** Most common stage at the time of damage (ties: the more severe C646 effect). */
+  typicalStage: string | null;
+  /** Stage of the single worst freeze across the years (most severe effect, then furthest below threshold). */
+  worstStage: string | null;
+  /** Average yield factor over all years (1 in years without a freeze; design midpoints otherwise). */
+  meanFactor: number;
 }
 
 export interface FieldWater {
@@ -367,11 +452,22 @@ export interface PlanResult {
   objectiveTerms: Term[];
   /** Things a farmer or extension agent should check locally before acting on this plan. */
   localReview: string[];
+  /** Is weather risk on this farm mainly about water? From the aridity index (NASA POWER). */
+  weatherRisk: WeatherRisk;
   /** Share of priority jitters (+/-15) where this plan ranks first. Null for custom plans. */
   rankStability: number | null;
   reasons: string[];
   risks: string[];
   informationGaps: string[];
+}
+
+export interface WeatherRisk {
+  /** true when the climate is drier than humid (aridity index < 0.65); null if unknown. */
+  waterLimited: boolean | null;
+  aridityIndex: number | null;
+  aridityClass: string | null;
+  /** Ready-to-show sentence, e.g. "Weather risk here is mostly not about water ...". */
+  message: string;
 }
 
 export interface PriceOfPriorities {

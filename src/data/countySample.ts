@@ -42,6 +42,24 @@ export async function fetchCountyOutline(geoid: string, fetchFn: FetchFn = fetch
   return parseCountyOutline(await res.json());
 }
 
+/** The county containing a point (US Census TIGERweb, keyless). */
+export async function fetchCountyAtPoint(lng: number, lat: number, fetchFn: FetchFn = fetch as unknown as FetchFn): Promise<{ geoid: string; name: string; stateFips: string; countyFips: string }> {
+  const q = new URLSearchParams({
+    geometry: `${lng},${lat}`,
+    geometryType: 'esriGeometryPoint',
+    inSR: '4326',
+    spatialRel: 'esriSpatialRelIntersects',
+    outFields: 'GEOID,NAME,STATE,COUNTY',
+    returnGeometry: 'false',
+    f: 'json',
+  });
+  const res = await fetchFn(`https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/1/query?${q}`);
+  if (!res.ok) throw new Error(`TIGERweb request failed (HTTP ${res.status}).`);
+  const a = (await res.json() as { features?: { attributes: Record<string, string> }[] }).features?.[0]?.attributes;
+  if (!a) throw new Error('No US county at this point.');
+  return { geoid: a['GEOID']!, name: a['NAME']!, stateFips: a['STATE']!, countyFips: a['COUNTY']! };
+}
+
 /** Even-odd point-in-polygon over all rings (handles holes). */
 export function pointInRings([x, y]: LngLat, rings: LngLat[][]): boolean {
   let inside = false;

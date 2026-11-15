@@ -23,6 +23,8 @@ import { generatePlans, type GenerateOptions } from './api';
 import { CROP_BY_ID } from './croptraits';
 import { prepareFarm } from './geometry';
 import { meanScenario, TraitYieldModel, type YieldModel } from './yieldModel';
+import { buildWeather, type ClimateTrendsFile } from './climateAdjust';
+import { isEnsemble } from './types';
 import type {
   CalibrationRecord,
   CropCalibration,
@@ -37,6 +39,8 @@ import type {
   Plan,
   Priorities,
   WeatherScenario,
+  WeatherInput,
+  DailyWeather,
 } from './types';
 
 export interface FarmState {
@@ -44,7 +48,14 @@ export interface FarmState {
   /** Calendar year of the next season to plan. */
   nextSeason: number;
   /** Weather years used for expected values and Monte Carlo. Observed seasons are appended. */
-  weatherPool: WeatherScenario[];
+  /** Weather years used for expected values and Monte Carlo (raw pool, or a present-climate ensemble). */
+  weatherPool: WeatherInput;
+  /**
+   * Optional: the daily weather and climate trends the pool was built from. When
+   * present, replan() rebuilds the pool adjusted to `nextSeason`, so the
+   * adjustment target always follows the season being planned.
+   */
+  weatherSource?: WeatherSource;
   /** The plan the farmer adopted, and the season its first year is for. */
   adoptedPlan?: { firstSeason: number; plan: Plan };
   /** One entry per season reported, newest last. */
@@ -68,9 +79,17 @@ export interface SeasonReport {
   paddocks: PaddockReport[];
 }
 
+export interface WeatherSource {
+  daily: DailyWeather;
+  trends?: ClimateTrendsFile;
+  weatherAdjustment: 'none' | 'present';
+}
+
 export interface SeasonObservations {
   /** That season's weather year, e.g. NASA POWER through scenariosFromDailyWeather(). */
   weather?: WeatherScenario;
+  /** That season's DAILY weather (NASA POWER), appended to the weather source when the state has one. */
+  daily?: DailyWeather;
   /** Field data that changed (e.g. re-pulled SSURGO, a new slope survey). */
   land?: Record<PaddockId, Partial<Land>>;
 }
@@ -89,8 +108,30 @@ export interface UpdateOptions {
   yieldModel?: YieldModel;
 }
 
-export function createFarmState(farm: Farm, weatherPool: WeatherScenario[], nextSeason: number): FarmState {
-  return { farm, nextSeason, weatherPool, log: [] };
+export function createFarmState(farm: Farm, weatherPool: WeatherInput, nextSeason: number, weatherSource?: WeatherSource): FarmState {
+  return { farm, nextSeason, weatherPool, log: [], ...(weatherSource ? { weatherSource } : {}) };
+}
+
+/** The mean (deterministic) pool of a raw pool or an ensemble. */
+function meanPool(w: WeatherInput): WeatherScenario[] {
+  return isEnsemble(w) ? w.mean : w;
+}
+
+/** Append days to a daily record, skipping dates it already has. */
+function appendDaily(a: DailyWeather, b: DailyWeather): DailyWeather {
+  const seen = new Set(a.dates);
+  const keep = b.dates.map((d, i) => (seen.has(d) ? -1 : i)).filter((i) => i >= 0);
+  const pick = (xs: number[], ys: number[]) => [...xs, ...keep.map((i) => ys[i]!)];
+  return {
+    ...a,
+    dates: [...a.dates, ...keep.map((i) => b.dates[i]!)],
+    tmaxC: pick(a.tmaxC, b.tmaxC),
+    tminC: pick(a.tminC, b.tminC),
+    rainMm: pick(a.rainMm, b.rainMm),
+    solarMJ: pick(a.solarMJ, b.solarMJ),
+    rhPct: pick(a.rhPct, b.rhPct),
+    wind2m: pick(a.wind2m, b.wind2m),
+  };
 }
 
 /** Record the plan the farmer chose, so the next re-plan stays close to it. */
@@ -126,7 +167,7 @@ export function updateAfterSeason(
   const model = options.yieldModel ?? new TraitYieldModel();
   const prepared = prepareFarm(state.farm);
   const byId = new Map(report.paddocks.map((r) => [r.paddockId, r]));
-  const weather = observations.weather ?? meanScenario(state.weatherPool);
+  const weather = observations.weather ?? meanScenario(meanPool(state.weatherPool));
   const notes: string[] = [];
   if (!observations.weather) notes.push(`No observed weather for ${report.season}; predictions used the average year, so calibration is less reliable.`);
 
@@ -188,9 +229,20 @@ export function updateAfterSeason(
     };
   });
 
-  const weatherPool = observations.weather
-    ? [...state.weatherPool, { ...observations.weather, label: observations.weather.label ?? `${report.season} (observed)` }]
-    : state.weatherPool;
+  const observed = observations.weather
+    ? { ...observations.weather, label: observations.weather.label ?? `${report.season} (observed)` }
+    : null;
+  const pool = state.weatherPool;
+  // The observed season is (nearly) today's climate: it joins every pool unshifted.
+  const weatherPool: WeatherInput = !observed
+    ? pool
+    : isEnsemble(pool)
+      ? { ...pool, mean: [...pool.mean, observed], members: pool.members.map((m) => ({ ...m, pool: [...m.pool, observed] })) }
+      : [...pool, observed];
+  const weatherSource =
+    state.weatherSource && observations.daily
+      ? { ...state.weatherSource, daily: appendDaily(state.weatherSource.daily, observations.daily) }
+      : state.weatherSource;
 
   return {
     state: {
@@ -198,6 +250,7 @@ export function updateAfterSeason(
       farm: { ...state.farm, paddocks },
       nextSeason: report.season + 1,
       weatherPool,
+      ...(weatherSource ? { weatherSource } : {}),
       log: [...state.log, { season: report.season, report, calibration: calLog, notes }],
     },
     notes,
@@ -228,7 +281,16 @@ export function replan(
   options: GenerateOptions = {},
 ): GenerateResult {
   const previousPlan = options.previousPlan ?? alignedPreviousPlan(state, 3);
-  return generatePlans(state.farm, priorities, market, state.weatherPool, {
+  // With a weather source, rebuild the pool adjusted to the season being planned.
+  const src = state.weatherSource;
+  const weather = src
+    ? buildWeather(state.farm, src.daily, {
+        ...(src.trends ? { trends: src.trends } : {}),
+        targetYear: state.nextSeason,
+        weatherAdjustment: src.weatherAdjustment,
+      }).weather
+    : state.weatherPool;
+  return generatePlans(state.farm, priorities, market, weather, {
     ...options,
     ...(previousPlan ? { previousPlan } : {}),
   });

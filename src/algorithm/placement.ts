@@ -12,7 +12,7 @@ import {
   WATER_HIGH_KC,
   WATER_SENSITIVE_P,
 } from './constants';
-import { depletionP, getCrop, isFallow, kcMid, nCreditMid, salinityRelativeYield, typicalYield } from './cropData';
+import { baseYieldFor, depletionP, getCrop, isFallow, kcMid, nCreditMid, salinityRelativeYield } from './cropData';
 import { prepareFarm } from './geometry';
 import { equipmentReason, missingEquipmentFor, needsBuyerReason } from './filters';
 import { STATE_PRESENCE } from './croptraits';
@@ -144,7 +144,8 @@ export function checkPlacement(
   }
 
   // erosion: slope x uncovered share
-  const yieldGuess = typicalYield(crop) !== null ? typicalYield(crop)! * sal.value : null;
+  const yb = baseYieldFor(prepared.farm, crop).value;
+  const yieldGuess = yb !== null ? yb * sal.value : null;
   const gc = groundCover(crop, yieldGuess, paddock.tillage ?? DEFAULT_TILLAGE, prepared.farm.state);
   const cover = gc.value ?? 0;
   const erosion = paddock.land.slopePct * (1 - cover);
@@ -183,7 +184,7 @@ export function checkPlacement(
 
   // market
   const m = options.market?.[cropId];
-  const y0 = typicalYield(crop);
+  const y0 = baseYieldFor(prepared.farm, crop).value;
   if (m && y0 !== null) {
     let production = 0;
     for (const p of paddocks) if (cropAt(p, yearIndex) === cropId) production += y0 * p.acres;

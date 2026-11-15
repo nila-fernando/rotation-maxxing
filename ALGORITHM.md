@@ -1,5 +1,7 @@
 # How the rotation algorithm works
 
+> **Model frozen on 2026-11-15**, with one later feature: the present-climate weather adjustment (below). Validation is in `reports/`. Remaining limitations are listed below and in `DATA_GAPS`.
+
 This is the scoring engine behind Field Shift's rotation planner. It takes a farm (paddocks, land, the last 3 years of crops), the farmer's priorities, local market prices and a pool of weather years. It returns three 3-year plans, every number in them explained.
 
 All code is in `src/algorithm/`. Every function is pure: there is no I/O, no clock and no global state. All randomness comes from one seeded RNG, so the same inputs and seed always give the same answer.
@@ -59,8 +61,16 @@ Yield sits behind a `YieldModel` interface. Search and Monte Carlo only call `yi
 The shipped model is **TraitYieldModel**:
 
 ```
-yield = US average yield × salinity × pH × drainage × rotation factors × (1 − shade loss) × weather multiplier
+yield = base yield × salinity × pH × drainage × rotation factors × (1 − shade loss) × weather multiplier
 ```
+
+**Base yield** (`Farm.baseYields`, filled by `buildFarm` from USDA NASS Quick Stats; `src/data/nassYields.ts`):
+- **Series:** the mean of the last 5 available "all production practices" survey yields, counting only the 10 years up to the newest NASS year for that crop (design), so a county that stopped reporting falls back instead of using a stale average.
+- **Practice:** recent NASS yields mix irrigated and dryland acres. Kansas publishes the NON-IRRIGATED / IRRIGATED split only up to 2018 (county and state), so the split is applied as a **ratio**: the mean of (practice yield / all-practice yield) over the years both were published. The ratio comes from the county when it has 3+ paired years, else the state (design). Rain-fed farms use the non-irrigated ratio, irrigated farms the irrigated one. With no split (e.g. Iowa, almost all rain-fed), the all-practice yield is used, with a gap.
+- **Fallback:** county (3+ recent years) → state → the US average in `croptraits.ts`, with a gap naming the level.
+- **Demo counties** (Saline, McPherson, Story, Boone) are precomputed by `npm run nass-base-yields` into `src/data/baseYields/`, so the demo needs no key.
+- The water-balance multiplier stays relative to the base (below), so the backtest is unchanged.
+- **Caveat:** land-suitability factors (pH, drainage, salinity) still apply on top. A county average already reflects the county's typical soils, so for an average field this partly double-counts (see the gaps table).
 
 Every model is wrapped by `withCalibration()`, which multiplies by the field's learned yield factor (see *The season loop*). The weather multiplier is per field when the pool came from NASA POWER.
 
@@ -344,7 +354,7 @@ Ya/Ym    = 1 − Ky × (1 − ΣETa / ΣETm)       Ky from FAO-66 Table 1 (FAO-3
 multiplier(field, crop, year) = Ya/Ym ÷ mean dryland Ya/Ym over all years
 ```
 
-Dividing by the dryland mean keeps the national yield meaning "an average year", and lets irrigated fields come out above average. Irrigated fields are refilled to field capacity when depletion passes RAW, until the seasonal allocation runs out. Planting uses the Handbook 628 active-start date where available.
+Dividing by the dryland mean keeps the base yield meaning "an average year", and lets irrigated fields come out above it. On an irrigated farm whose base yield is an irrigated NASS yield, the irrigated mean is used instead, so the irrigated base is not counted twice. Irrigated fields are refilled to field capacity when depletion passes RAW, until the seasonal allocation runs out. Planting uses the Handbook 628 active-start date where available.
 
 **Soil-water carryover (one season of memory).** Each crop starts with the root zone left by what came before. The water at planting depends on the previous crop:
 - **Previous crop:** that crop's season (starting full; cut short if the next crop is planted before it's harvested), then the off-season. In the off-season, bare-soil evaporation (FAO-56 Ch. 7) is reduced by the previous crop's residue mulch (FAO-56 Ch. 11: TEW −5% per 10% cover) and refilled by rain.
@@ -455,6 +465,97 @@ With `NASS_API_KEY` set, it also pulls QuickStats county yields, detrends them l
 
 Without a key it lists the model's worst years. 2012 is the worst for every county and crop.
 
+## Present-climate weather adjustment (`climateAdjust.ts`, NEX-GDDP-CMIP6)
+
+The NASA POWER record (2000 onward) is shifted toward the climate of the season being planned. It uses the change-factor (delta) method, with trends from NASA NEX-GDDP-CMIP6 (NASA NCCS, CC0; Thrasher et al. 2022, *Scientific Data* 9, 262).
+
+**Models.** MIROC6 (2.61 °C), MPI-ESM1-2-HR (2.98), MRI-ESM2-0 (3.15), IPSL-CM6A-LR (4.56) and ACCESS-CM2 (4.72). The numbers are equilibrium climate sensitivity from IPCC AR6 WG1 Table 7.SM.5. Selection rule:
+- climate sensitivity inside the AR6 *very likely* range of 2–5 °C (SPM A.4.4)
+- all six variables for `historical` and `ssp245` in the same run, and every year present
+- a standard calendar
+- distinct modelling centres
+
+**Two of the five are high-sensitivity models.** IPSL-CM6A-LR (4.56 °C) and ACCESS-CM2 (4.72 °C) are above the AR6 *likely* range of 2.5–4 °C (AR6 WG1 Ch. 7), though inside the *very likely* 2–5 °C range used for selection. High-sensitivity models tend to warm faster than observed over recent decades (Hausfather et al. 2022, *Nature* 605, 26-29, "Climate simulations: recognize the hot model problem"), so these two may pull the 5-model mean trend up; in Monte Carlo the two together are drawn 2 times in 5. The other three (2.61, 2.98, 3.15 °C) are inside the likely range.
+
+**Trends** (precomputed by `scripts/cmip6-trends.ts`; point requests only, cached, 4 at a time):
+- **Period:** historical 1995–2014 joined to SSP2-4.5 2015–2035. This close to the present, the scenario choice barely matters.
+- **Fit:** for each model, variable and calendar month, a least-squares line through **3-month centred moving-window** means (wrapping December–January). This is a design choice, made to reduce single-run noise.
+- **Standard error:** each trend stores its standard error. A shift whose trend is below 2× its standard error is flagged "likely noise" in reports.
+- **Relative trends:** precipitation, radiation and wind trends are relative to their 1995–2035 mean.
+
+**Shift for a day in year y and month m, with dt = target − y:**
+
+```
+tasmax, tasmin  += slope[m] × dt          (Tmin is kept ≤ Tmax; design)
+hurs            += slope[m] × dt, within 0–100
+pr, rsds, wind  ×= clamp(1 + relative slope[m] × dt, 0.5, 2.0)     (clamp: design; dry days stay dry)
+```
+
+Reference ET, the water balance, carryover, freeze detection and erosivity are then recomputed from the shifted days, unchanged.
+
+**Ensemble:**
+- **Deterministic search:** uses the 5-model **mean** trend.
+- **Monte Carlo:** each sample picks **one model**, shared by every paddock and plan, then whole years from that model's pool. So disagreement between climate models feeds into P10.
+
+**Target year:**
+- the farm state's `nextSeason`; `replan` rebuilds the pool from the stored `weatherSource`
+- `buildFarm` takes `targetYear` from the frontend
+- only if that's missing, it falls back to last weather year + 1, with a gap
+
+**Modes and the backtest.** `weatherAdjustment: 'present'` is the default when trends are available. **The backtest always uses `'none'`** (raw POWER).
+
+**Explanation**, e.g. "Weather shifted to the model-projected 2027 climate using NASA NEX-GDDP-CMIP6 (5 climate models); older years shifted more. 2001 replayed ~3.0 F warmer in Jul (daily highs, model-projected change)." The shifts are climate-model projections, not observations, and the text says so.
+
+**Gaps:**
+- only monthly averages shift, not extremes or variability
+- the adjusted pool can't be backtested
+- ~0.25° grid
+- bias-adjusted to GMFD, not POWER (only trends are used)
+- single-run noise
+
+## Spring freeze injury to winter wheat (`frost.ts`)
+
+```
+growing degrees (F) = max(0, (Tmax + Tmin)/2 − 32), summed from 1 January       Kansas Mesonet formula
+stage               = < 800 tillering | 800–1200 jointing | 1200–1400 boot | 1400–1600 heading |
+                      1600–2000 flowering | 2000–2400 milk | 2400–2800 dough | ≥ 2800 mature
+green-up            = after the first 5 days in a row with mean ≥ 41 F, not before 1 March (design)
+freeze event        = a night AFTER GREEN-UP with NASA POWER Tmin ≤ the C646 injurious temperature for the stage:
+                      tillering 12 F, jointing 24, boot 28, heading 30, flowering 30, milk 28, dough 28
+season damage       = the worst event's C646 yield effect → design range:
+                      slight-to-moderate U(0.80, 1.00), moderate-to-severe U(0.50, 0.85), severe U(0.20, 0.60)
+```
+
+**Sourced:** the freeze thresholds and the qualitative yield effects (K-State C646, Table 1), and the growing-degree formula (Kansas Mesonet).
+
+**Design or assumption:**
+- The damage ranges are **unsourced design values**, chosen before validation. Midpoints are used in the search; Monte Carlo draws within the range, one draw per weather year, shared by every plan and field.
+- Assigning each overlapping Mesonet stage band to one C646 stage is a design choice.
+- The 1 January start is an **assumption**. The Mesonet page doesn't state it, but it's corroborated: Tribune KS 2026 has a Mesonet season total of 4,346 F, and NASA POWER from 1 January to 30 June gives 4,443 F.
+
+**Scope fix: freezes count from spring green-up (1 March).** C646 Table 1 covers *spring* growth stages. C646 (p. 5) says: "Spring tillering of wheat in Kansas usually begins during late February and continues through March." The first version counted freezes from 1 January, so it applied spring thresholds to dormant, cold-hardened winter wheat. That was outside the source's scope.
+
+The flaw was found during validation: 20 false alarms per county, nearly all January–February nights below 12 F. It was fixed by counting events from 1 March, a date derived from C646's wording. This is a scope correction, not tuning: the thresholds and damage ranges were not changed. Growing degrees still accumulate from 1 January for staging.
+
+**Limits:**
+- the daily minimum temperature is for a ~50 km grid cell
+- C646's thresholds assume two hours of exposure, which daily data can't resolve
+- snow cover isn't modelled
+
+**Check:** Saline KS on 6–8 April 2007 reached 17–20 F at about 900 GDD (jointing), so it is flagged. K-State SRP 982 reports 46% of the crop jointed by 2 April, then record cold in early April.
+
+**Green-up from warmth, not the calendar (review fix, Nov 2026).** The 1 March date comes from a Kansas sentence, so on its own it raised false alarms further north. On the Ames, Iowa record it flagged "tillering" freezes in 13 of 24 years, all between 1 and 21 March, when the wheat had only 1–187 growing degrees and was still dormant. Events now count only after the **first run of 5 days in a row averaging 41 F (5 °C) or more**, and still never before 1 March, which guards against winter thaws. The 5-day, 41 F rule is a **design value**. Ames now flags no freezes. In Kansas it also removes the 2–5 March tillering flags that came right after the old cut-off.
+
+**Missing days** (non-finite Tmax or Tmin) are skipped: they add no growing degrees and raise no event. Before this fix, one missing value made the season's growing-degree total NaN and switched detection off.
+
+**Monte Carlo:** each sample draws one damage value per horizon (weather) year, from a separate seeded stream (`freezeRngFor(seed)`). Every plan and field shares those draws (common random numbers), but seasons aren't tied together. Because the stream is separate, runs without freeze data are bit-identical to runs before the freeze model existed.
+
+Plans with wheat say, for example, "Freeze risk: in 3 of 24 years, temperatures fell to or below the jointing threshold (K-State C646)." The stage is the most common one, with ties going to the more severe C646 effect. When the single worst freeze was at a different stage, the text adds it, e.g. "(worst: heading)".
+
+## Is weather risk about water here? (`PlanResult.weatherRisk`)
+
+`waterLimited` is true when the aridity index is below 0.65 (drier than humid). For humid farms, `message` says weather risk is mostly not about water: wet springs, floods, wind and frost matter more, and most of those aren't modelled. The backtest supports this: Iowa yields barely track the water balance, while Kansas summer crops do (r ≈ 0.8–0.9).
+
 ## Fallow and the water score (FAO-56 bare-soil evaporation)
 
 Fallow isn't free on water: bare soil evaporates. With daily weather, fallow follows FAO-56 Ch. 11 for non-growing periods. That is the Ch. 7 evaporation balance with Kcb = Kc min = 0:
@@ -516,6 +617,9 @@ Fallow is scored over the same May–Sep window as summer crops. The surface sta
 | `CALIBRATION_PRIOR_SD` / `CALIBRATION_OBS_SD` | 0.15 / 0.20 | Field calibration shrinkage |
 | `CALIBRATION_EXCLUDED_EVENTS` | hail, flood, replant | One-off seasons not learned from |
 | `SWITCHING_PENALTY_WEIGHT` | 0.05 | Re-planning stability |
+| `FREEZE_DAMAGE_FACTORS`, `WHEAT_GDD_STAGES` (`croptraits.ts`) | ranges above | Freeze damage (unsourced design); stage mapping (design) |
+| `MULTIPLIER_CLAMP` (`climateAdjust.ts`) | 0.5–2.0 | Clamp on precipitation/radiation/wind change factors (design) |
+| Trend window (`src/data/cmip6.ts`) | 3-month centred | Reduces single-run noise (design) |
 | `SCARCITY_CURVE` (`waterParams.ts`) | 0 at AI 0.65 → 1 at AI 0.20 | Water weight vs aridity (design; anchors are UNEP classes) |
 
 Also:
@@ -544,6 +648,8 @@ Also:
 | Magnitudes of the pest-repeat and white-mold penalties | `constants.ts` | Unsourced design values |
 | Legume N credits to wheat and sorghum | — | Not modelled (corn only) |
 | Corn/soy price correlation; 10+ years of prices for σ | — | Not modelled / 3 years only |
-| State/county yields instead of national | `croptraits.ts` | National only |
+| Local base yields | `src/data/nassYields.ts` | NASS county → state → US average. Kansas practice split ends 2018, so non-irrigated/irrigated is a historical ratio (design) |
+| Land-suitability factors on top of a county base yield | `yieldModel.ts` | pH, drainage and salinity factors were designed against a US average; with a county base they partly double-count (not yet corrected) |
+| Operating costs and prices | `croptraits.ts` | US totals (ERS 2027 forecast) and US marketing-year prices, not regional (K-State budgets differ a lot for dryland Kansas; see `reports/`) |
 
 See also `DATA_GAPS` in `croptraits.ts`.
