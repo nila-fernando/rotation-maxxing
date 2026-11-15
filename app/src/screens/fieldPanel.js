@@ -213,10 +213,18 @@ export function readHtml(st) {
   if (st.status === 'error') return `<p class="ck-read__note">${esc(st.line)}</p>${btn('Try again')}`;
   const r = st.read;
   const list = (items, cls) => (items.length ? `<ul class="says__list ck-read__list ${cls}">${items.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '');
-  return `<div class="ck-read__box"><p class="ck-read__h">${READ_ICON}Manami’s read</p><p>${esc(r.summary)}</p>
-    ${r.good.length ? `<p class="ck-read__sub">Going well</p>${list(r.good, 'ck-read__list--good')}` : ''}
-    ${r.watch.length ? `<p class="ck-read__sub">Keep an eye on</p>${list(r.watch, 'ck-read__list--watch')}` : ''}
-    ${r.next_step ? `<p><b>Next:</b> ${esc(r.next_step)}</p>` : ''}
+  // her first two sentences up front; the rest of the summary and the lists fold out under "More"
+  const parts = String(r.summary || '').trim().split(/(?<=[.!?])\s+/);
+  const lead = parts.slice(0, 2).join(' ');
+  const rest = parts.slice(2).join(' ');
+  const more = [
+    rest ? `<p>${esc(rest)}</p>` : '',
+    r.good.length ? `<p class="ck-read__sub">Going well</p>${list(r.good, 'ck-read__list--good')}` : '',
+    r.watch.length ? `<p class="ck-read__sub">Keep an eye on</p>${list(r.watch, 'ck-read__list--watch')}` : '',
+  ].join('');
+  return `<div class="ck-read__box"><p class="ck-read__h">${READ_ICON}Manami’s read</p><p class="ck-read__lead">${esc(lead)}</p>
+    ${r.next_step ? `<p class="ck-read__next"><b>Next:</b> ${esc(r.next_step)}</p>` : ''}
+    ${more ? `<details class="ck-read__more"><summary>More from Manami</summary>${more}</details>` : ''}
     <p class="ck-read__note">From Claude, an AI, reading this field’s data. It can be wrong.</p></div>`;
 }
 

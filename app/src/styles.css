@@ -2021,3 +2021,27 @@ body.ask-open .manami { opacity: 0; pointer-events: none; }
 .ck-read__h { display: flex; align-items: center; gap: 6px; font-weight: 700; }
 .ck-read__sub { margin-top: 8px !important; font-weight: 700; font-size: 13.5px; }
 .ck-read__list { margin: 2px 0 0; padding-left: 18px; }
+
+/* Manami's take: one small card per field (name, her pick as a chip, her first sentence; "Why"
+   folds out the rest), so the plans stay in view under her advice */
+.take-cards { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 8px; margin: 10px 0 4px; }
+.take-card { border-radius: 14px; background: var(--paper); box-shadow: inset 0 0 0 2px var(--tile-line); }
+.take-card > details > summary, .take-card__plain { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 2px 8px; padding: 10px 12px; cursor: pointer; list-style: none; }
+.take-card__plain { cursor: default; }
+.take-card summary::-webkit-details-marker { display: none; }
+.take-card__name { font-weight: 700; font-size: 15px; }
+.take-card__pick { justify-self: end; font-size: 12px; font-weight: 700; padding: 1px 9px; border-radius: 999px; background: #eef8ec; color: var(--green-ink); box-shadow: inset 0 0 0 1.5px #a9d6b4; white-space: nowrap; }
+.take-card__pick.is-own { background: #fff1dc; color: #7a4a17; box-shadow: inset 0 0 0 1.5px #e7bf86; }
+.take-card__why { grid-column: 1 / -1; margin: 2px 0 0; font-size: 14px; line-height: 1.4; }
+.take-card__more { grid-column: 1 / -1; justify-self: start; font-size: 13px; font-weight: 700; color: var(--green-dark); }
+.take-card__more::after { content: ''; display: inline-block; width: 7px; height: 7px; margin-left: 6px; border: solid currentColor; border-width: 0 2px 2px 0; transform: translateY(-2px) rotate(45deg); transition: transform .15s; }
+.take-card details[open] .take-card__more::after { transform: translateY(1px) rotate(-135deg); }
+.take-card__rest, .take-card__own { margin: 0; padding: 0 12px 10px; font-size: 14px; line-height: 1.45; color: var(--ink); }
+.take-card__own { color: var(--ink-soft); }
+.take-watch { margin-top: 8px; }
+.take-watch > summary { cursor: pointer; font-weight: 700; font-size: 14px; }
+.take-watch__n { display: inline-grid; place-items: center; min-width: 20px; height: 20px; margin-left: 4px; padding: 0 6px; border-radius: 999px; background: #fff1dc; color: #7a4a17; font-size: 12px; }
+/* Manami's read: two sentences up front, the rest under "More from Manami" */
+.ck-read__lead { margin: 4px 0; }
+.ck-read__next { margin: 6px 0; padding: 6px 10px; border-radius: 10px; background: #eef8ec; }
+.ck-read__more > summary { cursor: pointer; font-weight: 700; font-size: 13.5px; color: var(--green-dark); margin: 4px 0; }

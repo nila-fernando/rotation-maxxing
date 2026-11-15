@@ -29,6 +29,13 @@ export function scoreLine(r) {
 }
 
 /** The section's HTML for a state (pure, for the tests). */
+/** "First. Second. Third." -> ['First.', 'Second. Third.'] (her first sentence, and the rest). */
+export function firstSentence(text) {
+  const t = String(text || '').trim();
+  const m = /^(.+?[.!?])(\s+)(.+)$/s.exec(t);
+  return m ? [m[1], m[3]] : [t, ''];
+}
+
 export function takeHtml(state, data) {
   const ask = (label) => `<button class="btn btn--quiet btn--small plans__take-ask" type="button" data-take="ask">${TAKE_ICON}<span>${label}</span></button>`;
   if (state.status === 'loading') return '<p class="plans__take-wait" role="status"><span class="plans__spinner" aria-hidden="true"></span>Looking over your fields and the three plans…</p>';
@@ -38,9 +45,17 @@ export function takeHtml(state, data) {
   }
   const t = state.take;
   const names = new Map(data.result.plans.priority.paddocks.map((p) => [p.paddockId, p.name]));
+  // one small card per field: its name, the plan she'd pick as a chip, her first sentence; the rest
+  // of her reasons fold out under it (so the plans themselves stay in view)
   const rows = t.fields.filter((f) => names.has(f.field_id)).map((f) => {
-    const own = state.adjusted.has(f.field_id) ? `<span class="plans__take-own">My own three seasons: ${esc(cropWords(f.adjusted))}.</span>` : '';
-    return `<li><b>${esc(names.get(f.field_id))}</b>: ${esc(state.adjusted.has(f.field_id) ? 'my own plan' : planName(f.pick))}. ${esc(f.why)} ${own}</li>`;
+    const mine = state.adjusted.has(f.field_id);
+    const own = mine ? `<p class="take-card__own">My own three seasons: ${esc(cropWords(f.adjusted))}.</p>` : '';
+    const [first, rest] = firstSentence(f.why);
+    const head = `<span class="take-card__name">${esc(names.get(f.field_id))}</span><span class="take-card__pick${mine ? ' is-own' : ''}">${esc(mine ? 'My own plan' : planName(f.pick))}</span>`;
+    const body = `<p class="take-card__why">${esc(first)}</p>`;
+    return rest || own
+      ? `<li class="take-card"><details><summary>${head}${body}<span class="take-card__more">Why</span></summary><p class="take-card__rest">${esc(rest)}</p>${own}</details></li>`
+      : `<li class="take-card"><div class="take-card__plain">${head}${body}</div></li>`;
   }).join('');
   const risks = [
     ...t.risks.map((r) => (r.field_id && names.has(r.field_id) ? `${names.get(r.field_id)}: ${r.text}` : r.text)),
@@ -53,8 +68,8 @@ export function takeHtml(state, data) {
     : '<p class="plans__take-nums">I couldn’t get the planner’s numbers for this just now.</p>';
   const dropped = state.dropped ? '<p class="plans__take-note">The planner couldn’t score my own seasons, so I left them out.</p>' : '';
   return `${t.headline ? `<p class="plans__take-line">${esc(t.headline)}</p>` : ''}
-    <ul class="plans__list plans__take-list">${rows}</ul>${dropped}${numbers}
-    ${risks.length ? `<h4 class="rot-watch__h">Watch out</h4><ul class="plans__list plans__list--risk">${risks.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
+    <ul class="take-cards">${rows}</ul>${dropped}${numbers}
+    ${risks.length ? `<details class="take-watch"><summary>Watch out <span class="take-watch__n">${risks.length}</span></summary><ul class="plans__list plans__list--risk">${risks.map((r) => `<li>${esc(r)}</li>`).join('')}</ul></details>` : ''}
     <div class="plans__take-acts"><button class="btn btn--primary btn--small" type="button" data-take="use">Use my take</button>${ask('Ask again')}</div>
     <p class="plans__take-note">My words come from Claude, an AI, and can be wrong. The numbers are the planner’s own.</p>`;
 }
