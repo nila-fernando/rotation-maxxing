@@ -278,6 +278,29 @@ describe('coin stacks', () => {
     if (!spots.get('f0')) { assert.equal(coins.countOf('f0'), 0); assert.equal(coins.topOf('f0'), null); }
   });
 
+  it('a smaller pad grows the keep-outs less; the default is as before', () => {
+    const host = new THREE.Group();
+    const ghost = new THREE.Mesh(new THREE.SphereGeometry(0.2));
+    ghost.position.set(1, 2, -1);
+    const bunting = new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshBasicMaterial(), 1);
+    bunting.setMatrixAt(0, new THREE.Matrix4().makeTranslation(-2, 1.5, 3));
+    host.add(ghost, bunting);
+    const plain = themeKeepOuts(host);
+    const same = themeKeepOuts(host, { pad: 0.6 });
+    const snug = themeKeepOuts(host, { pad: 0.12 });
+    assert.equal(plain.length, 2);
+    assert.equal(snug.length, 2);
+    const size = (b) => b.getSize(new THREE.Vector3());
+    // the default is the 0.6 it always was: the ghost's ball (0.4 across) grows to 1.6
+    assert.ok(Math.abs(size(plain[0]).x - (0.4 + 1.2)) < 1e-6, `default pad 0.6 (${size(plain[0]).x})`);
+    for (let i = 0; i < 2; i++) {
+      assert.deepEqual(plain[i].min, same[i].min);
+      assert.deepEqual(plain[i].max, same[i].max);
+      assert.ok(plain[i].containsBox(snug[i]), 'the snug box sits inside the default one');
+      assert.ok(Math.abs(size(plain[i]).x - size(snug[i]).x - 2 * (0.6 - 0.12)) < 1e-6, 'smaller by the pad on each side');
+    }
+  });
+
   it('prewarms its material through the renderer', async () => {
     const view = fakeView();
     const coins = createCoinStacks(view);

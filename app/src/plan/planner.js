@@ -7,6 +7,12 @@
 //     result.plans.current / .maxProfit / .priority, result.priceOfPriorities, result.exclusions
 import { plannerFarm, plannerMarket, plannerPriorities } from './farmInput.js';
 
+/**
+ * What a set of plans is remembered by. The gap lines are in it: a jar test changes them (and the
+ * notes) even when the field's texture bucket stays the same, and the plans must then be new.
+ */
+export const plansKey = (farm, gaps, priorities, market, seed) => JSON.stringify([farm, gaps, priorities, market, seed]);
+
 export function createPlanner() {
   let worker = null;
   let nextId = 1;
@@ -48,7 +54,7 @@ export function createPlanner() {
     const { farm, gaps } = plannerFarm({ fields, place, profile, firstSeason });
     const priorities = plannerPriorities(profile);
     const market = plannerMarket(county);
-    const key = JSON.stringify([farm, priorities, market, seed]);
+    const key = plansKey(farm, gaps, priorities, market, seed);
     if (cache.key === key) return cache.value;
     const reply = await ask({ type: 'plans', farm, priorities, market, demo: !!place?.demo, options: { seed } });
     lastWeather = reply.weather.fallback ? (reply.weather.source === 'none' ? 'none' : 'ames') : null;

@@ -1,11 +1,13 @@
 // The three plans compared field by field, on the demo farm's real plans (worked out here as the
-// app does: test/futuresDemo.mjs), plus a soil-first run and synthetic 1- and 15-field farms.
+// app does: test/futuresDemo.mjs), plus a soil-first run, the wheat demo (a spring freeze) and
+// synthetic 1- and 15-field farms. The planner's Monte Carlo totals are pinned in one block at the
+// end, so a re-vendor that moves them is re-pinned in one place.
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
-import { demoData, clonedData, coverPickData, START_YEAR } from '../../test/futuresDemo.mjs';
+import { demoData, clonedData, coverPickData, kansasLike, wheatData, START_YEAR } from '../../test/futuresDemo.mjs';
 import {
-  KINDS, coinPlan, compareFutures, coverAddFields, coverOnlyFields, fineprint, flagsFor, isGoodFit, mixedPlan, reelStops, seasonChanges,
-  termsOf, tiles, viewField,
+  KINDS, coinPlan, compareFutures, coverAddFields, coverOnlyFields, dryIds, fineprint, flagsFor, frostIds, frostStop, headline, isGoodFit,
+  mixedPlan, reelStops, seasonChanges, termsOf, tiles, viewField,
 } from './compareFutures.js';
 
 const near = (actual, expected, tol, what) => assert.ok(Math.abs(actual - expected) <= tol, `${what}: ${actual} not within ${tol} of ${expected}`);
@@ -40,9 +42,8 @@ describe('the three plans compared field by field (demo farm, profit first)', ()
   it('reads the farm numbers, the price of priorities and the weights', () => {
     assert.equal(cmp.totals.priority.endSoil100, 57);
     assert.equal(cmp.totals.current.endSoil100, 45);
-    near(cmp.price.cash, -7210.6, 0.1, 'cash given up');
+    assert.ok(cmp.price.cash < 0, 'the pick gives up some cash'); // the amount: the Monte Carlo block below
     near(cmp.price.nCarried, -5137.9, 0.1, 'nitrogen carried');
-    near(cmp.price.p10, 9091, 1, 'bad year');
     near(cmp.price.soilAvgPts, 3.5, 0.01, 'soil points');
     assert.ok(cmp.price.waterIn > 0.35, 'the pick uses more water');
     assert.equal(cmp.price.samePlan, false);
@@ -86,18 +87,19 @@ describe('the three plans compared field by field (demo farm, profit first)', ()
 
   it('fills the tiles, for a whole plan and for a mix', () => {
     const [cash, bad, soil, beats] = tiles(cmp, 'priority');
-    near(cash.diff, 60180, 1, 'cash diff');
-    near(bad.diff, 83430, 1, 'bad year diff');
-    assert.deepEqual([soil.value, soil.diff, beats.value], [57, 12, 98]);
+    // the cash and the bad year are Monte Carlo numbers (pinned below); here only which way they go
+    assert.ok(cash.diff > 0 && bad.diff > 0);
+    assert.deepEqual([soil.value, soil.diff], [57, 12]);
+    assert.ok(beats.value >= 90, `the pick beats keeping going in ${beats.value}%`);
     assert.equal(tiles(cmp, 'current')[3].value, null);
     const choice = { f1: 'current' };
     assert.equal(tiles(cmp, 'mix', null, choice)[0].value, null, 'still working');
     const mix = data.evaluate(mixedPlan(data.result.plans, choice));
     const t = tiles(cmp, 'mix', mix, choice);
-    near(t[0].value, 386464, 1, 'mix cash');
-    near(t[0].diff, 39995, 1, 'mix diff');
-    assert.equal(t[3].value, 91);
-    near(tiles(cmp, 'mix', mix)[0].value, 386464, 1, 'a score with no choice is the mix’s');
+    assert.equal(t[0].value, mix.expectedGM, 'a real mix: its own score');
+    assert.equal(t[0].diff, mix.expectedGM - cmp.totals.current.expectedGM);
+    assert.equal(t[3].value, Math.round(mix.probBeatsCurrent * 100));
+    assert.equal(tiles(cmp, 'mix', mix)[0].value, mix.expectedGM, 'a score with no choice is the mix’s');
     assert.equal(tiles(cmp, 'mix')[0].value, cmp.totals.priority.expectedGM, 'nothing picked yet: the pick');
     assert.equal(tiles(cmp, 'mix', null, { f1: 'maxProfit', f2: 'maxProfit', f3: 'maxProfit', f4: 'maxProfit', f5: 'maxProfit' })[0].value, cmp.totals.maxProfit.expectedGM);
   });
@@ -112,7 +114,7 @@ describe('the three plans compared field by field (demo farm, profit first)', ()
 
   it('walks the right stops', () => {
     const stops = reelStops(cmp);
-    assert.deepEqual(stops.map((s) => s.id), ['intro', 'flip', 'gain', 'sameCrop', 'giveUp', 'vsProfit', 'why', 'watch', 'yourTurn']);
+    assert.deepEqual(stops.map((s) => s.id), ['intro', 'flip', 'gain', 'sameCrop', 'giveUp', 'vsProfit', 'why', 'watch', 'yourTurn']); // no frost, no dry stop
     const by = Object.fromEntries(stops.map((s) => [s.id, s]));
     assert.deepEqual([by.gain.fieldId, by.gain.season], ['f2', 0]);
     assert.deepEqual([by.sameCrop.fieldId, by.sameCrop.season], ['f1', 1]); // f2 2028 gains more, but f2 is the gain stop
@@ -149,6 +151,7 @@ describe('the three plans compared field by field (demo farm, profit first)', ()
       const said = [...plan.reasons, ...plan.risks, ...plan.informationGaps, ...plan.localReview, ...data.gaps,
         data.result.priceOfPriorities.summary, data.weather.source];
       for (const s of said) assert.ok(fp.includes(s), `${kind} fine print is missing: ${s}`);
+      assert.deepEqual(fineprint(cmp, kind)['Weather risk'], [data.result.plans.priority.weatherRisk.message]);
     }
     const choice = { f1: 'current' };
     const mix = data.evaluate(mixedPlan(data.result.plans, choice));
@@ -186,6 +189,99 @@ describe('the three plans compared field by field (demo farm, profit first)', ()
   });
 });
 
+describe('the weather on the demo farm (no wheat)', () => {
+  let cmp;
+  before(() => { cmp = compareFutures(demoData(['profit']), { startYear: START_YEAR }); });
+
+  it('reads the weather risk and the farm facts', () => {
+    assert.equal(cmp.weatherRisk.waterLimited, false);
+    assert.equal(cmp.weatherRisk.aridityClass, 'humid');
+    assert.deepEqual(cmp.facts, { state: 'IA', irrigated: false });
+  });
+
+  it('has no freeze anywhere, so no frost stop and no frost marks', () => {
+    for (const f of cmp.fields) for (const k of KINDS) for (const s of f.byKind[k].seasons) {
+      assert.equal(s.freeze, null);
+      assert.ok(!s.warnings.some((w) => w.lens === 'frost'));
+    }
+    assert.equal(frostStop(cmp), null);
+    assert.ok(!reelStops(cmp).some((s) => s.id === 'frost' || s.id === 'dry'));
+    for (const y of [0, 1, 2]) assert.equal(frostIds(cmp, 'priority', y).size, 0);
+  });
+
+  it('shows no dry fields on a humid farm, and some where water is the worry', () => {
+    for (const y of [0, 1, 2]) assert.equal(dryIds(cmp, 'priority', y).size, 0);
+    const dry = { ...cmp, weatherRisk: { ...cmp.weatherRisk, waterLimited: true }, weights: { ...cmp.weights, waterPlentiful: false } };
+    assert.ok(dryIds(dry, 'priority', 0).size > 0);
+    // just under the dry line the planner's weights still call water plentiful: then it isn't the worry
+    const edge = { ...dry, weights: { ...cmp.weights, waterPlentiful: true } };
+    for (const y of [0, 1, 2]) assert.equal(dryIds(edge, 'priority', y).size, 0);
+  });
+});
+
+describe('the wheat demo (can’t grow soybeans): a spring freeze in 2028', () => {
+  let data, cmp;
+  before(() => {
+    data = wheatData();
+    cmp = compareFutures(data, { startYear: START_YEAR });
+  });
+
+  it('sows winter wheat for 2028 on Home place, West 140 and East place, and reads its freeze', () => {
+    for (const f of cmp.fields) {
+      const s = f.byKind.priority.seasons[1];
+      const wheat = ['f1', 'f2', 'f5'].includes(f.id);
+      assert.equal(s.crop, wheat ? 'winter-wheat' : 'corn', f.id);
+      if (!wheat) { assert.equal(s.freeze, null, f.id); continue; }
+      assert.deepEqual([s.freeze.years, s.freeze.of, s.freeze.stage], [13, 24, 'tillering']);
+      near(s.freeze.bu, -2.74, 0.02, 'freeze bu/ac');
+      const fw = s.warnings.find((w) => w.lens === 'frost');
+      assert.equal(fw.severity, 1, 'about 5%: a Note');
+      assert.equal(fw.reason, s.freeze.label);
+    }
+    for (const f of cmp.fields) for (const y of [0, 2]) assert.equal(f.byKind.priority.seasons[y].freeze, null);
+    for (const k of ['current', 'maxProfit']) for (const f of cmp.fields) assert.ok(f.byKind[k].seasons.every((s) => !s.freeze), k);
+  });
+
+  it('knows which fields have frost, and where the walk stops for it', () => {
+    assert.deepEqual([...frostIds(cmp, 'priority', 1)].sort(), ['f1', 'f2', 'f5']);
+    assert.equal(frostIds(cmp, 'priority', 0).size, 0);
+    assert.equal(frostIds(cmp, 'current', 1).size, 0);
+    assert.deepEqual(frostStop(cmp), { season: 1, ids: ['f1', 'f2', 'f5'] });
+    const stops = reelStops(cmp);
+    assert.deepEqual(stops.map((s) => s.id).slice(-4), ['why', 'frost', 'watch', 'yourTurn']);
+    const frost = stops.find((s) => s.id === 'frost');
+    assert.deepEqual(
+      [frost.view, frost.season, frost.camera, frost.marksBase, frost.frostLens, frost.noFocus, frost.growStagger, frost.fieldId],
+      ['priority', 1, 'overview', null, true, true, 0, undefined],
+    );
+    // among warnings of the same severity, frost leads after water and before market, rotation, shade and nitrogen
+    assert.equal(headline([{ lens: 'frost', severity: 1 }, { lens: 'nitrogen', severity: 1 }]).lens, 'frost');
+    assert.equal(headline([{ lens: 'frost', severity: 1 }, { lens: 'water', severity: 1 }]).lens, 'water');
+  });
+
+  it('keeps the freeze in the mix, after checking the mix again', () => {
+    const choice = { f3: 'current' };
+    const s = viewField(cmp, 'f1', 'mix', choice).seasons[1];
+    assert.ok(s.freeze);
+    assert.equal(s.warnings.filter((w) => w.lens === 'frost').length, 1);
+    assert.deepEqual([...frostIds(cmp, 'mix', 1, choice)].sort(), ['f1', 'f2', 'f5']);
+    assert.deepEqual([...frostIds(cmp, 'mix', 1, { f1: 'current' })].sort(), ['f2', 'f5']);
+  });
+
+  it('a Kansas-like copy: one field, a Careful, a field stop, and a dry stop', () => {
+    const ks = kansasLike(cmp);
+    assert.deepEqual(frostStop(ks), { season: 1, ids: ['f1'] });
+    const s = ks.fields[0].byKind.priority.seasons[1];
+    assert.equal(s.warnings.find((w) => w.lens === 'frost').severity, 2);
+    const stops = reelStops(ks);
+    const frost = stops.find((x) => x.id === 'frost');
+    assert.deepEqual([frost.camera, frost.fieldId], ['field', 'f1']);
+    assert.deepEqual(stops.map((x) => x.id).slice(-5), ['why', 'frost', 'dry', 'watch', 'yourTurn']);
+    assert.ok(dryIds(ks, 'priority', 0).size > 0);
+    assert.equal(dryIds(cmp, 'priority', 0).size, 0, 'the copy leaves the comparison as it is');
+  });
+});
+
 describe('the soil-first plans', () => {
   it('shows the rye cover, its cost and its soil score', () => {
     const cmp = compareFutures(demoData(['soil-health', 'profit']), { startYear: START_YEAR });
@@ -218,5 +314,64 @@ describe('farms of other sizes', () => {
   }
   it('needs the first season', () => {
     assert.throws(() => compareFutures(demoData(['profit'])), /startYear/);
+  });
+});
+
+describe('Monte Carlo numbers on the demo (planner 7f805d2, seed 1): re-pin on re-vendor', () => {
+  // The farm totals (cash over 3 seasons, the bad year, beats keeping going, the price of
+  // priorities, a scored mix) come from the planner's seeded Monte Carlo, so any change to the
+  // planner's random draws moves them. They are pinned only here; the tests above check which way
+  // they go. On a re-vendor: run this block, check the new numbers make sense, and pin them.
+  let data, cmp;
+  before(() => {
+    data = demoData(['profit']);
+    cmp = compareFutures(data, { startYear: START_YEAR });
+  });
+
+  it('the three plans', () => {
+    const want = {
+      current: { expectedGM: 349948, p10GM: 183182, beats: null },
+      maxProfit: { expectedGM: 416354, p10GM: 261440, beats: 0.885 },
+      priority: { expectedGM: 407813, p10GM: 263359, beats: 0.975 },
+    };
+    for (const [k, w] of Object.entries(want)) {
+      near(cmp.totals[k].expectedGM, w.expectedGM, 1, `${k} cash`);
+      near(cmp.totals[k].p10GM, w.p10GM, 1, `${k} bad year`);
+      assert.equal(cmp.totals[k].probBeatsCurrent, w.beats, `${k} beats keeping going`);
+    }
+    const [cash, bad, , beats] = tiles(cmp, 'priority');
+    near(cash.diff, 57865, 1, 'cash diff');
+    near(bad.diff, 80177, 1, 'bad year diff');
+    assert.equal(beats.value, 98);
+  });
+
+  it('the price of the farmer’s priorities', () => {
+    near(cmp.price.cash, -8540.2, 1, 'cash given up');
+    near(cmp.price.p10, 1919, 1, 'bad year');
+  });
+
+  it('a mix: Home place keeps going', () => {
+    const choice = { f1: 'current' };
+    const mix = data.evaluate(mixedPlan(data.result.plans, choice));
+    const t = tiles(cmp, 'mix', mix, choice);
+    near(t[0].value, 387943, 1, 'mix cash');
+    near(t[0].diff, 37995, 1, 'mix diff');
+    assert.equal(t[3].value, 93);
+    near(tiles(cmp, 'mix', mix)[0].value, 387943, 1, 'a score with no choice is the mix’s');
+  });
+
+  it('soil first', () => {
+    const soil = compareFutures(demoData(['soil-health', 'profit']), { startYear: START_YEAR });
+    near(soil.totals.priority.expectedGM, 387767, 1, 'soil-first pick');
+    near(soil.price.cash, -28586.8, 1, 'cash given up');
+    near(soil.price.p10, -18127.2, 1, 'bad year');
+  });
+
+  it('the wheat’s spring freeze at Ames: 13 of 24 years', () => {
+    const wheat = compareFutures(wheatData(), { startYear: START_YEAR });
+    const fz = frostStop(wheat);
+    const s = wheat.fields.find((f) => f.id === fz.ids[0]).byKind.priority.seasons[fz.season];
+    assert.deepEqual([s.freeze.years, s.freeze.of], [13, 24]);
+    assert.ok(wheat.raw.priority.risks.includes('Freeze risk: in 13 of 24 years, temperatures fell below the tillering threshold (K-State C646).'));
   });
 });
