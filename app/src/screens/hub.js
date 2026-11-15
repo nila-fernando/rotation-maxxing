@@ -30,7 +30,7 @@ import { createCameraRig, MAX_POLAR } from '../island/cameraRig.js';
 import { makeTents } from '../island/cameraSafety.js';
 import { sailSpheres, themeKeepOuts } from '../island/coinStacks.js';
 import { footprint, pickField } from '../island/picking.js';
-import { cropIcon } from '../ui/cropIcons.js';
+import { cropBadge, hideCropTip, installCropTips } from '../ui/cropTip.js';
 
 const CLICK_SLOP = 6; // px a press may move and still be a click rather than a turn of the island
 const CLICK_MS = 650;
@@ -119,7 +119,7 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
         name: info.name || 'Field',
         acres: info.acres,
         cropKey,
-        cropLabel: info.crop ? (CROP_STYLE[cropKey]?.label === 'Other' ? String(info.crop) : CROP_STYLE[cropKey]?.label || String(info.crop)) : 'No crop on record',
+        cropLabel: info.crop ? (cropKey === 'other' ? String(info.crop) : CROP_STYLE[cropKey]?.label || String(info.crop)) : 'No crop on record',
         polygons: vf.polygons,
         topY: vf.topY,
         center: fp.center,
@@ -153,9 +153,11 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
       crop.className = 'hub-field__crop';
       crop.setAttribute('role', 'img');
       crop.setAttribute('aria-label', `Last crop: ${f.cropLabel}`);
-      crop.title = `Last crop: ${f.cropLabel}`;
       crop.dataset.crop = f.cropKey;
-      crop.innerHTML = cropIcon(f.cropKey);
+      // its name in the shared crop tip (no native title: that made a second tooltip)
+      crop.dataset.cropTip = f.cropLabel;
+      crop.dataset.cropSub = 'Last crop';
+      crop.innerHTML = cropBadge(null, { key: f.cropKey, name: f.cropLabel, sub: 'Last crop', inControl: true, cls: 'crop-ico' });
       const text = document.createElement('span');
       text.className = 'hub-field__text';
       const name = document.createElement('span');
@@ -515,6 +517,10 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
     const onCameraChange = () => { pointerDirty = true; };
     controls.addEventListener('change', onCameraChange);
     offs.push(() => controls.removeEventListener('change', onCameraChange));
+    // turning the island hides a crop name left showing (it would float off its row)
+    installCropTips(); // idempotent: main.js may have done it already
+    controls.addEventListener('start', hideCropTip);
+    offs.push(() => controls.removeEventListener('start', hideCropTip));
 
     const onKey = (e) => {
       if (e.key !== 'Escape' || e.defaultPrevented || dialogUp()) return;
@@ -636,8 +642,16 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
       const text = info ? `${info.year}: ${info.label}` : `Last crop: ${f.cropLabel}`;
       el.dataset.crop = key || 'none';
       el.setAttribute('aria-label', text);
-      el.title = text;
-      el.innerHTML = key ? cropIcon(key) : '';
+      const name = info ? info.label : f.cropLabel;
+      const sub = info ? String(info.year) : 'Last crop';
+      if (key) {
+        el.dataset.cropTip = name;
+        el.dataset.cropSub = sub;
+      } else {
+        delete el.dataset.cropTip;
+        delete el.dataset.cropSub;
+      }
+      el.innerHTML = key ? cropBadge(null, { key, name, sub, inControl: true, cls: 'crop-ico' }) : '';
       el.classList.toggle('is-none', !key);
     }
 

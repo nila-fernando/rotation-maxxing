@@ -6,14 +6,21 @@
 //   - snow settles on whatever faces up (ground, roofs, fence rails, beds), in soft patches
 //   - grass: fresh green in spring, straw-dry in fall (only the green parts: cliffs stay sandstone)
 //   - leaves: reds and golds in fall, bare greys in winter (pines stay green)
-//   - crops: ripen to straw in fall
+//   - crops: ripen to straw in fall (cotton bolls burst white instead, rice paddies drain to mud)
 //
 //   const seasons = createSeasons(view)
 //   seasons.attach(object)     patch an object's materials (the island, new paddocks, decorations)
 //   seasons.setState(state)    a state from src/island/timeline.js; eases there unless { instant: true }
+//   seasons.setWeather(blend)  the farm's weather mixed in (src/island/weather.js blendFor); eases there
 //   seasons.update(dt, time)   every frame
 //   seasons.dispose()
+//
+// The weather goes on top of the season, the festival and the time of day: clouds grey the sky and
+// soften the light (and hide the sun, moon and stars), a broken sky drifts cloud shadows over the
+// ground, fog pulls the mist in, rain and snow fall (snow dusts the ground), storms flash now and
+// then (by lifting the light and sky a moment: no new lights), and wind sways the trees.
 import * as THREE from 'three';
+import { lightningAt } from './weather.js';
 
 // ---------------------------------------------------------------- the shader patch
 
@@ -25,6 +32,13 @@ const U = {
   // a festival's tint on the grass and leaves (dusky purple for Halloween, gold for Thanksgiving...)
   uTheme: { value: new THREE.Vector3(1, 1, 1) },
   uThemeMix: { value: 0 },
+  // the weather: cloud shadows drifting over the ground (how dark, their offset, their size), and
+  // the wind in the trees (how hard, and its clock)
+  uShade: { value: 0 },
+  uShadeOff: { value: new THREE.Vector2() },
+  uShadeK: { value: 0.3 },
+  uWind: { value: 0 },
+  uWindT: { value: 0 },
 };
 
 const COMMON = /* glsl */ `
@@ -36,6 +50,9 @@ uniform float uLeaves;
 uniform float uRipe;
 uniform vec3 uTheme;
 uniform float uThemeMix;
+uniform float uShade;
+uniform vec2 uShadeOff;
+uniform float uShadeK;
 vec3 sTheme(vec3 c, float g) {
   float l = dot(c, vec3(0.3, 0.59, 0.11));
   return mix(c, vec3(l) * uTheme * 1.3, g * uThemeMix);
@@ -52,7 +69,31 @@ vec3 sSnow(vec3 c) {
   float n = sNoise(vSeasonPos.xz * 2.2) * 0.55 + sNoise(vSeasonPos.xz * 7.0) * 0.2;
   float cover = smoothstep(n, n + 0.22, uSnow * 1.2) * up;
   return mix(c, vec3(0.95, 0.97, 1.0), cover * 0.94);
+}
+// a broken sky's cloud shadows, drifting over everything below
+float sShade() {
+  if (uShade <= 0.0) return 1.0;
+  vec2 p = vSeasonPos.xz * uShadeK + uShadeOff;
+  float n = sNoise(p) * 0.65 + sNoise(p * 2.3 + 7.1) * 0.35;
+  return 1.0 - uShade * smoothstep(0.5, 0.7, n);
 }`;
+
+// the wind in the leaves: the tops of the crowns lean and sway (the trunk end stays put), each tree a
+// little after its neighbour, like gusts crossing the farm. A few hundredths of a unit at most, so
+// nothing reaches into anything else.
+const SWAY = /* glsl */ `
+  if (uWind > 0.0) {
+    vec4 so = vec4(0.0, 0.0, 0.0, 1.0);
+    #ifdef USE_INSTANCING
+      so = instanceMatrix * so;
+    #endif
+    so = modelMatrix * so;
+    float ph = uWindT + so.x * 0.55 + so.z * 0.4;
+    float sway = sin(ph) * 0.7 + sin(ph * 2.3 + 1.7) * 0.3;
+    float lean = clamp(0.5 + position.y * 1.5, 0.15, 1.0) * uWind;
+    transformed.x += (0.012 + 0.028 * sway) * lean;
+    transformed.z += 0.014 * sway * lean;
+  }`;
 
 const KINDS = {
   plain: 'diffuseColor.rgb = sSnow(diffuseColor.rgb);',
@@ -104,6 +145,22 @@ const KINDS = {
     c = mix(c, straw, uRipe * 0.88);
     diffuseColor.rgb = sSnow(c);
   }`,
+  // cotton bolls: shut green buds through the summer that burst white as the crop ripens
+  boll: `{
+    vec3 c = diffuseColor.rgb;
+    float l = dot(c, vec3(0.3, 0.59, 0.11));
+    vec3 bud = vec3(0.42, 0.6, 0.28) * (0.55 + l * 0.5);
+    c = mix(bud, c, smoothstep(0.25, 0.85, uRipe));
+    diffuseColor.rgb = sSnow(c);
+  }`,
+  // a rice paddy's water: drained to damp mud as the rice ripens
+  paddy: `{
+    vec3 c = diffuseColor.rgb;
+    float l = dot(c, vec3(0.3, 0.59, 0.11));
+    vec3 mud = vec3(0.6, 0.5, 0.38) * (0.7 + l * 0.35);
+    c = mix(c, mud, smoothstep(0.1, 0.7, uRipe));
+    diffuseColor.rgb = sSnow(c);
+  }`,
 };
 
 // patched materials (a WeakSet, not a userData flag: material.clone() copies userData but not the
@@ -119,8 +176,10 @@ export function patchMaterial(m) {
   m.onBeforeCompile = function (shader, renderer) {
     before?.call(this, shader, renderer);
     Object.assign(shader.uniforms, U);
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying float vSeasonUp;\nvarying vec3 vSeasonPos;')
+    let vs = shader.vertexShader;
+    if (kind === 'foliage') vs = vs.replace('#include <begin_vertex>', `#include <begin_vertex>\n${SWAY}`);
+    shader.vertexShader = vs
+      .replace('#include <common>', '#include <common>\nvarying float vSeasonUp;\nvarying vec3 vSeasonPos;\nuniform float uWind;\nuniform float uWindT;')
       .replace('#include <defaultnormal_vertex>', `#include <defaultnormal_vertex>
         {
           vec3 sn = objectNormal;
@@ -139,7 +198,7 @@ export function patchMaterial(m) {
         }`);
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', `#include <common>\n${COMMON}`)
-      .replace('#include <color_fragment>', `#include <color_fragment>\n${KINDS[kind]}`);
+      .replace('#include <color_fragment>', `#include <color_fragment>\n${KINDS[kind]}\ndiffuseColor.rgb *= sShade();`);
   };
   const baseKey = m.customProgramCacheKey.bind(m);
   m.customProgramCacheKey = () => `${baseKey()}|season-${kind}`;
@@ -218,6 +277,11 @@ function makeParticles(kind, count, radius, center) {
   if (kind === 'snow') {
     geo = new THREE.IcosahedronGeometry(0.035, 0);
     material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  } else if (kind === 'rain') {
+    // thin see-through streaks (a slim box reads from every side), in a few soft blue-greys
+    geo = new THREE.BoxGeometry(0.011, 0.24, 0.011);
+    material = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.5, depthWrite: false });
+    colors = [0xcfd9ea, 0xbccbe0, 0xdfe6f2];
   } else if (kind === 'leaves') {
     geo = new THREE.PlaneGeometry(0.11, 0.075);
     material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
@@ -250,7 +314,7 @@ function makeParticles(kind, count, radius, center) {
     const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * radius * 1.15;
     ps.push({
       x: center.x + Math.cos(a) * r, z: center.z + Math.sin(a) * r, y: rand(-0.2, 5.5),
-      v: kind === 'snow' ? rand(0.45, 0.8) : kind === 'leaves' || kind === 'confetti' ? rand(0.25, 0.45) : rand(0.18, 0.32),
+      v: kind === 'rain' ? rand(7, 9.5) : kind === 'snow' ? rand(0.45, 0.8) : kind === 'leaves' || kind === 'confetti' ? rand(0.25, 0.45) : rand(0.18, 0.32),
       ph: rand(0, 6.3), sp: rand(0.6, 1.4),
       // butterflies circle a spot near the ground
       cx: center.x + Math.cos(a) * r * 0.7, cz: center.z + Math.sin(a) * r * 0.7, cr: rand(0.3, 0.9), cy: rand(0.9, 1.6),
@@ -269,7 +333,8 @@ function makeParticles(kind, count, radius, center) {
       for (let i = 0; i < count; i++) mesh.setColorAt(i, c.set(list[i % list.length]));
       mesh.instanceColor.needsUpdate = true;
     },
-    update(dt, t) {
+    /** wind 0..1: what falls is blown sideways on its way down (rain slants). */
+    update(dt, t, wind = 0) {
       const n = Math.round(count * amount);
       mesh.count = n;
       mesh.visible = n > 0;
@@ -289,11 +354,20 @@ function makeParticles(kind, count, radius, center) {
           e.set(t * 5.5 * o.sp + o.ph, t * 1.4 + o.ph, t * 3.1 * o.sp, 'XYZ');
           // every other piece is a thin streamer curl
           s.set(o.ph > 3.1 ? 0.35 : 1, o.ph > 3.1 ? 2.1 : 1, 1);
+        } else if (kind === 'rain') {
+          // straight down, fast, leaning with the wind (blown across as it falls, so the path slants)
+          o.y -= o.v * dt;
+          if (o.y < -0.3) { o.y = rand(5, 6.5); }
+          const slant = 0.06 + 0.5 * wind;
+          p.set(o.x + (3 - o.y) * slant, o.y, o.z + (3 - o.y) * slant * 0.35); // (centred: the shower stays over the island)
+          e.set(slant * 0.35, 0, -slant, 'XYZ');
+          s.set(1, 0.8 + o.sp * 0.4, 1);
         } else {
           o.y -= o.v * dt;
           if (o.y < -0.3) { o.y = rand(4.5, 6); }
           const sway = kind === 'snow' ? 0.15 : 0.45;
-          p.set(o.x + Math.sin(t * 0.9 * o.sp + o.ph) * sway, o.y, o.z + Math.cos(t * 0.7 * o.sp + o.ph) * sway);
+          const blow = (2.8 - o.y) * wind * (kind === 'snow' ? 0.35 : 0.25); // drifting downwind as it falls
+          p.set(o.x + Math.sin(t * 0.9 * o.sp + o.ph) * sway + blow, o.y, o.z + Math.cos(t * 0.7 * o.sp + o.ph) * sway + blow * 0.35);
           if (kind === 'snow') e.set(0, 0, 0);
           else e.set(t * 2.2 * o.sp + o.ph, t * 1.3 + o.ph, t * 1.7 * o.sp);
           s.set(1, 1, 1);
@@ -325,8 +399,22 @@ export function createSeasons(view) {
     petals: makeParticles('petals', 110, view.radius, center),
     butterflies: makeParticles('butterflies', 40, view.radius, center),
     confetti: makeParticles('confetti', 70, view.radius, center), // a light sprinkle, not a blizzard
+    rain: makeParticles('rain', 620, view.radius, center),
   };
   for (const p of Object.values(particles)) air.add(p.mesh);
+  // cloud shadows about a third of the island across
+  U.uShadeK.value = 2.6 / Math.max(2, view.radius || 7);
+
+  // the weather (src/island/weather.js blendFor): eased, more slowly than a season change
+  const wx = { cloud: 0, shadows: 0, dim: 0, fog: 0, rain: 0, snow: 0, settle: 0, lightning: 0, wind: 0 };
+  const wxGoal = { ...wx };
+  let wxTime = 0;
+  let flash = 0;
+  // the fog's reach before the weather pulls it in (someone else may move it: the hub does, with
+  // the camera; a change we didn't make becomes the new reach)
+  const fogReach = scene.fog ? { near: scene.fog.near, far: scene.fog.far, wrote: null } : null;
+  const SKY_FLASH = new THREE.Color(0xeeeaff);
+  let clearCss = null;
 
   // eased values: current and target
   const cur = { snow: 0, grass: 0, leaves: 0, ripe: 0, snowfall: 0, leaffall: 0, petalfall: 0, butterflies: 0, confetti: 0, themeMix: 0 };
@@ -345,6 +433,7 @@ export function createSeasons(view) {
   // the sky and fog it fades toward. This module stays the one writer of those lights and colours.
   let daylight = null;
   const tmp = new THREE.Color();
+  const tmpGrey = new THREE.Color();
 
   const attach = attachSeasons;
   attach(scene);
@@ -385,7 +474,7 @@ export function createSeasons(view) {
     color.sky.forEach((c, i) => c.lerp(colorGoal.sky[i], k));
     hemiI += (hemiGoal - hemiI) * k;
     sunI += (sunGoal - sunI) * k;
-    U.uSnow.value = cur.snow;
+    U.uSnow.value = Math.max(cur.snow, wx.settle); // (falling snow dusts the ground, whatever the season)
     U.uGrass.value = cur.grass;
     U.uLeaves.value = cur.leaves;
     U.uRipe.value = cur.ripe;
@@ -393,37 +482,89 @@ export function createSeasons(view) {
     U.uTheme.value.copy(themeTint);
     U.uThemeMix.value = cur.themeMix;
     const d = daylight;
+    const still = reduced();
+    const night = d ? Math.min(1, Math.max(0, (1 - d.basicK) * 2)) : 0;
+    const f = still ? 0 : flash;
+    // the light: clouds hide the sun (or moon) and soften everything; a flash lifts the sky light a moment
     lights.hemi.color.copy(color.hemi);
-    lights.hemi.intensity = hemiI * (d ? d.hemiK : 1);
+    lights.hemi.intensity = hemiI * (d ? d.hemiK : 1) * (1 - 0.42 * wx.dim + 0.1 * wx.cloud) * (1 + 1.5 * f);
     lights.sun.color.copy(color.sun);
-    lights.sun.intensity = sunI * (d ? d.sunK : 1);
+    lights.sun.intensity = sunI * (d ? d.sunK : 1) * (1 - 0.8 * wx.cloud) * (1 - 0.25 * wx.dim);
     if (d) { lights.hemi.color.multiply(d.hemiTint); lights.sun.color.multiply(d.sunTint); }
+    greyer(lights.hemi.color, 0.45 * wx.cloud, 0);
+    greyer(lights.sun.color, 0.6 * wx.cloud, 0);
+    if (f) lights.hemi.color.lerp(SKY_FLASH, 0.5 * f);
     if (scene.fog) {
       scene.fog.color.copy(color.fog);
       if (d) scene.fog.color.lerp(d.fog, d.fogMix);
+      greyer(scene.fog.color, 0.75 * Math.max(wx.cloud, wx.fog), 0.18 * wx.dim);
+      if (f) scene.fog.color.lerp(SKY_FLASH, 0.25 * f * (0.4 + 0.6 * night));
+      // mist closes in (from wherever the fog sits now: the hub moves it back with the camera)
+      const fg = scene.fog, r = fogReach;
+      if (r.wrote && (fg.near !== r.wrote.near || fg.far !== r.wrote.far)) { r.near = fg.near; r.far = fg.far; }
+      const near = r.near * (1 - 0.85 * wx.fog), far = r.far * (1 - 0.6 * wx.fog);
+      if (fg.near !== near || fg.far !== far) { fg.near = near; fg.far = far; }
+      r.wrote = { near: fg.near, far: fg.far };
     }
     // the page's sky behind the canvas (only touched when a colour actually changes)
     color.sky.forEach((c, i) => {
       tmp.copy(c);
       if (d) tmp.lerp(d.sky[i], d.skyMix);
+      greyer(tmp, 0.85 * wx.cloud, 0.22 * wx.dim);
+      if (wx.fog && scene.fog) tmp.lerp(scene.fog.color, wx.fog * (0.35 + 0.2 * i)); // the horizon fades into the mist
+      if (f) tmp.lerp(SKY_FLASH, f * (0.3 + 0.35 * night));
       const v = css(tmp.getHex());
       if (skyCss[i] !== v) { skyCss[i] = v; root.style.setProperty(`--sky${i + 1}`, v); }
     });
+    // the sun's glow, the moon and the stars go behind the clouds (src/styles.css)
+    const clear = (1 - 0.97 * Math.max(wx.cloud, wx.fog * 0.9)).toFixed(2);
+    if (clear !== clearCss) { clearCss = clear; root.style.setProperty('--wx-clear', clear); }
     // snow, leaves and petals are unlit: dim them with the light
-    const glow = d ? d.basicK : 1;
+    const glow = (d ? d.basicK : 1) * (1 - 0.25 * wx.dim) + 0.35 * f;
     for (const p of Object.values(particles)) if (p.mesh.material.color.r !== glow) p.mesh.material.color.setScalar(glow);
+    // cloud shadows on the ground (by day: the moon's are too faint to matter)
+    U.uShade.value = wx.shadows * (1 - night) * 0.32;
+    U.uWind.value = still ? 0 : wx.wind;
     // nothing falls or flies with reduced motion (checked every frame: it can be turned on any time)
-    const still = reduced();
-    particles.snow.amount = still ? 0 : cur.snowfall;
+    particles.snow.amount = still ? 0 : Math.max(cur.snowfall, wx.snow);
     particles.leaves.amount = still ? 0 : cur.leaffall;
-    particles.petals.amount = still ? 0 : cur.petalfall;
-    particles.butterflies.amount = still ? 0 : cur.butterflies;
+    particles.petals.amount = still ? 0 : cur.petalfall * (1 - wx.rain);
+    particles.butterflies.amount = still ? 0 : cur.butterflies * (1 - Math.max(wx.rain, wx.snow, wx.fog * 0.6, wx.wind * 0.5));
     particles.confetti.amount = still ? 0 : cur.confetti;
+    particles.rain.amount = still ? 0 : wx.rain;
   }
 
+  /** c toward a grey of its own brightness (a touch cool), and darker by `darken`. */
+  function greyer(c, amount, darken) {
+    if (amount <= 0 && darken <= 0) return c;
+    const l = (c.r * 0.3 + c.g * 0.59 + c.b * 0.11) * (1 - darken);
+    return c.lerp(tmpGrey.setRGB(l * 0.97, l * 0.99, l * 1.05), amount);
+  }
   function update(dt, time) {
+    // the weather settles over a second or two (a live change, or one picked in the popover)
+    const kw = Math.min(1, dt * 1.6);
+    for (const key of Object.keys(wx)) wx[key] += (wxGoal[key] - wx[key]) * kw;
+    if (dt > 0) {
+      wxTime += dt;
+      // the clouds' shadows drift downwind, faster when it blows; the trees sway to the gusts
+      if (!reduced()) {
+        U.uShadeOff.value.x -= dt * (0.015 + 0.09 * wx.wind);
+        U.uShadeOff.value.y -= dt * (0.005 + 0.03 * wx.wind);
+        U.uWindT.value = (U.uWindT.value + dt * (0.8 + 2.2 * wx.wind)) % 6283.19;
+      }
+    }
+    flash = wx.lightning > 0.01 ? lightningAt(wxTime) * wx.lightning : 0;
     step(Math.min(1, dt * 3.2)); // about a third of a second to settle
-    for (const p of Object.values(particles)) p.update(dt, time);
+    for (const p of Object.values(particles)) p.update(dt, time, wx.wind);
+  }
+
+  /**
+   * The farm's weather to mix in: an amounts object from src/island/weather.js blendFor (null:
+   * none). Eases there over a second or two; instant: straight there (applied on the next update).
+   */
+  function setWeather(blend, { instant = false } = {}) {
+    for (const key of Object.keys(wxGoal)) wxGoal[key] = Math.max(0, Math.min(1, blend?.[key] || 0));
+    if (instant) Object.assign(wx, wxGoal);
   }
 
   function dispose() {
@@ -431,6 +572,9 @@ export function createSeasons(view) {
     for (const p of Object.values(particles)) { p.mesh.geometry.dispose(); p.mesh.material.dispose(); p.mesh.dispose(); }
     // back to plain summer daylight (the patched materials then draw exactly as before)
     U.uSnow.value = U.uGrass.value = U.uLeaves.value = U.uRipe.value = U.uThemeMix.value = 0;
+    U.uShade.value = U.uWind.value = 0;
+    if (scene.fog && fogReach) { scene.fog.near = fogReach.near; scene.fog.far = fogReach.far; }
+    root.style.removeProperty('--wx-clear');
     lights.hemi.color.copy(original.hemi);
     lights.hemi.intensity = original.hemiI;
     lights.sun.color.copy(original.sun);
@@ -447,5 +591,12 @@ export function createSeasons(view) {
    */
   const setDaylight = (d) => { daylight = d || null; };
 
-  return { attach, setState, setDaylight, update, dispose, uniforms: U, get current() { return { ...cur }; } };
+  return {
+    attach, setState, setDaylight, setWeather, update, dispose, uniforms: U,
+    get current() { return { ...cur }; },
+    /** The weather as it is on the island this moment (eased): { cloud, wind, rain, snow, ... }, plus flash 0..1. */
+    get weather() { return { ...wx, flash }; },
+    /** How hard the wind blows on the island this moment (0..1, eased): the windmill turns with it. */
+    get wind() { return wx.wind; },
+  };
 }

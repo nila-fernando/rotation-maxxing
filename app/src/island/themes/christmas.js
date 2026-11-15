@@ -19,6 +19,7 @@
 import * as THREE from 'three';
 import { mat, mesh, soft } from '../props.js';
 import { makeSnowman } from '../decor.js';
+import { towerRadiusAt as lhR, LIGHTHOUSE } from '../lighthouse.js';
 
 const RED = 0xd42a2a, GREEN = 0x2f8a3e, GOLD = 0xf2b632, WHITE = 0xf7f4ee;
 const BULBS = [0xff3b30, 0x34d058, 0xffcc33, 0x3d8bff, 0xfff4d6, 0xff4fa3];
@@ -216,6 +217,16 @@ function buildingPlan(p) {
       const door = [[-0.22, 0.06, 0.63], [-0.22, 0.62, 0.61], [0.22, 0.62, 0.61], [0.22, 0.06, 0.63]];
       return {
         lights: [ring(0, 2.06, 0, 0.44, 16), ring(0, 1.0, 0, 0.56, 18), ring(0, 0.08, 0, 0.64, 20)],
+        garland: [swag(door, 0)],
+        bows: [door[1], door[2]],
+      };
+    }
+    case 'lighthouse': {
+      // round the gallery rail, the middle of the tower (between its windows) and the plinth; a
+      // garland over the door
+      const door = [[-0.17, 0.22, 0.5], [-0.17, 0.66, lhR(0.66) + 0.03], [0.17, 0.66, lhR(0.66) + 0.03], [0.17, 0.22, 0.5]];
+      return {
+        lights: [ring(0, LIGHTHOUSE.railY + 0.01, 0, LIGHTHOUSE.railR + 0.03, 20), ring(0, 1.62, 0, lhR(1.62) + 0.03, 16), ring(0, 0.12, 0, LIGHTHOUSE.plinthR + 0.02, 20)],
         garland: [swag(door, 0)],
         bows: [door[1], door[2]],
       };
@@ -825,16 +836,19 @@ export default function build(ctx) {
     place(team, teamSpot[0], teamSpot[1], -0.45);
   }
 
-  // ---- gold stars on top of the windmill and the silo
+  // ---- gold stars on top of the lighthouse (or the windmill, on an island without one) and the silo
   const bigStars = [];
   const bigStarGeo = starGeometry(0.44, 0.19, 0.1);
   const poleMat = keep(new THREE.MeshStandardMaterial({ color: GOLD, roughness: 0.35, metalness: 0.4 }));
   poleMat.userData.noSeason = true;
+  const starOn = new Set(['silo', ctx.buildings.some((p) => p.key === 'lighthouse') ? 'lighthouse' : 'windmill']);
   for (const p of ctx.buildings) {
-    if (p.key !== 'windmill' && p.key !== 'silo') continue;
-    // (the windmill's star rides a gold pole up off the cap, clear above its sails at 3.45)
-    const sc = p.scale || s, mill = p.key === 'windmill';
-    const top = (mill ? 2.72 : 2.58) * sc, lift = mill ? (3.45 - 2.72) * sc + 0.36 : 0.22; // (the star's centre notch sits 0.19 below its middle)
+    if (!starOn.has(p.key)) continue;
+    // (the windmill's star rides a gold pole up off the cap, clear above its sails at 3.45; the
+    // lighthouse's off the brass ball on its cap)
+    const sc = p.scale || s, mill = p.key === 'windmill', light = p.key === 'lighthouse';
+    const top = (light ? LIGHTHOUSE.top : mill ? 2.72 : 2.58) * sc;
+    const lift = light ? 0.42 : mill ? (3.45 - 2.72) * sc + 0.36 : 0.22; // (the star's centre notch sits 0.19 below its middle)
     const y0 = p.y ?? ctx.heightAt(p.x, p.z);
     const holder = new THREE.Group(); // origin on the roof tip, so it pops up out of it
     holder.name = 'Gold star';
@@ -844,7 +858,7 @@ export default function build(ctx) {
     star.position.y = lift;
     star.rotation.y = p.ry || 0;
     holder.add(star);
-    if (mill) {
+    if (mill || light) {
       const pole = mesh(new THREE.CylinderGeometry(0.025, 0.035, lift - 0.12, 6), poleMat, false, false);
       pole.position.y = (lift - 0.12) / 2;
       holder.add(pole);

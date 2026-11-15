@@ -1,0 +1,53 @@
+/* On the farm: rotation chips, the Show the money toggle, rotation tiles (src/screens/planFutures.js). Track C.
+   Rotation first: a chip shows the crop, its link's sign and what it follows ("after beans"); the
+   coins, the cash on the chips and the money tiles come in with "Show the money". These rules sit
+   at the top of styles.css, so anything styles.css also styles uses a stronger selector here. */
+
+/* ---- the chips: the crop, the link sign, "after beans" */
+.fut-chip .fut-chip__link { display: inline-flex; flex: none; width: 16px; height: 16px; color: var(--ink-soft); }
+.fut-chip .fut-chip__link svg { width: 16px; height: 16px; }
+.fut-chip .fut-chip__link--nitrogen { color: var(--green-dark); }
+.fut-chip .fut-chip__link--break { color: #6b8f3a; }
+.fut-chip .fut-chip__link--repeat { color: var(--rose-dark); }
+.fut-chip .fut-chip__link--same-family { color: var(--wood-dark); }
+.fut-chip .fut-chip__after { font-size: 13px; font-weight: 600; color: var(--ink-soft); }
+.fut-chip.fut-chip--rotation { gap: 4px; }
+/* the chip is the tap target (it opens the field's card); its badge names nothing of its own here:
+   the field's tooltip and card do (no second tooltip over the 3D) */
+.fut-chip .plan-crop, .fut-chip [data-crop-tip] { pointer-events: none; }
+
+/* ---- "Show the money" */
+.fut-dock .fut-money { flex: none; gap: 6px; }
+.fut-dock .fut-money[aria-pressed="true"] { background: #fff3c9; border-color: #d4a52c; box-shadow: 0 3px 0 #b88a1c; color: var(--ink); }
+.fut-dock .fut-money[aria-pressed="true"]:hover { background: #ffecb0; }
+.fut-dock .fut-money:focus-visible { outline: 3px solid var(--green-dark); outline-offset: 2px; }
+.fut-dock .fut-money:disabled { opacity: .55; cursor: default; }
+
+/* with the money off the dock is about the rotation: no cash under the seasons, no coin caption
+   (the caption still shows while the plans load: it carries the loading line then) */
+.fut-dock:not(.is-money) .fut-season__cash { display: none; }
+.fut-dock:not(.is-money):not(.is-loading) .fut-caption { visibility: hidden; }
+
+/* ---- the rotation tiles: "2 seasons", with keeping going's count under it */
+.fut-tile .fut-tile__base { flex-basis: 100%; font-size: 11.5px; font-weight: 600; color: var(--ink-soft); line-height: 1.2; }
+
+/* phones and tablets: the toggle sits under More, beside the tiles */
+@media (max-width: 900px) and (min-height: 521px), (max-width: 640px) {
+  .fut-dock .fut-dock__row--mid > .fut-score { grid-row: span 2; }
+  /* with the money off, the three tiles before More are the rotation's: the soil, not the cash */
+  .fut-dock:not(.is-more):not(.is-money) .fut-tile--soil { display: block; }
+  .fut-dock:not(.is-more):not(.is-money) .fut-tile--cash { display: none; }
+  .fut-dock .fut-dock__row--mid > .fut-money { grid-column: 2; align-self: center; height: 38px; padding: 0 10px; font-size: 13.5px; }
+  .fut-chip .fut-chip__after { font-size: 12px; }
+  .fut-chip .fut-chip__link, .fut-chip .fut-chip__link svg { width: 14px; height: 14px; }
+}
+@media (max-width: 640px) {
+  /* just the coin on a phone (its words stay for screen readers) */
+  .fut-dock .fut-money { width: 44px; padding: 0; justify-content: center; }
+  .fut-dock .fut-money span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+/* short landscape: the coin only, beside More */
+@media (max-height: 520px) {
+  .fut-dock .fut-money { width: 40px; height: 38px; padding: 0; justify-content: center; }
+  .fut-dock .fut-money span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}

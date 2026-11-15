@@ -23,7 +23,7 @@
 //   panel.insets()         { right, bottom }: how much of the screen it covers (for the camera)
 import { formatAcres } from '../fields/geometry.js';
 import { SOURCES } from '../data/fieldReport.js';
-import { cropIcon } from '../ui/cropIcons.js';
+import { cropBadge, hideCropTip, installCropTips } from '../ui/cropTip.js';
 import { LENS_ICONS } from '../ui/futureIcons.js';
 import { JAR } from '../ui/jarIcons.js';
 import { asset } from '../ui/asset.js';
@@ -167,7 +167,10 @@ export function ndviCurve(ndvi) {
  * @param {(id: string, mode: 'new'|'open'|'remove') => void} [o.onJar]   the jar strip's buttons
  * @param {() => void} o.onClose
  */
-export function createFieldPanel({ onRename, onIrrigated, onJar, onClose }) {
+// a speech bubble, for "Ask about this field"
+const ASK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h16v10H10l-4.5 3.5V15.5H4z" fill="currentColor" fill-opacity=".2"/><path d="M8.5 10.5h.01M12 10.5h.01M15.5 10.5h.01"/></svg>';
+
+export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onClose }) {
   const root = document.getElementById('checkup');
   const head = document.getElementById('checkupHead');
   const body = document.getElementById('checkupBody');
@@ -178,45 +181,21 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onClose }) {
   let jarSaid = null; // { id, text }: the jar strip's last line (kept through a redraw)
 
   closeBtn.addEventListener('click', () => onClose?.());
+  // "Ask about this field": Ask Manami, about this field (the header is redrawn, so the click is caught here)
+  head.addEventListener('click', (e) => {
+    const b = e.target.closest?.('[data-ask]');
+    if (b && report) onAsk?.(report.id, b);
+  });
   // the jar strip's buttons (redrawn with the panel, so the click is caught here)
   body.addEventListener('click', (e) => {
     const b = e.target.closest?.('[data-jar]');
     if (b && report) onJar?.(report.id, b.dataset.jar);
   });
 
-  // ---- the crop-history tooltip: one element on <body>, so the panel's scroll area never clips it
-  const tip = document.createElement('div');
-  tip.className = 'ck-tip';
-  tip.setAttribute('aria-hidden', 'true'); // the icons carry their own screen-reader text
-  tip.hidden = true;
-  document.body.appendChild(tip);
-  let tipFor = null;
-  function showTip(li) {
-    tipFor = li;
-    const b = document.createElement('b');
-    b.textContent = li.dataset.crop;
-    const y = document.createElement('span');
-    y.textContent = li.dataset.year;
-    tip.replaceChildren(b, y);
-    tip.hidden = false;
-    const icon = (li.querySelector('.hist__icon') || li).getBoundingClientRect();
-    const panel = root.getBoundingClientRect();
-    const tw = tip.offsetWidth, th = tip.offsetHeight;
-    // centred over the icon, kept inside the panel's edges; below it if there's no room above
-    const x = Math.max(panel.left + 8, Math.min(panel.right - tw - 8, icon.left + icon.width / 2 - tw / 2));
-    let top = icon.top - th - 8;
-    if (top < 8) top = icon.bottom + 8;
-    tip.style.transform = `translate(${Math.round(x)}px, ${Math.round(top)}px)`;
-  }
-  function hideTip() {
-    tipFor = null;
-    tip.hidden = true;
-  }
-  body.addEventListener('pointerover', (e) => { const li = e.target.closest?.('.hist'); if (li && li !== tipFor) showTip(li); });
-  body.addEventListener('pointerout', (e) => { const li = e.target.closest?.('.hist'); if (li && !li.contains(e.relatedTarget) && tipFor === li) hideTip(); });
-  body.addEventListener('focusin', (e) => { const li = e.target.closest?.('.hist'); if (li) showTip(li); });
-  body.addEventListener('focusout', (e) => { if (e.target.closest?.('.hist') === tipFor) hideTip(); });
-  body.addEventListener('scroll', hideTip, { passive: true });
+  // the crop-history names: the shared crop tip (src/ui/cropTip.js), one element on <body>, so the
+  // panel's scroll area never clips it; installed here too in case main.js hasn't yet (idempotent)
+  installCropTips();
+  const hideTip = hideCropTip;
 
   // the name: saved on Enter or when it loses focus; Esc puts the old name back
   root.addEventListener('keydown', (e) => {
@@ -249,8 +228,8 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onClose }) {
     const ph = r.placeholder || {};
     // each year: its crop icon, with the crop's name in a tooltip on hover, focus or tap
     const history = r.history.map((h) => (h.crop == null
-      ? `<li class="hist hist--none" tabindex="0" data-crop="No record" data-year="${h.year}"><span class="hist__icon" aria-hidden="true"></span><span class="hist__year" aria-hidden="true">${String(h.year).slice(-2)}</span><span class="sr-only">${h.year}: no record</span></li>`
-      : `<li class="hist" tabindex="0" data-crop="${esc(h.label)}" data-year="${h.year}"><span class="hist__icon">${cropIcon(h.key)}</span><span class="hist__year" aria-hidden="true">${String(h.year).slice(-2)}</span><span class="sr-only">${h.year}: ${esc(h.label)}</span></li>`)).join('');
+      ? `<li class="hist hist--none" tabindex="0" data-year="${h.year}" data-crop-tip="No record" data-crop-sub="${h.year}"><span class="hist__icon" aria-hidden="true"></span><span class="hist__year" aria-hidden="true">${String(h.year).slice(-2)}</span><span class="sr-only">${h.year}: no record</span></li>`
+      : `<li class="hist" tabindex="0" data-year="${h.year}" data-crop-tip="${esc(h.label)}" data-crop-sub="${h.year}"><span class="hist__icon">${cropBadge(null, { key: h.key, name: h.label, sub: String(h.year), inControl: true, cls: 'crop-ico' })}</span><span class="hist__year" aria-hidden="true">${String(h.year).slice(-2)}</span><span class="sr-only">${h.year}: ${esc(h.label)}</span></li>`)).join('');
     const knownYears = r.history.filter((h) => h.crop != null).length;
     const empty = (text) => `<p class="ck-empty">${text}</p>`;
     const fact = (label, value) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
@@ -300,7 +279,7 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onClose }) {
           <span class="switch__track" aria-hidden="true"><span class="switch__knob"></span></span>
           Irrigated
         </label>
-      </div>`;
+      </div>${onAsk ? `<button class="btn btn--quiet btn--small checkup__ask" type="button" data-ask>${ASK_ICON}<span>Ask about this field</span></button>` : ''}`;
 
     body.innerHTML = `
       <section class="says" aria-labelledby="ckSays">

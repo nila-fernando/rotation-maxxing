@@ -18,6 +18,10 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 export const CROP_KEYS = [
   'corn', 'soybeans', 'wheat', 'barley', 'oats', 'sorghum',
   'alfalfa', 'hay', 'pasture', 'fallow', 'other',
+  // more US field crops, so a field shows what it really grows instead of the sprout
+  'cotton', 'sunflower', 'canola', 'rye', 'drybeans', 'springwheat',
+  'potatoes', 'sugarbeets', 'peanuts', 'rice', 'vegetables',
+  'strawberries', 'berries', 'grapes', 'orchard', 'sugarcane', 'tobacco',
 ];
 
 // soil = colour of the field's top surface under the plants; sides = the slab's side faces.
@@ -33,23 +37,59 @@ export const CROP_STYLE = {
   pasture:  { label: 'Pasture',       soil: 0xaab25b, sides: 0x8a7a55 },
   fallow:   { label: 'Fallow',        soil: 0x9c7a58, sides: 0x7d5e45 },
   other:    { label: 'Cover crop',    soil: 0x8c9f50, sides: 0x7b6a4b },
+  cotton:      { label: 'Cotton',       soil: 0xa27a58, sides: 0x825f45 },
+  sunflower:   { label: 'Sunflower',    soil: 0x9b7655, sides: 0x7d5e45 },
+  canola:      { label: 'Canola',       soil: 0xa48258, sides: 0x846547 },
+  rye:         { label: 'Cereal rye',   soil: 0xa38f60, sides: 0x84704c },
+  drybeans:    { label: 'Dry beans',    soil: 0x9a7553, sides: 0x7c5d44 },
+  springwheat: { label: 'Spring wheat', soil: 0xae915e, sides: 0x8c7048 },
+  potatoes:    { label: 'Potatoes',     soil: 0x8f6b4d, sides: 0x74563f },
+  sugarbeets:  { label: 'Sugar beets',  soil: 0x93704f, sides: 0x775a42 },
+  peanuts:     { label: 'Peanuts',      soil: 0xb07f58, sides: 0x8d6445 },
+  rice:        { label: 'Rice',         soil: 0x8a7a5c, sides: 0x6f6149 },
+  vegetables:  { label: 'Vegetables',   soil: 0x8e6a4c, sides: 0x73553e },
+  strawberries: { label: 'Strawberries', soil: 0x8a674a, sides: 0x6f523c },
+  berries:     { label: 'Berries',      soil: 0x8d6d4e, sides: 0x72573f },
+  grapes:      { label: 'Grapes',       soil: 0xa08a5c, sides: 0x816e4a },
+  orchard:     { label: 'Orchard',      soil: 0x9aa55a, sides: 0x7d6a4c },
+  sugarcane:   { label: 'Sugarcane',    soil: 0x977352, sides: 0x7a5b43 },
+  tobacco:     { label: 'Tobacco',      soil: 0x9a7655, sides: 0x7c5e45 },
 };
 
 // Words to look for in a crop name, checked in this order (first match wins). The order
 // matters: "Other Hay/Non Alfalfa" must hit 'hay' before 'alfalfa', "Buckwheat" must not
-// become wheat.
+// become wheat, "Sweet Potatoes" are vegetables (not potatoes), "Spring Wheat" and "Durum Wheat"
+// are spring wheat (not winter wheat), "Rye" is cereal rye (not "Ryegrass", which is pasture).
 const NAME_RULES = [
-  ['other',    /buckwheat/],
-  ['fallow',   /fallow|idle|barren|tilled|bare/],
-  ['hay',      /\bhay\b/],
-  ['alfalfa',  /alfalfa/],
-  ['sorghum',  /sorghum|milo|millet/],
-  ['corn',     /corn|maize/],
-  ['soybeans', /soy|\bbeans?\b|\bpeas?\b|lentil|chick ?peas/],
-  ['barley',   /barley/],
-  ['oats',     /\boats?\b/],
-  ['wheat',    /wheat|\bwht\b|winwht|rye|triticale|durum|spelt/],
-  ['pasture',  /pasture|grass|clover|wildflower|\bsod\b|meadow|range/],
+  ['other',      /buckwheat/],
+  ['fallow',     /fallow|idle|barren|tilled|bare/],
+  ['hay',        /\bhay\b/],
+  ['alfalfa',    /alfalfa/],
+  ['sorghum',    /sorghum|milo|millet/],
+  ['corn',       /corn|maize/],
+  ['cotton',     /cotton/],
+  ['rice',       /\brice\b/],
+  ['sunflower',  /sunflower/],
+  ['canola',     /canola|rape ?seed|mustard|camelina/],
+  ['sugarbeets', /sugar ?beets?/],
+  ['sugarcane',  /sugar ?cane/],
+  ['tobacco',    /tobacco/],
+  ['strawberries', /strawberr/],
+  ['berries',    /berr/], // blueberries, caneberries, cranberries
+  // fruit and nut trees (before 'grapes' for "Grapefruit", before 'pasture': "Oranges" holds "range")
+  ['orchard',    /orchard|tree crops?|apple|cherr|peach|\bpears?\b|plum|prune|apricot|nectarine|citrus|orange|lemon|grapefruit|almond|walnut|pecan|pistachio|olive|avocado|pomegranate/],
+  ['grapes',     /grape|vineyard/],
+  ['vegetables', /\bvegs?\b|vegetable|sweet potato|tomato|onion|lettuce|melon|cantaloupe|cucumber|squash|pumpkin|gourd|pepper|carrot|cabbage|broccoli|cauliflower|celery|radish|turnip|eggplant|\bgreens\b|garlic|asparagus|\bherbs\b/],
+  ['potatoes',   /potato/],
+  ['peanuts',    /peanut/],
+  ['soybeans',   /soy/],
+  ['drybeans',   /\bbeans?\b|\bpeas?\b|lentil|chick ?peas/],
+  ['barley',     /barley/],
+  ['oats',       /\boats?\b/],
+  ['springwheat', /spring wh(ea)?t|durum/],
+  ['rye',        /\brye\b/],
+  ['wheat',      /wheat|\bwht\b|winwht|triticale|spelt/],
+  ['pasture',    /pasture|grass|clover|wildflower|\bsod\b|meadow|range/],
 ];
 
 /**
@@ -176,6 +216,23 @@ function ridge() {
   g.translate(0, 0, -0.5).rotateY(Math.PI / 2);
   return merge([g]);
 }
+// A sunflower's face: a seed disc whose face looks along +z, hanging just in front of its stalk.
+function sunflowerDisc() {
+  return merge([new THREE.CylinderGeometry(0.048, 0.054, 0.024, 10, 1).rotateX(Math.PI / 2).translate(0, 0.012, 0.03)]);
+}
+// ...and the ring of yellow petals round it.
+function sunflowerPetals() {
+  const parts = [];
+  for (let k = 0; k < 12; k++) {
+    parts.push(new THREE.ConeGeometry(0.017, 0.05, 3, 1).translate(0, 0.074, 0).scale(1, 1, 0.3)
+      .rotateZ((k / 12) * Math.PI * 2).translate(0, 0.012, 0.024));
+  }
+  return merge(parts);
+}
+// A flat leaflet: an octahedron squashed thin (bean, peanut and beet leaves).
+function leaflet(len, width) {
+  return new THREE.OctahedronGeometry(1, 0).scale(width, len / 2, width * 0.3).translate(0, len / 2, 0);
+}
 
 // ---------- crop designs ----------
 //
@@ -186,7 +243,16 @@ function ridge() {
 //   stagger  shift every other row by half a plant (looks broadcast-sown instead of drilled)
 //   inset    keep plants this far inside the field edge
 //   yaw      'random' = each plant turned randomly, 'row' = plants follow the row
-//   parts    part name -> { geo, shade } (shade = how dark the bottom of the part is)
+//   ridges   grown in tilled rows: the paddock lays a furrow ridge under every row and stands
+//            the plants on it (src/island/paddocks.js, ROW_GAP below)
+//   parts    part name -> { geo, shade, season } (shade = how dark the bottom of the part is;
+//            season = the part's look through the year in src/island/seasons.js, default 'crop':
+//            green, ripening to straw; 'boll' = cotton bolls, green buds that burst white when
+//            ripe; 'paddy' = a rice paddy's water, drained to mud when the rice ripens)
+// Size rule: no plant may reach higher than corn (0.80 over the soil, counting the ridge a row
+// crop stands on: src/island/stackSpots.js lifts the coin stacks over that), and the crops from
+// cotton on reach no further sideways from their base than their inset, so they stay inside the
+// planted outline (0.02 inside the fence) whatever the field's shape (crops.test.js checks both).
 //   plant(r, add, info)  calls add(part, x, y, z, rx, ry, rz, sx, sy, sz, colour) for each
 //                        piece of one plant, in plant space (base at the origin, y up).
 //                        r() is a seeded random in 0..1, info = { row, col, spacing }.
@@ -196,7 +262,7 @@ const R = (r, a, b) => a + (b - a) * r();
 
 const CROPS = {
   corn: {
-    spacing: 0.24, rowGap: 1.5, jitter: [0.12, 0.08], inset: 0.12, yaw: 'random',
+    spacing: 0.24, rowGap: 1.5, ridges: true, jitter: [0.12, 0.08], inset: 0.12, yaw: 'random',
     parts: {
       stalk: { geo: () => new THREE.CylinderGeometry(0.014, 0.026, 0.6, 5, 1).translate(0, 0.3, 0), shade: 0.65 },
       leaf: { geo: () => archedLeaf(0.34, 0.042, 0.8), shade: 0.75 },
@@ -217,7 +283,7 @@ const CROPS = {
   },
 
   soybeans: {
-    spacing: 0.16, rowGap: 1.9, jitter: [0.12, 0.05], inset: 0.1, yaw: 'random',
+    spacing: 0.16, rowGap: 1.9, ridges: true, jitter: [0.12, 0.05], inset: 0.1, yaw: 'random',
     parts: {
       blob: { geo: () => new THREE.IcosahedronGeometry(0.075, 0), shade: 0.7 },
     },
@@ -232,7 +298,7 @@ const CROPS = {
   },
 
   wheat: {
-    spacing: 0.18, rowGap: 1.05, jitter: [0.2, 0.1], inset: 0.07, yaw: 'random',
+    spacing: 0.18, rowGap: 1.05, ridges: true, jitter: [0.2, 0.1], inset: 0.07, yaw: 'random',
     parts: {
       stalk: { geo: () => new THREE.CylinderGeometry(0.006, 0.01, 0.4, 4, 1).translate(0, 0.2, 0), shade: 0.7 },
       head: { geo: () => new THREE.SphereGeometry(0.04, 6, 4).scale(0.42, 1.35, 0.42).translate(0, 0.054, 0), shade: 0.82 },
@@ -253,7 +319,7 @@ const CROPS = {
   },
 
   barley: {
-    spacing: 0.18, rowGap: 1.05, jitter: [0.2, 0.1], inset: 0.07, yaw: 'random',
+    spacing: 0.18, rowGap: 1.05, ridges: true, jitter: [0.2, 0.1], inset: 0.07, yaw: 'random',
     parts: {
       stalk: { geo: () => new THREE.CylinderGeometry(0.006, 0.01, 0.36, 4, 1).translate(0, 0.18, 0), shade: 0.7 },
       head: { geo: () => new THREE.SphereGeometry(0.038, 6, 4).scale(0.45, 1.3, 0.45).translate(0, 0.049, 0), shade: 0.85 },
@@ -276,7 +342,7 @@ const CROPS = {
   },
 
   oats: {
-    spacing: 0.19, rowGap: 1.05, jitter: [0.2, 0.1], inset: 0.07, yaw: 'random',
+    spacing: 0.19, rowGap: 1.05, ridges: true, jitter: [0.2, 0.1], inset: 0.07, yaw: 'random',
     parts: {
       stalk: { geo: () => new THREE.CylinderGeometry(0.006, 0.01, 0.34, 4, 1).translate(0, 0.17, 0), shade: 0.7 },
       panicle: { geo: oatPanicle, shade: 0.9 },
@@ -297,7 +363,7 @@ const CROPS = {
   },
 
   sorghum: {
-    spacing: 0.23, rowGap: 1.45, jitter: [0.12, 0.08], inset: 0.11, yaw: 'random',
+    spacing: 0.23, rowGap: 1.45, ridges: true, jitter: [0.12, 0.08], inset: 0.11, yaw: 'random',
     parts: {
       stalk: { geo: () => new THREE.CylinderGeometry(0.015, 0.024, 0.46, 5, 1).translate(0, 0.23, 0), shade: 0.65 },
       leaf: { geo: () => archedLeaf(0.3, 0.045, 0.9), shade: 0.75 },
@@ -404,7 +470,409 @@ const CROPS = {
       add('bud', 0, 0.1 * s, 0, R(r, 0, 3), R(r, 0, 3), 0, s, s, s, pick(r, [0x76a845, 0x84b34f]));
     },
   },
+
+  // ---- more US field crops (each within corn's height and its own inset: see the size rule)
+
+  // a bushy knee-high plant; the bolls are green buds that burst white as it ripens
+  cotton: {
+    spacing: 0.17, rowGap: 1.6, ridges: true, jitter: [0.12, 0.06], inset: 0.11, yaw: 'random',
+    parts: {
+      stem: { geo: () => new THREE.CylinderGeometry(0.006, 0.012, 0.28, 4, 1).translate(0, 0.14, 0), shade: 0.7 },
+      leaf: { geo: () => new THREE.IcosahedronGeometry(0.042, 0).scale(1, 0.55, 1), shade: 0.72 },
+      boll: { geo: () => new THREE.IcosahedronGeometry(0.024, 0), shade: 0.92, season: 'boll' },
+    },
+    plant(r, add) {
+      const s = R(r, 0.85, 1.1);
+      add('stem', 0, 0, 0, R(r, -0.05, 0.05), 0, R(r, -0.05, 0.05), 1, s, 1, pick(r, [0x8a7a45, 0x7d8a43, 0x86803f]));
+      const green = [0x5f8f3a, 0x6a9a40, 0x578835];
+      for (let k = 0; k < 7; k++) {
+        const a = k * 2.4 + R(r, -0.3, 0.3), d = (0.05 - k * 0.005) * s, q = R(r, 0.85, 1.1) * (1 - k * 0.06) * s;
+        add('leaf', Math.cos(a) * d, (0.07 + k * 0.033) * s, Math.sin(a) * d, R(r, 0, 3), R(r, 0, 3), 0, q, q, q, pick(r, green));
+      }
+      add('leaf', 0, 0.3 * s, 0, 0, R(r, 0, 3), 0, 0.7 * s, 0.7 * s, 0.7 * s, pick(r, green));
+      for (let k = 0; k < 6; k++) {
+        const a = k * 1.9 + R(r, 0, 0.8), d = R(r, 0.03, 0.06) * s, q = R(r, 0.85, 1.15);
+        add('boll', Math.cos(a) * d, (0.12 + k * 0.03) * s, Math.sin(a) * d, R(r, 0, 3), R(r, 0, 3), 0, q, q, q, pick(r, [0xfbf8ef, 0xf4f0e4, 0xfffdf7]));
+      }
+    },
+  },
+
+  // tall stalks with broad leaves; every head in the field turns the same way, to the morning sun
+  sunflower: {
+    spacing: 0.24, rowGap: 1.5, ridges: true, jitter: [0.1, 0.06], inset: 0.13, yaw: 'row',
+    parts: {
+      stalk: { geo: () => new THREE.CylinderGeometry(0.012, 0.02, 0.48, 5, 1).translate(0, 0.24, 0), shade: 0.65 },
+      leaf: { geo: () => leaflet(0.1, 0.04), shade: 0.72 },
+      disc: { geo: sunflowerDisc, shade: 0.9 },
+      petals: { geo: sunflowerPetals, shade: 0.95 },
+    },
+    plant(r, add) {
+      const h = R(r, 0.9, 1.08), rx = R(r, -0.03, 0.03), rz = R(r, -0.03, 0.03);
+      add('stalk', 0, 0, 0, rx, 0, rz, 1, h, 1, pick(r, [0x7d9e43, 0x86a84a, 0x74963d]));
+      const leafCol = pick(r, [0x6f9a3c, 0x7aa645, 0x669238]);
+      for (let k = 0; k < 4; k++) {
+        add('leaf', 0, (0.1 + k * 0.09) * h, 0, 0, k * 2.5 + R(r, -0.3, 0.3), -R(r, 0.9, 1.1), 1, 1, 1, leafCol);
+      }
+      const t = tip(0.48 * h, rx, rz);
+      const ry = R(r, -0.35, 0.35), nod = R(r, 0.12, 0.35);
+      add('disc', t.x, t.y, t.z, nod, ry, 0, 1, 1, 1, pick(r, [0x5a3a22, 0x6b4428, 0x4f331e]));
+      add('petals', t.x, t.y, t.z, nod, ry, 0, 1, 1, 1, pick(r, [0xf5c518, 0xf2b915, 0xf7cf2e]));
+    },
+  },
+
+  // a knee-high froth of branching stems topped with bright yellow flowers
+  canola: {
+    spacing: 0.15, rowGap: 1.05, jitter: [0.3, 0.25], stagger: true, inset: 0.1, yaw: 'random',
+    parts: {
+      stem: { geo: () => new THREE.CylinderGeometry(0.004, 0.007, 0.26, 3, 1).translate(0, 0.13, 0), shade: 0.75 },
+      leaf: { geo: () => leaflet(0.08, 0.03), shade: 0.7 },
+      flower: { geo: () => new THREE.IcosahedronGeometry(0.022, 0).scale(1, 0.8, 1), shade: 0.92 },
+    },
+    plant(r, add) {
+      const s = R(r, 0.85, 1.12);
+      const stemCol = pick(r, [0x7fa548, 0x88ab50, 0x76a045]);
+      for (let k = 0; k < 4; k++) {
+        const rx = R(r, -0.16, 0.16), rz = R(r, -0.16, 0.16), h = s * R(r, 0.85, 1);
+        add('stem', 0, 0, 0, rx, 0, rz, 1, h, 1, stemCol);
+        const t = tip(0.26 * h, rx, rz);
+        const yellow = pick(r, [0xf4d31f, 0xf7dc3b, 0xefc915]);
+        add('flower', t.x, t.y, t.z, 0, R(r, 0, 3), 0, s, s, s, yellow);
+        add('flower', t.x * 0.9, t.y - 0.025, t.z * 0.9, 0, R(r, 0, 3), 0, 0.8 * s, 0.8 * s, 0.8 * s, yellow);
+      }
+      for (let k = 0; k < 3; k++) add('leaf', 0, 0, 0, 0, R(r, 0, 6), -R(r, 0.8, 1.1), s, s, s, pick(r, [0x6a9a5a, 0x73a25e, 0x629352]));
+    },
+  },
+
+  // cereal rye: taller and bluer than wheat, with slim bearded heads (as a cover crop or for grain)
+  rye: {
+    spacing: 0.16, rowGap: 1.05, jitter: [0.25, 0.15], inset: 0.1, yaw: 'random',
+    parts: {
+      stalk: { geo: () => new THREE.CylinderGeometry(0.005, 0.009, 0.5, 4, 1).translate(0, 0.25, 0), shade: 0.7 },
+      head: { geo: () => new THREE.SphereGeometry(0.03, 5, 4).scale(0.42, 2, 0.42).translate(0, 0.06, 0), shade: 0.82 },
+      awns: { geo: () => fan(5, 0.15, 0.003, 0.12, 0.2), shade: 0.9 },
+      leaf: { geo: () => blade(0.12, 0.016), shade: 0.7 },
+    },
+    plant(r, add) {
+      const stalkCol = pick(r, [0x8fae7a, 0x86a873, 0x97b583]);
+      for (let k = 0; k < 4; k++) {
+        const a = (k / 4) * Math.PI * 2 + R(r, 0, 1);
+        const ox = Math.cos(a) * 0.025, oz = Math.sin(a) * 0.025;
+        const rx = R(r, -0.07, 0.07), rz = R(r, -0.07, 0.07), h = R(r, 0.9, 1.08);
+        const t = tip(0.5 * h, rx, rz);
+        add('stalk', ox, 0, oz, rx, 0, rz, 1, h, 1, stalkCol);
+        add('head', ox + t.x, t.y, oz + t.z, rx, 0, rz - 0.12, 1, 1, 1, pick(r, [0xa9bb88, 0xb2c291, 0x9fb47f]));
+        add('awns', ox + t.x, t.y, oz + t.z, rx, 0, rz - 0.12, 1, 1, 1, pick(r, [0xc4cfa0, 0xbcc896]));
+      }
+      for (let k = 0; k < 2; k++) add('leaf', 0, 0, 0, 0, R(r, 0, 6), -R(r, 0.5, 0.75), 1, 1, 1, pick(r, [0x86a873, 0x7d9f6b]));
+    },
+  },
+
+  // dry beans: an open, lighter green bush than soybeans, with spade leaves, pods and a few flowers
+  drybeans: {
+    spacing: 0.15, rowGap: 1.8, ridges: true, jitter: [0.12, 0.05], inset: 0.1, yaw: 'random',
+    parts: {
+      leaf: { geo: () => leaflet(0.075, 0.04), shade: 0.7 },
+      pod: { geo: () => new THREE.CylinderGeometry(0.007, 0.005, 0.06, 4, 1).translate(0, -0.03, 0), shade: 0.85 },
+      flower: { geo: () => new THREE.IcosahedronGeometry(0.014, 0), shade: 0.95 },
+    },
+    plant(r, add) {
+      const s = R(r, 0.85, 1.08);
+      const green = [0x8bb34c, 0x97bd55, 0x7faa45];
+      for (let k = 0; k < 8; k++) {
+        const a = k * 0.785 + R(r, -0.3, 0.3), d = 0.02 * s;
+        add('leaf', Math.cos(a) * d, R(r, 0.05, 0.13) * s, Math.sin(a) * d, 0, -a, -R(r, 0.7, 1.1), s, s, s, pick(r, green));
+      }
+      for (let k = 0; k < 4; k++) {
+        const a = R(r, 0, 6.28), d = R(r, 0.03, 0.05) * s;
+        add('pod', Math.cos(a) * d, R(r, 0.06, 0.1) * s, Math.sin(a) * d, R(r, -0.3, 0.3), 0, R(r, -0.3, 0.3), s, s, s, pick(r, [0xb7c26a, 0xcdb978, 0xa9b860]));
+      }
+      for (let k = 0; k < 2; k++) {
+        const a = R(r, 0, 6.28), d = R(r, 0, 0.03) * s;
+        add('flower', Math.cos(a) * d, R(r, 0.14, 0.17) * s, Math.sin(a) * d, 0, R(r, 0, 3), 0, 1, 1, 1, pick(r, [0xf6f0f5, 0xe7a9c4, 0xf3e6ee]));
+      }
+    },
+  },
+
+  // spring wheat: like winter wheat but greener in summer and bearded (long awns), on tilled rows
+  springwheat: {
+    spacing: 0.17, rowGap: 1.05, ridges: true, jitter: [0.2, 0.1], inset: 0.11, yaw: 'random',
+    parts: {
+      stalk: { geo: () => new THREE.CylinderGeometry(0.006, 0.01, 0.36, 4, 1).translate(0, 0.18, 0), shade: 0.7 },
+      head: { geo: () => new THREE.SphereGeometry(0.04, 6, 4).scale(0.45, 1.25, 0.45).translate(0, 0.05, 0), shade: 0.82 },
+      awns: { geo: () => fan(5, 0.12, 0.003, 0.14, 0.25), shade: 0.9 },
+      leaf: { geo: () => blade(0.12, 0.018), shade: 0.7 },
+    },
+    plant(r, add) {
+      const stalkCol = pick(r, [0x9fb064, 0xa8b46c, 0x96a85d]);
+      for (let k = 0; k < 3; k++) {
+        const a = (k / 3) * Math.PI * 2 + R(r, 0, 1);
+        const ox = Math.cos(a) * 0.028, oz = Math.sin(a) * 0.028;
+        const rx = R(r, -0.09, 0.09), rz = R(r, -0.09, 0.09), h = R(r, 0.88, 1.08);
+        const t = tip(0.36 * h, rx, rz);
+        add('stalk', ox, 0, oz, rx, 0, rz, 1, h, 1, stalkCol);
+        add('head', ox + t.x, t.y, oz + t.z, rx, 0, rz, 1, 1, 1, pick(r, [0xc8c070, 0xbdb865, 0xd0c67a]));
+        add('awns', ox + t.x, t.y, oz + t.z, rx, 0, rz, 1, 1, 1, pick(r, [0xd8d08e, 0xcfc985]));
+      }
+      for (let k = 0; k < 2; k++) add('leaf', 0, 0, 0, 0, R(r, 0, 6), -R(r, 0.55, 0.75), 1, 1, 1, pick(r, [0x9aae5e, 0x90a657]));
+    },
+  },
+
+  // low, dark green mounds on hilled rows, with little white and lilac flowers
+  potatoes: {
+    spacing: 0.18, rowGap: 1.9, ridges: true, jitter: [0.12, 0.05], inset: 0.12, yaw: 'random',
+    parts: {
+      blob: { geo: () => new THREE.IcosahedronGeometry(0.05, 0).scale(1, 0.7, 1), shade: 0.68 },
+      flower: { geo: () => new THREE.IcosahedronGeometry(0.016, 0), shade: 0.95 },
+    },
+    plant(r, add) {
+      const s = R(r, 0.85, 1.1);
+      const green = [0x4f7f35, 0x5a8a3a, 0x46763a];
+      add('blob', 0, 0.1 * s, 0, R(r, 0, 3), R(r, 0, 3), 0, s, s, s, pick(r, green));
+      for (let k = 0; k < 5; k++) {
+        const a = k * 1.26 + R(r, -0.3, 0.3), d = R(r, 0.03, 0.05) * s, q = R(r, 0.8, 1.05) * s;
+        add('blob', Math.cos(a) * d, R(r, 0.05, 0.08) * s, Math.sin(a) * d, R(r, 0, 3), R(r, 0, 3), 0, q, q, q, pick(r, green));
+      }
+      for (let k = 0; k < 3; k++) {
+        const a = R(r, 0, 6.28), d = R(r, 0, 0.04) * s;
+        add('flower', Math.cos(a) * d, R(r, 0.13, 0.16) * s, Math.sin(a) * d, 0, R(r, 0, 3), 0, 1, 1, 1, pick(r, [0xf3eef8, 0xc9b3e6, 0xfaf7ee]));
+      }
+    },
+  },
+
+  // a rosette of big glossy leaves with the pale beet's crown showing at the soil
+  sugarbeets: {
+    spacing: 0.16, rowGap: 1.7, ridges: true, jitter: [0.1, 0.05], inset: 0.1, yaw: 'random',
+    parts: {
+      root: { geo: () => new THREE.SphereGeometry(0.038, 6, 4).scale(1, 0.8, 1).translate(0, 0.012, 0), shade: 0.8 },
+      leaf: { geo: () => leaflet(0.13, 0.04), shade: 0.66 },
+    },
+    plant(r, add) {
+      const s = R(r, 0.85, 1.08);
+      add('root', 0, 0, 0, 0, R(r, 0, 3), 0, s, s, s, pick(r, [0xeadfc6, 0xe2d4b6, 0xefe5cf]));
+      const green = [0x3f7a35, 0x4a8a3c, 0x55913f];
+      for (let k = 0; k < 7; k++) {
+        add('leaf', 0, 0.02 * s, 0, 0, (k / 7) * Math.PI * 2 + R(r, -0.2, 0.2), -R(r, 0.35, 0.6), s, s * R(r, 0.9, 1.05), s, pick(r, green));
+      }
+      add('leaf', 0, 0.02 * s, 0, 0, R(r, 0, 6), -R(r, 0, 0.15), 0.8 * s, 0.85 * s, 0.8 * s, pick(r, green));
+    },
+  },
+
+  // peanuts: a low, spreading mat of small round leaflets, dotted with yellow flowers
+  peanuts: {
+    spacing: 0.15, rowGap: 1.6, ridges: true, jitter: [0.12, 0.05], inset: 0.11, yaw: 'random',
+    parts: {
+      leaf: { geo: () => leaflet(0.045, 0.024), shade: 0.72 },
+      flower: { geo: () => new THREE.IcosahedronGeometry(0.012, 0), shade: 0.95 },
+    },
+    plant(r, add) {
+      const s = R(r, 0.85, 1.08);
+      const green = [0x6f9e44, 0x7aa84a, 0x659440];
+      for (let k = 0; k < 12; k++) {
+        const a = k * 0.52 + R(r, -0.2, 0.2), d = R(r, 0, 0.045) * s, q = R(r, 0.85, 1.15) * s;
+        add('leaf', Math.cos(a) * d, R(r, 0.03, 0.08) * s, Math.sin(a) * d, 0, -a, -R(r, 0.3, 1.2), q, q, q, pick(r, green));
+      }
+      for (let k = 0; k < 3; k++) {
+        const a = R(r, 0, 6.28), d = R(r, 0.01, 0.05) * s;
+        add('flower', Math.cos(a) * d, R(r, 0.07, 0.09) * s, Math.sin(a) * d, 0, R(r, 0, 3), 0, 1, 1, 1, pick(r, [0xf2c230, 0xf6cf45]));
+      }
+    },
+  },
+
+  // rice: bright tufts standing in a flooded paddy, with nodding grain heads; drained to mud as it
+  // ripens. The water keeps its full size while the rice grows (keepSize) and goes in winter.
+  rice: {
+    spacing: 0.16, rowGap: 1.1, jitter: [0.06, 0.06], inset: 0.13, yaw: 'random',
+    parts: {
+      water: { geo: () => new THREE.CylinderGeometry(0.1, 0.1, 0.006, 8, 1).translate(0, 0.003, 0), shade: 1, season: 'paddy', keepSize: true },
+      tuft: { geo: () => fan(9, 0.3, 0.008, 0.28, 0.35), shade: 0.62 },
+      panicle: { geo: () => oatPanicle().scale(0.75, 0.75, 0.75), shade: 0.9 },
+    },
+    plant(r, add) {
+      const s = R(r, 0.85, 1.1);
+      add('water', 0, 0, 0, 0, 0, 0, 1, 1, 1, 0x86b4c6); // one colour, so the overlapping pools read as one sheet
+      add('tuft', 0, 0, 0, 0, R(r, 0, 6), 0, s, s * R(r, 0.9, 1.05), s, pick(r, [0x7fb848, 0x8cc252, 0x74ad42]));
+      for (let k = 0; k < 3; k++) {
+        const a = (k / 3) * Math.PI * 2 + R(r, 0, 1), d = 0.02 * s;
+        add('panicle', Math.cos(a) * d, 0.24 * s, Math.sin(a) * d, 0, -a, -R(r, 0.6, 1), 1, 1, 1, pick(r, [0xc9c27a, 0xd2c886, 0xbfba70]));
+      }
+    },
+  },
+
+  // a market garden: rows of lettuce and cabbage, staked tomatoes and pumpkins, in turn
+  vegetables: {
+    spacing: 0.17, rowGap: 1.6, ridges: true, jitter: [0.08, 0.04], inset: 0.1, yaw: 'random',
+    parts: {
+      head: { geo: () => new THREE.IcosahedronGeometry(0.05, 1).scale(1, 0.75, 1).translate(0, 0.036, 0), shade: 0.75 },
+      leaf: { geo: () => leaflet(0.07, 0.035), shade: 0.7 },
+      stake: { geo: () => new THREE.CylinderGeometry(0.005, 0.005, 0.26, 4, 1).translate(0, 0.13, 0), shade: 0.85 },
+      bush: { geo: () => new THREE.IcosahedronGeometry(0.045, 0), shade: 0.7 },
+      fruit: { geo: () => new THREE.IcosahedronGeometry(0.017, 0), shade: 0.9 },
+      pumpkin: { geo: () => new THREE.SphereGeometry(0.045, 8, 5).scale(1, 0.72, 1).translate(0, 0.032, 0), shade: 0.8 },
+    },
+    plant(r, add, info) {
+      const s = R(r, 0.88, 1.08);
+      const kind = info.row % 3;
+      if (kind === 0) { // lettuce and cabbage heads, the odd red cabbage
+        for (let k = 0; k < 4; k++) add('leaf', 0, 0, 0, 0, (k / 4) * Math.PI * 2 + R(r, -0.3, 0.3), -R(r, 1, 1.3), s, s, s, pick(r, [0x86bf5c, 0x7bb352]));
+        add('head', 0, 0, 0, 0, R(r, 0, 3), 0, s, s, s, r() < 0.15 ? pick(r, [0x8a6aa0, 0x7d5f95]) : pick(r, [0x9ccf6a, 0xa9d47a, 0x8fc460]));
+      } else if (kind === 1) { // tomatoes up a stake
+        add('stake', 0, 0, 0, 0, 0, 0, 1, s, 1, pick(r, [0xb08a5a, 0xa47f50]));
+        for (let k = 0; k < 3; k++) {
+          const a = k * 2.1 + R(r, 0, 0.6), d = R(r, 0.02, 0.03);
+          add('bush', Math.cos(a) * d, (0.07 + k * 0.065) * s, Math.sin(a) * d, R(r, 0, 3), R(r, 0, 3), 0, s, s, s, pick(r, [0x5f9a3a, 0x6aa542, 0x568f35]));
+        }
+        for (let k = 0; k < 4; k++) {
+          const a = R(r, 0, 6.28), d = R(r, 0.04, 0.05);
+          add('fruit', Math.cos(a) * d, R(r, 0.06, 0.2) * s, Math.sin(a) * d, 0, R(r, 0, 3), 0, 1, 1, 1, pick(r, [0xd8432f, 0xe0583a, 0xd8432f, 0x9bbf4a]));
+        }
+      } else { // pumpkins among their big leaves
+        for (let k = 0; k < 4; k++) add('leaf', 0, 0, 0, 0, (k / 4) * Math.PI * 2 + R(r, -0.4, 0.4), -R(r, 1.1, 1.3), 1.1 * s, 1.1 * s, 1.1 * s, pick(r, [0x5f9a3a, 0x6aa542]));
+        if (r() < 0.6) {
+          const a = R(r, 0, 6.28), q = R(r, 0.9, 1.15);
+          add('pumpkin', Math.cos(a) * 0.02, 0, Math.sin(a) * 0.02, 0, R(r, 0, 3), 0, q, q, q, pick(r, [0xe8892f, 0xf09a3a, 0xd97a26]));
+        }
+      }
+    },
+  },
+
+  // strawberries: low leafy clumps on raised beds, red berries peeking out, a few white flowers
+  strawberries: {
+    spacing: 0.13, rowGap: 1.9, ridges: true, jitter: [0.1, 0.04], inset: 0.08, yaw: 'random',
+    parts: {
+      leaf: { geo: () => leaflet(0.045, 0.028), shade: 0.7 },
+      berry: { geo: () => new THREE.ConeGeometry(0.014, 0.026, 5, 1).rotateX(Math.PI).translate(0, 0.013, 0), shade: 0.85 },
+      flower: { geo: () => new THREE.IcosahedronGeometry(0.01, 0), shade: 0.95 },
+    },
+    plant(r, add) {
+      const s = R(r, 0.88, 1.08);
+      const green = [0x4f8c3a, 0x5a9a40, 0x478235];
+      for (let k = 0; k < 6; k++) {
+        const a = (k / 6) * Math.PI * 2 + R(r, -0.3, 0.3), d = 0.015 * s;
+        add('leaf', Math.cos(a) * d, 0.02 * s, Math.sin(a) * d, 0, -a, -R(r, 0.6, 1.1), s, s, s, pick(r, green));
+      }
+      for (let k = 0; k < 3; k++) {
+        const a = R(r, 0, 6.28), d = R(r, 0.035, 0.05);
+        add('berry', Math.cos(a) * d, 0.012, Math.sin(a) * d, R(r, -0.3, 0.3), 0, R(r, -0.3, 0.3), 1, 1, 1, pick(r, [0xd8333a, 0xe2464a, 0xc92c33, 0xe8e0a0]));
+      }
+      if (r() < 0.5) add('flower', R(r, -0.02, 0.02), 0.06 * s, R(r, -0.02, 0.02), 0, R(r, 0, 3), 0, 1, 1, 1, 0xfaf7ef);
+    },
+  },
+
+  // blueberries and the other berry bushes: round shrubs dotted with dusky blue fruit
+  berries: {
+    spacing: 0.22, rowGap: 1.6, ridges: true, jitter: [0.08, 0.04], inset: 0.12, yaw: 'random',
+    parts: {
+      blob: { geo: () => new THREE.IcosahedronGeometry(0.06, 0), shade: 0.66 },
+      berry: { geo: () => new THREE.IcosahedronGeometry(0.012, 0), shade: 0.9 },
+    },
+    plant(r, add) {
+      const s = R(r, 0.88, 1.08);
+      const green = [0x4d7f45, 0x58894a, 0x44753f];
+      add('blob', 0, 0.2 * s, 0, R(r, 0, 3), R(r, 0, 3), 0, s, s, s, pick(r, green));
+      for (let k = 0; k < 4; k++) {
+        const a = k * 1.57 + R(r, -0.3, 0.3), d = 0.04 * s;
+        add('blob', Math.cos(a) * d, R(r, 0.09, 0.14) * s, Math.sin(a) * d, R(r, 0, 3), R(r, 0, 3), 0, s, s * 0.9, s, pick(r, green));
+      }
+      for (let k = 0; k < 6; k++) {
+        const a = R(r, 0, 6.28), d = R(r, 0.06, 0.085) * s;
+        add('berry', Math.cos(a) * d, R(r, 0.08, 0.2) * s, Math.sin(a) * d, 0, R(r, 0, 3), 0, 1, 1, 1, pick(r, [0x4a5fa8, 0x5b6fb8, 0x3f5196]));
+      }
+    },
+  },
+
+  // a vineyard: posts and trellis wires along the rows, leafy vines and hanging bunches
+  grapes: {
+    spacing: 0.26, rowGap: 1.5, jitter: [0, 0], inset: 0.15, yaw: 'row',
+    parts: {
+      post: { geo: () => new THREE.CylinderGeometry(0.008, 0.01, 0.45, 4, 1).translate(0, 0.225, 0), shade: 0.8 },
+      wire: { geo: () => new THREE.CylinderGeometry(0.003, 0.003, 1, 3, 1).rotateZ(Math.PI / 2), shade: 1 },
+      vine: { geo: () => new THREE.IcosahedronGeometry(0.07, 0).scale(1.55, 0.8, 0.7), shade: 0.7 },
+      bunch: { geo: () => new THREE.ConeGeometry(0.018, 0.045, 5, 1).rotateX(Math.PI).translate(0, -0.022, 0), shade: 0.85 },
+    },
+    plant(r, add, info) {
+      // the wires run post to post; never longer than the room inside the field's edge
+      const len = Math.min(info.spacing * 1.02, 2 * (0.15 - 0.005));
+      add('post', 0, 0, 0, 0, 0, 0, 1, 1, 1, pick(r, [0x9c7a52, 0x8f6f4a]));
+      add('wire', 0, 0.3, 0, 0, 0, 0, len, 1, 1, 0xb9bcbf);
+      add('wire', 0, 0.42, 0, 0, 0, 0, len, 1, 1, 0xb9bcbf);
+      const green = [0x5f9440, 0x6a9f46, 0x578a3b];
+      add('vine', R(r, -0.02, 0.02), 0.4, 0, R(r, -0.2, 0.2), R(r, -0.15, 0.15), 0, R(r, 0.9, 1.05), R(r, 0.9, 1.1), 1, pick(r, green));
+      add('vine', R(r, -0.03, 0.03), 0.31, 0, R(r, -0.2, 0.2), R(r, -0.15, 0.15), 0, 0.8, 0.85, 0.9, pick(r, green));
+      const purple = r() < 0.75;
+      for (let k = 0; k < 3; k++) {
+        add('bunch', R(r, -0.07, 0.07), 0.28, (k % 2 ? 1 : -1) * 0.045, 0, R(r, 0, 3), 0, 1, 1, 1, purple ? pick(r, [0x5b3a78, 0x6a4488, 0x4e3168]) : pick(r, [0xa8c060, 0xb5c86c]));
+      }
+    },
+  },
+
+  // an orchard (fruit and nut trees): small round trees in neat rows, with the odd fruit
+  orchard: {
+    spacing: 0.48, rowGap: 1.1, jitter: [0.03, 0.03], inset: 0.19, yaw: 'random',
+    parts: {
+      trunk: { geo: () => new THREE.CylinderGeometry(0.018, 0.026, 0.32, 5, 1).translate(0, 0.16, 0), shade: 0.75 },
+      canopy: { geo: () => new THREE.IcosahedronGeometry(0.15, 0).scale(1, 0.85, 1), shade: 0.68 },
+      fruit: { geo: () => new THREE.IcosahedronGeometry(0.018, 0), shade: 0.92 },
+    },
+    plant(r, add) {
+      const s = R(r, 0.9, 1.08);
+      add('trunk', 0, 0, 0, R(r, -0.04, 0.04), 0, R(r, -0.04, 0.04), s, s, s, pick(r, [0x7a5a3c, 0x6e5034]));
+      const green = [0x5a8f3e, 0x66994a, 0x4f8538];
+      add('canopy', 0, 0.42 * s, 0, R(r, 0, 3), R(r, 0, 3), 0, s, s, s, pick(r, green));
+      for (let k = 0; k < 2; k++) {
+        const a = k * Math.PI + R(r, -0.5, 0.5);
+        add('canopy', Math.cos(a) * 0.06 * s, 0.37 * s, Math.sin(a) * 0.06 * s, R(r, 0, 3), R(r, 0, 3), 0, 0.6 * s, 0.6 * s, 0.6 * s, pick(r, green));
+      }
+      const fruit = pick(r, [0xd8433a, 0xe8892f, 0xf0c040, 0xd8433a]);
+      for (let k = 0; k < 5; k++) {
+        const a = R(r, 0, 6.28), d = R(r, 0.1, 0.125) * s;
+        add('fruit', Math.cos(a) * d, R(r, 0.33, 0.47) * s, Math.sin(a) * d, 0, R(r, 0, 3), 0, 1, 1, 1, fruit);
+      }
+    },
+  },
+
+  // sugarcane: dense clumps of tall canes with long leaves arching off the tops (kept below corn)
+  sugarcane: {
+    spacing: 0.2, rowGap: 1.6, ridges: true, jitter: [0.1, 0.05], inset: 0.17, yaw: 'random',
+    parts: {
+      cane: { geo: () => new THREE.CylinderGeometry(0.008, 0.012, 0.5, 5, 1).translate(0, 0.25, 0), shade: 0.65 },
+      leaf: { geo: () => blade(0.18, 0.02), shade: 0.72 },
+    },
+    plant(r, add) {
+      const caneCol = pick(r, [0x9aa65a, 0x8f9d52, 0xa3ad62]);
+      for (let k = 0; k < 4; k++) {
+        const a = (k / 4) * Math.PI * 2 + R(r, 0, 1);
+        const ox = Math.cos(a) * 0.03, oz = Math.sin(a) * 0.03;
+        const rx = R(r, -0.04, 0.04), rz = R(r, -0.04, 0.04), h = R(r, 0.9, 1.05);
+        const t = tip(0.5 * h, rx, rz);
+        add('cane', ox, 0, oz, rx, 0, rz, 1, h, 1, caneCol);
+        for (let j = 0; j < 2; j++) add('leaf', ox + t.x, t.y - 0.02, oz + t.z, 0, R(r, 0, 6), -R(r, 0.5, 0.8), 1, 1, 1, pick(r, [0x6f9f45, 0x79a84c, 0x66953f]));
+      }
+    },
+  },
+
+  // tobacco: a single stalk of huge broad leaves with a pink flower spike on top
+  tobacco: {
+    spacing: 0.22, rowGap: 1.5, ridges: true, jitter: [0.1, 0.05], inset: 0.15, yaw: 'random',
+    parts: {
+      stalk: { geo: () => new THREE.CylinderGeometry(0.01, 0.016, 0.38, 5, 1).translate(0, 0.19, 0), shade: 0.7 },
+      leaf: { geo: () => leaflet(0.14, 0.055), shade: 0.68 },
+      flower: { geo: () => fan(4, 0.06, 0.009, 0.3, 0.2), shade: 0.95 },
+    },
+    plant(r, add) {
+      const h = R(r, 0.9, 1.06);
+      add('stalk', 0, 0, 0, 0, 0, 0, 1, h, 1, pick(r, [0x86a54c, 0x7d9b46]));
+      const green = [0x7aa64a, 0x86b052, 0x6f9c44];
+      for (let k = 0; k < 5; k++) {
+        const q = 1 - k * 0.1;
+        add('leaf', 0, (0.04 + k * 0.065) * h, 0, 0, k * 2.4 + R(r, -0.3, 0.3), -R(r, 0.9, 1.2), q, q, q, pick(r, green));
+      }
+      add('flower', 0, 0.38 * h, 0, 0, R(r, 0, 3), 0, 1, 1, 1, pick(r, [0xf0a8c0, 0xe896b4, 0xf6c0d2]));
+    },
+  },
 };
+
+/** Row gap (as a multiple of the spacing) of the crops grown on tilled ridges (src/island/paddocks.js). */
+export const ROW_GAP = Object.fromEntries(Object.entries(CROPS).filter(([, d]) => d.ridges).map(([k, d]) => [k, d.rowGap]));
 
 // ---------- shared geometry and material cache ----------
 
@@ -419,16 +887,18 @@ function partGeometry(key, name) {
   }
   return geoCache.get(id);
 }
-let sharedMaterial = null;
-function plantMaterial() {
-  // One material for every plant part: white, tinted per instance, flat-shaded like the prototype.
-  if (!sharedMaterial) {
-    sharedMaterial = new THREE.MeshStandardMaterial({
-      color: 0xffffff, vertexColors: true, flatShading: true, roughness: 0.85, metalness: 0,
+const materials = new Map();
+function plantMaterial(season = 'crop') {
+  // One material for every plant part (per season look): white, tinted per instance, flat-shaded
+  // like the prototype. 'crop' ripens to straw in fall (src/island/seasons.js).
+  if (!materials.has(season)) {
+    const m = new THREE.MeshStandardMaterial({
+      color: 0xffffff, vertexColors: true, flatShading: true, roughness: season === 'paddy' ? 0.35 : 0.85, metalness: 0,
     });
-    sharedMaterial.userData.season = 'crop'; // ripens to straw in fall (src/island/seasons.js)
+    m.userData.season = season;
+    materials.set(season, m);
   }
-  return sharedMaterial;
+  return materials.get(season);
 }
 
 // ---------- polygon helpers ----------
@@ -650,7 +1120,7 @@ export function plantField(cropKey, polygons, opts = {}) {
     const b = buckets[name];
     const count = b.plant.length;
     if (!count) continue;
-    const mesh = new THREE.InstancedMesh(partGeometry(key, name), plantMaterial(), count);
+    const mesh = new THREE.InstancedMesh(partGeometry(key, name), plantMaterial(def.parts[name].season), count);
     mesh.name = `${key} ${name}`;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -669,7 +1139,7 @@ export function plantField(cropKey, polygons, opts = {}) {
     mesh.computeBoundingBox();
     mesh.computeBoundingSphere();
     group.add(mesh);
-    parts.push({ mesh, base, plant: Uint32Array.from(b.plant) });
+    parts.push({ mesh, base, plant: Uint32Array.from(b.plant), keepSize: !!def.parts[name].keepSize });
   }
 
   // setGrowth(t): every plant scales up from its base with a small overshoot, in a wave.
@@ -698,10 +1168,11 @@ export function plantField(cropKey, polygons, opts = {}) {
     writeScales();
   };
   function writeScales() {
-    for (const { mesh, base, plant } of parts) {
+    for (const { mesh, base, plant, keepSize } of parts) {
       const a = mesh.instanceMatrix.array;
       for (let i = 0, count = plant.length; i < count; i++) {
-        const j = plant[i], s = scale[j], o = i * 16, b = i * 12;
+        // a keepSize part (a paddy's water) is there at full size whenever its plant is
+        const j = plant[i], s = keepSize ? (scale[j] > 0 ? 1 : 0) : scale[j], o = i * 16, b = i * 12;
         const px = plantX[j], pz = plantZ[j];
         a[o] = base[b] * s; a[o + 1] = base[b + 1] * s; a[o + 2] = base[b + 2] * s;
         a[o + 4] = base[b + 3] * s; a[o + 5] = base[b + 4] * s; a[o + 6] = base[b + 5] * s;

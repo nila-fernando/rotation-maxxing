@@ -13,8 +13,8 @@
 //
 //   const builder = createPlanBuilder({ evaluate, onPreview, onSave })
 //   await builder.mount(container, ctx)   ctx: { farm, market, years, exclusions, startPlans, saved }
-import { cropIcon } from '../ui/cropIcons.js';
-import { APP_CROP } from '../plan/farmInput.js';
+import { cropBadge, hideCropTip } from '../ui/cropTip.js';
+import { placeOf, tipSubFor } from '../plan/cropCalendar.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const ERASER = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16.5l8.5-8.5 6 6-5 5H8z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M12.5 8l-4 4M8 19.5h12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
@@ -24,7 +24,21 @@ const CROP_NAME = {
   'dry-beans': 'Dry beans', 'cereal-rye': 'Cereal rye', fallow: 'Fallow',
 };
 const nameOf = (id) => CROP_NAME[id] || id;
-const iconOf = (id) => cropIcon(APP_CROP[id] || 'other');
+/**
+ * A crop's icon inside a palette button, a season cell, the detail line or the drag ghost: the
+ * shared crop tip names it on hover (with its sowing window when the calendar knows one); the
+ * control around it names it to screen readers.
+ */
+const badgeOf = (id, place = null, cover = null) => cropBadge(id, { inControl: true, cls: 'crop-ico', cover, ...(place ? { sub: tipSubFor(id, place) || undefined } : {}) });
+
+/** The palette's crop buttons (and the eraser), as HTML: each with its name in the shared crop tip. */
+export function paletteHtml(ids, place = null) {
+  return [...ids.map((id) => {
+    const sub = place ? tipSubFor(id, place) : '';
+    return `<button type="button" class="bcrop" data-crop="${esc(id)}" data-crop-tip="${esc(nameOf(id))}"${sub ? ` data-crop-sub="${esc(sub)}"` : ''} aria-pressed="false">${badgeOf(id, place)}<span>${esc(nameOf(id))}</span></button>`;
+  }),
+    `<button type="button" class="bcrop bcrop--clear" data-crop="" aria-pressed="false">${ERASER}<span>Clear</span></button>`].join('');
+}
 const DRAG_START_PX = 5;
 const HOLD_MS = 280; // a finger rests this long to pick a crop up (a quicker swipe scrolls)
 const TOUCH_SLOP_PX = 10;
@@ -40,6 +54,8 @@ const TOUCH_SLOP_PX = 10;
 export function createPlanBuilder({ evaluate, onPreview, onSave, onIsland, money = (n) => `$${Math.round(n)}` }) {
   let mod = null; // src/plan/builder.js, loaded on first use (it brings the planner's rules)
   let ctx = null;
+  const farmPlace = () => (ctx?.farm ? placeOf(ctx.farm) : null); // where the farm is, for the sowing windows
+  const iconOf = (id) => badgeOf(id, farmPlace());
   let checker = null;
   let plan = null;
   let warnings = new Map();
@@ -60,7 +76,7 @@ export function createPlanBuilder({ evaluate, onPreview, onSave, onIsland, money
     if (!sameFarm || !checker) {
       // a renamed field or a new answer in the check-in: new checks and scores, but the plan being
       // built is kept (fields that are gone drop out, new ones start empty)
-      checker = mod.createChecker(ctx.farm, ctx.market);
+      checker = mod.createChecker(ctx.farm, ctx.market, { timing: farmPlace() }); // with the app's own sowing-time check
       plan = mod.copyPlan(plan || ctx.saved || ctx.startPlans.priority, ctx.farm);
       if (selected && !ctx.farm.paddocks.some((p) => p.id === selected.field)) selected = null;
       score = null;
@@ -85,8 +101,7 @@ export function createPlanBuilder({ evaluate, onPreview, onSave, onIsland, money
     return `<div class="builder">
       <p class="builder__lead">Drag a crop onto a season, or pick one and tap the seasons. I’ll flag anything worth a second look.</p>
       <div class="builder__palette" role="toolbar" aria-label="Crops to place">
-        ${palette().map((id) => `<button type="button" class="bcrop" data-crop="${esc(id)}" aria-pressed="false">${iconOf(id)}<span>${esc(nameOf(id))}</span></button>`).join('')}
-        <button type="button" class="bcrop bcrop--clear" data-crop="" aria-pressed="false">${ERASER}<span>Clear</span></button>
+        ${paletteHtml(palette(), farmPlace())}
       </div>
       <div class="builder__main">
         <div class="builder__gridwrap"><table class="builder__grid" aria-label="Your plan, field by field">
@@ -141,10 +156,18 @@ export function createPlanBuilder({ evaluate, onPreview, onSave, onIsland, money
     const field = fields().find((p) => p.id === f);
     b.className = `bcell${crop ? '' : ' is-empty'}${sev ? ` sev-${sev}` : ''}${selected?.field === f && selected?.year === y ? ' is-selected' : ''}${preview ? ' is-target' : ''}`;
     b.innerHTML = crop
-      ? `${iconOf(crop)}${cell.cover && !preview ? '<span class="plan-crop__cover" aria-hidden="true"></span>' : ''}${sev ? `<span class="bcell__flag" aria-hidden="true"></span>` : ''}`
+      ? `${badgeOf(crop, farmPlace(), cell.cover && !preview ? cell.cover : null)}${sev ? `<span class="bcell__flag" aria-hidden="true"></span>` : ''}`
       : '<span class="bcell__plus" aria-hidden="true"></span>';
     const what = crop ? `${nameOf(crop)}${cell.cover && !preview ? ' with a cereal rye cover' : ''}` : 'empty';
     b.setAttribute('aria-label', `${field.name}, ${ctx.years[y]}: ${what}${w.length ? `. ${mod.summarise(w)}` : ''}`);
+    // its crop in the shared tip on keyboard focus (the icon inside has it for hover)
+    if (crop) {
+      b.dataset.cropTip = `${nameOf(crop)}${cell.cover && !preview ? ' + cereal rye cover' : ''}`;
+      b.dataset.cropSub = String(ctx.years[y]);
+    } else {
+      delete b.dataset.cropTip;
+      delete b.dataset.cropSub;
+    }
   }
 
   function paintDetail() {
@@ -235,7 +258,7 @@ export function createPlanBuilder({ evaluate, onPreview, onSave, onIsland, money
     // the planner gives no "beats keeping going" for a plan that IS keeping going
     const beats = r.probBeatsCurrent == null ? '–' : `${Math.round(r.probBeatsCurrent * 100)}% of years`;
     writeTotals(`<dl class="builder__nums">
-      <div><dt>Your plan, 3 seasons</dt><dd class="plan-card__big">${money(r.expectedGM)}</dd></div>
+      <div><dt>Your plan, 3 seasons</dt><dd class="builder__big">${money(r.expectedGM)}</dd></div>
       <div><dt>Next to Manami’s pick</dt><dd class="${diff >= 0 ? 'is-up' : 'is-down'}">${diff >= 0 ? '+' : '−'}${money(Math.abs(diff))}</dd></div>
       <div><dt>In a bad year (1 in 10)</dt><dd>${money(r.p10GM)}</dd></div>
       <div><dt>Soil health at the end</dt><dd>${soil(r)}/100 <span class="builder__vs">(pick: ${soil(pick)})</span></dd></div>
@@ -337,6 +360,7 @@ export function createPlanBuilder({ evaluate, onPreview, onSave, onIsland, money
   }
 
   function startDrag(x, y) {
+    hideCropTip(); // a crop picked up: its name goes with the ghost
     drag.active = true;
     drag.ghost = document.createElement('div');
     drag.ghost.className = 'bghost';

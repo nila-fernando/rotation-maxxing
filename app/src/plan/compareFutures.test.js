@@ -13,6 +13,8 @@ import {
 const near = (actual, expected, tol, what) => assert.ok(Math.abs(actual - expected) <= tol, `${what}: ${actual} not within ${tol} of ${expected}`);
 const asObject = (m) => Object.fromEntries(m);
 
+const pickStop = (stops, id) => { const s = stops.find((x) => x.id === id); return s ? [s.fieldId, s.season] : null; };
+
 describe('the three plans compared field by field (demo farm, profit first)', () => {
   let data, cmp;
   before(() => {
@@ -62,6 +64,22 @@ describe('the three plans compared field by field (demo farm, profit first)', ()
     const f2 = viewField(cmp, 'f2', 'priority');
     near(f2.seasons[1].nCredit, 20.3, 0.01, 'N credit after beans');
     assert.deepEqual(termsOf({ terms: [{ label: 'Water used: 18.4 in crop ET', value: 18.4 }] }).water, 18.4);
+  });
+
+  it('reads the rotation diversity and the nitrogen pounds', () => {
+    // corn after beans: the credit's pounds, and a break of family and pest cycles
+    const corn = viewField(cmp, 'f1', 'priority').seasons[1];
+    assert.equal(corn.nLb, 35);
+    assert.equal(corn.diversity, 1);
+    // beans after corn: a break, no credit; corn on corn: a repeat of the host
+    assert.deepEqual([viewField(cmp, 'f1', 'priority').seasons[0].diversity, viewField(cmp, 'f1', 'priority').seasons[0].nLb], [1, 0]);
+    assert.equal(viewField(cmp, 'f1', 'current').seasons[0].diversity, 0);
+    const t = termsOf({ terms: [
+      { label: 'N credit from Soybeans (35 lb N/ac x $0.58/lb)', value: 20.3 },
+      { label: 'Rotation diversity: repeats a family or pest host', value: 0 },
+    ] });
+    assert.deepEqual([t.nCredit, t.nLb, t.diversity], [20.3, 35, 0]);
+    assert.deepEqual([termsOf({ terms: [] }).diversity, termsOf({ terms: [] }).nLb], [null, 0], 'unknown, and no credit');
   });
 
   it('sees what changes', () => {
@@ -114,8 +132,13 @@ describe('the three plans compared field by field (demo farm, profit first)', ()
 
   it('walks the right stops', () => {
     const stops = reelStops(cmp);
-    assert.deepEqual(stops.map((s) => s.id), ['intro', 'flip', 'gain', 'sameCrop', 'giveUp', 'vsProfit', 'why', 'watch', 'yourTurn']); // no frost, no dry stop
+    // rotation first: a nitrogen handoff and a repeat, then the money stops; no frost, no dry stop
+    assert.deepEqual(stops.map((s) => s.id), ['intro', 'flip', 'handoff', 'repeat', 'gain', 'sameCrop', 'giveUp', 'vsProfit', 'why', 'watch', 'yourTurn']);
     const by = Object.fromEntries(stops.map((s) => [s.id, s]));
+    assert.deepEqual([by.handoff.fieldId, by.handoff.season, by.handoff.camera], ['f1', 1, 'field']);
+    assert.deepEqual([by.repeat.fieldId, by.repeat.season, by.repeat.camera], ['f3', 0, 'field']);
+    assert.deepEqual(stops.filter((s) => s.money).map((s) => s.id), ['gain', 'sameCrop', 'giveUp', 'vsProfit']);
+    assert.ok(stops.every((s) => typeof s.money === 'boolean'));
     assert.deepEqual([by.gain.fieldId, by.gain.season], ['f2', 0]);
     assert.deepEqual([by.sameCrop.fieldId, by.sameCrop.season], ['f1', 1]); // f2 2028 gains more, but f2 is the gain stop
     assert.deepEqual([by.giveUp.fieldId, by.giveUp.season], ['f3', 2]);
@@ -139,6 +162,9 @@ describe('the three plans compared field by field (demo farm, profit first)', ()
     const dear = compareFutures(coverPickData(data, { gain: -15000, soilPts: 6 }), { startYear: START_YEAR });
     assert.equal(isGoodFit(dear), false);
     assert.equal(reelStops(dear)[1].id, 'flip');
+    // no field turns after its repeat: the walk's repeat falls back to the first one
+    assert.deepEqual(pickStop(reelStops(dear), 'repeat'), ['f1', 0]);
+    assert.equal(reelStops(dear).some((s) => s.id === 'handoff'), false, 'no new nitrogen handoff on a cover-only pick');
     // a pick that changes crops is never a good fit, whatever it earns
     const poor = { ...data, result: { ...data.result, plans: { ...data.result.plans, priority: { ...data.result.plans.priority, expectedGM: data.result.plans.current.expectedGM - 20000 } } } };
     assert.equal(isGoodFit(compareFutures(poor, { startYear: START_YEAR })), false);
@@ -301,12 +327,12 @@ describe('the soil-first plans', () => {
 
 describe('farms of other sizes', () => {
   for (const n of [1, 15]) {
-    it(`${n} field${n === 1 ? '' : 's'}: no throw, at most 9 stops`, () => {
+    it(`${n} field${n === 1 ? '' : 's'}: no throw, at most 11 stops`, () => {
       const data = clonedData(demoData(['profit']), n);
       const cmp = compareFutures(data, { startYear: START_YEAR });
       assert.equal(cmp.fields.length, n);
       const stops = reelStops(cmp);
-      assert.ok(stops.length <= 9 && stops[0].id === 'intro' && stops[stops.length - 1].id === 'yourTurn');
+      assert.ok(stops.length <= 11 && stops[0].id === 'intro' && stops[stops.length - 1].id === 'yourTurn');
       const coins = coinPlan(cmp);
       for (const k of KINDS) for (const c of coins.counts[k].values()) assert.ok(c >= 0 && c <= 12);
       for (const y of [0, 1, 2]) flagsFor(cmp, 'mix', { [cmp.fields[0].id]: 'current' }, y);
