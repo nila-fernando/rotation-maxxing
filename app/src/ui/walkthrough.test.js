@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import {
-  STEPS, TOUR_KEY, END_LINES, activeSteps, countLabel, keyAction, needsChange, placeCard, resolveStep, shouldAutoStart, tourMemory, unionRect,
+  STEPS, TOUR_KEY, END_LINES, TRIED_GO, TRIED_STAY, activeSteps, countLabel, keyAction, needsChange, placeCard, resolveStep, shouldAutoStart,
+  stepAvailable, tourMemory, unionRect,
 } from './walkthrough.js';
 
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8');
@@ -20,10 +21,40 @@ function fakeStorage({ broken = false } = {}) {
   };
 }
 
+const byId = (id) => STEPS.find((s) => s.id === id);
+/** Everywhere a step's target can come from: the page, the screens that draw them, Manami's face, main.js. */
+const APP = [
+  '../../index.html', '../screens/fieldPanel.js', '../screens/plansPanel.js', '../screens/planTake.js', '../ui/manami.js', '../main.js',
+].map(read).join('\n');
+
+/** Is every part of this selector something the app really has? Returns the parts it couldn't find. */
+function missingParts(sel) {
+  const missing = [];
+  for (const [, id] of sel.matchAll(/#([\w-]+)/g)) {
+    const tab = /^plansTab-(\w+)$/.exec(id);
+    const ok = tab ? APP.includes('id="plansTab-${v}"') && APP.includes(`view: '${tab[1]}'`) : APP.includes(`id="${id}"`) || APP.includes(`b.id = '${id}'`);
+    if (!ok) missing.push(`#${id}`);
+  }
+  for (const [, cls] of sel.matchAll(/\.([\w-]+)/g)) {
+    const host = /^rot-host--(\w+)$/.exec(cls);
+    const ok = host ? APP.includes('rot-host--${part}') && new RegExp(`\\b${host[1]}: \\(\\) =>`).test(APP) : new RegExp(`class="[^"]*\\b${cls}\\b`).test(APP);
+    if (!ok) missing.push(`.${cls}`);
+  }
+  for (const [, name, v] of sel.matchAll(/\[([\w-]+)(?:="([^"]*)")?\]/g)) {
+    if (name === 'aria-labelledby') { if (!APP.includes(`section('${v}'`) && !APP.includes(`aria-labelledby="${v}"`)) missing.push(v); continue; }
+    if (name === 'role') continue;
+    if (!APP.includes(v == null ? name : `${name}="${v}"`)) missing.push(`[${name}${v == null ? '' : `=${v}`}]`);
+  }
+  return missing;
+}
+
 describe('the steps', () => {
-  it('walk the hub in order: fields, the check-up and its data, the jar, time, the plans', () => {
+  it('walk the whole farm in order: the hub, a check-up, the jar, time, Ask Manami, the plans, the plan view, your farms', () => {
     assert.deepEqual(STEPS.map((s) => s.id), [
-      'welcome', 'fields', 'checkup', 'history', 'soil', 'slope', 'rain', 'greenness', 'jar', 'time', 'plan', 'farm', 'done',
+      'welcome', 'fields', 'checkup', 'history', 'read', 'land', 'season', 'jar', 'time', 'ask',
+      'plan', 'rotation', 'take', 'calendar', 'farm',
+      'futPlans', 'futCard', 'futNotes', 'futSave',
+      'account', 'done',
     ]);
   });
 
@@ -31,22 +62,25 @@ describe('the steps', () => {
     assert.equal(new Set(STEPS.map((s) => s.id)).size, STEPS.length);
     for (const s of STEPS) {
       assert.ok(s.title && s.title.length < 40, s.id);
-      assert.ok(s.body && s.body.length > 40 && s.body.length < 320, `${s.id} body length ${s.body.length}`);
+      for (const text of [s.body, s.busyBody, ...(s.variants || []).map((v) => v.body)].filter(Boolean)) {
+        assert.ok(text.length > 40 && text.length < 320, `${s.id} body length ${text.length}`);
+      }
       if (s.target) assert.ok(Array.isArray(s.target) && s.target.length, s.id);
       if (s.try) assert.ok(s.try.text && s.try.wait, s.id);
     }
   });
 
-  it('start and end without a target, in the middle or on the help button', () => {
+  it('start in the middle and end on the help button', () => {
     assert.equal(STEPS[0].target, undefined);
     assert.equal(STEPS[0].next, 'Show me');
+    assert.doesNotMatch(STEPS[0].body, /about a minute/);
     assert.equal(STEPS.at(-1).next, 'Finish');
     assert.deepEqual(STEPS.at(-1).target, ['#hubHelp']);
   });
 
   it('name the source of every piece of field data', () => {
     const src = Object.fromEntries(STEPS.filter((s) => s.sources).map((s) => [s.id, s.sources]));
-    assert.deepEqual(src, { history: ['CSB', 'CDL'], soil: ['SSURGO'], slope: ['DEM'], rain: ['POWER'], greenness: ['HLS'] });
+    assert.deepEqual(src, { history: ['CSB', 'CDL'], land: ['SSURGO', 'DEM'], season: ['POWER', 'HLS'] });
   });
 
   it('only name sources the field report knows', () => {
@@ -54,43 +88,79 @@ describe('the steps', () => {
     for (const k of STEPS.flatMap((s) => s.sources || [])) assert.match(report, new RegExp(`\\b${k}: \\{ label:`), k);
   });
 
-  it('target things the app really has (the page, the check-up, the plans)', () => {
-    const app = [read('../../index.html'), read('../screens/fieldPanel.js'), read('../screens/plansPanel.js')].join('\n');
+  it('target things the app really has (the page, the check-up, the plans, the plan view, Manami)', () => {
     for (const s of STEPS) {
-      for (const sel of s.target || []) {
-        for (const id of sel.match(/#[\w-]+/g) || []) assert.ok(app.includes(`id="${id.slice(1)}"`), `${s.id}: ${id}`);
-        for (const [, v] of sel.matchAll(/aria-labelledby="(\w+)"/g)) assert.ok(app.includes(`section('${v}'`), `${s.id}: ${v}`);
-        for (const [, v] of sel.matchAll(/data-act="(\w+)"/g)) assert.ok(app.includes(`data-act="${v}"`), `${s.id}: ${v}`);
+      for (const v of [s, ...(s.variants || [])]) {
+        for (const sel of v.target || []) assert.deepEqual(missingParts(sel), [], `${s.id}: ${sel}`);
       }
     }
   });
 
-  it('end each targeted step on the panel itself, for when its part isn’t on screen', () => {
-    for (const s of STEPS.filter((x) => x.needs === 'checkup')) assert.equal(s.target.at(-1), '#checkup', s.id);
-    assert.equal(STEPS.find((s) => s.id === 'farm').target.at(-1), '#plans');
+  it('the target check itself catches a selector the app doesn’t have', () => {
+    assert.deepEqual(missingParts('#nopeNope'), ['#nopeNope']);
+    assert.deepEqual(missingParts('#plans .plans__nothing'), ['.plans__nothing']);
+    assert.deepEqual(missingParts('#plansTab-nowhere'), ['#plansTab-nowhere']);
+    assert.deepEqual(missingParts('#plans .rot-host--nope'), ['.rot-host--nope']);
+    assert.deepEqual(missingParts('#checkup [data-nothing]'), ['[data-nothing]']);
   });
 
-  it('open the check-up for its steps, and the plans for “See them on the farm”', () => {
-    assert.deepEqual(STEPS.filter((s) => s.needs === 'checkup').map((s) => s.id), ['checkup', 'history', 'soil', 'slope', 'rain', 'greenness']);
-    assert.deepEqual(STEPS.filter((s) => s.needs === 'plans').map((s) => s.id), ['farm']);
+  it('point at Edit crop history, Manami’s read, Ask me, her take, When to sow, the plan view and your farms', () => {
+    assert.match(byId('history').body, /Edit crop history/);
+    assert.ok(APP.includes('data-hist="edit"'));
+    assert.ok(byId('read').target.some((t) => t.includes('[data-read')));
+    assert.ok(byId('ask').target[0].includes('#askOpen'));
+    assert.ok(byId('take').target[0].includes('.plans__take'));
+    assert.ok(byId('calendar').target[0].includes('.plans__cal'));
+    assert.equal(byId('calendar').tab, 'calendar');
+    assert.ok(byId('futPlans').target[0].includes('#futDock'));
+    assert.equal(byId('futCard').target[0], '#futFields');
+    assert.equal(byId('futNotes').target[0], '#futNotesBtn');
+    assert.equal(byId('futSave').target[0], '#futSave');
+    assert.equal(byId('account').target[0], '#acctBtn');
   });
 
-  it('say “when it shows up” only while the button isn’t there yet', () => {
-    const farm = STEPS.find((s) => s.id === 'farm');
+  it('end each step on a panel with its panel itself, for when its part isn’t on screen (or not there yet)', () => {
+    const last = { checkup: '#checkup', plans: '#plans', futures: '#futDock' };
+    for (const s of STEPS.filter((x) => x.needs)) assert.equal(s.target.at(-1), last[s.needs], s.id);
+  });
+
+  it('open the check-up, the plans and the plan view for their steps', () => {
+    const need = (n) => STEPS.filter((s) => s.needs === n).map((s) => s.id);
+    assert.deepEqual(need('checkup'), ['checkup', 'history', 'read', 'land', 'season']);
+    assert.deepEqual(need('plans'), ['rotation', 'take', 'calendar', 'farm']);
+    assert.deepEqual(need('futures'), ['futPlans', 'futCard', 'futNotes', 'futSave']);
+  });
+
+  it('show the plans’ rotation tab for its steps, and When to sow for its own', () => {
+    assert.deepEqual(STEPS.filter((s) => s.tab).map((s) => [s.id, s.tab]), [['rotation', 'rotation'], ['take', 'rotation'], ['calendar', 'calendar'], ['farm', 'rotation']]);
+  });
+
+  it('only leave out AI steps (and the year bar) when they aren’t there: everything later is required', () => {
+    assert.deepEqual(STEPS.filter((s) => s.optional).map((s) => s.id), ['read', 'time', 'ask', 'take']);
+    assert.deepEqual(STEPS.filter((s) => s.ai).map((s) => [s.id, s.ai]), [['read', 'field'], ['ask', 'chat'], ['take', 'plan']]);
+    for (const s of STEPS.filter((x) => x.ai)) assert.ok(s.optional, s.id);
+  });
+
+  it('say “when it shows up” only while the plans are still being worked out', () => {
+    const farm = byId('farm');
     assert.doesNotMatch(farm.try.text, /when it shows up/);
     assert.match(farm.try.busyText, /when it shows up/);
+    for (const s of STEPS.filter((x) => x.needs === 'plans')) assert.ok(s.busyBody, s.id);
   });
 
-  it('end over the plan view when the farmer went to see the plans on the farm', () => {
-    const done = STEPS.at(-1);
-    const v = resolveStep(done, (c) => c === 'plan-futures');
-    assert.deepEqual(v.target, ['#futPlans', '#futDock']);
-    assert.doesNotMatch(v.body, /tap the \? on Your fields\./i);
-    assert.equal(v.next, 'Finish');
-    assert.equal(v.when, undefined);
-    assert.equal(resolveStep(done, () => false), done);
-    const html = read('../../index.html');
-    for (const sel of v.target) assert.ok(html.includes(`id="${sel.slice(1)}"`), sel);
+  it('use the plans’ real words for their button', () => {
+    assert.ok(read('../screens/plansPanel.js').includes('See it on the farm'));
+    assert.match(byId('farm').try.text, /“See it on the farm”/);
+  });
+
+  it('show Manami and her Ask me on their step, and hide her the rest of the tour', () => {
+    assert.equal(byId('ask').bodyClass, 'tour-manami');
+    assert.deepEqual(STEPS.filter((s) => s.bodyClass).map((s) => s.id), ['ask']);
+    const css = read('../styles.css');
+    assert.match(css, /body\.is-touring \.manami \{ opacity: 0;/);
+    assert.match(css, /body\.is-touring\.tour-manami \.manami \{ opacity: 1; pointer-events: auto;/);
+    // (her check-up and the plans make her inert: the step puts them away)
+    assert.deepEqual(byId('ask').clear, ['checkup', 'plans', 'futures']);
   });
 
   it('end by the plans’ close button when the farmer’s plans are still open (the field list waits under them)', () => {
@@ -98,13 +168,44 @@ describe('the steps', () => {
     const v = resolveStep(done, (c) => c === 'plans-open');
     assert.deepEqual(v.target, ['#plansClose']);
     assert.match(v.body, /Close the plans/);
+    assert.equal(v.next, 'Finish');
+    assert.equal(v.when, undefined);
+    assert.equal(resolveStep(done, () => false), done);
     assert.ok(read('../../index.html').includes('id="plansClose"'));
-    // the plan view wins: it closes the plans as it opens
-    assert.deepEqual(resolveStep(done, () => true).target, ['#futPlans', '#futDock']);
   });
 
-  it('wait by the jar step while the jar test is open', () => {
-    assert.equal(STEPS.find((s) => s.id === 'jar').try.wait, 'jarVisited');
+  it('end on the hub: your farms and the last step put the plan view away', () => {
+    assert.deepEqual(byId('account').clear, ['futures']);
+    assert.deepEqual(byId('done').clear, ['futures']);
+  });
+
+  it('light a field’s card once the farmer opens it, and put it away after', () => {
+    const v = resolveStep(byId('futCard'), (c) => c === 'fut-card-open');
+    assert.equal(v.target[0], '#futCard');
+    for (const id of ['futNotes', 'futSave']) assert.deepEqual(byId(id).clear, ['futCard'], id);
+  });
+
+  it('wait by the dialogs while they’re open: the jar test, Ask Manami, Why and watch out, your farms', () => {
+    assert.equal(byId('jar').try.wait, 'jarVisited');
+    assert.equal(byId('ask').try.wait, 'askVisited');
+    assert.equal(byId('futNotes').try.wait, 'notesVisited');
+    assert.equal(byId('account').try.wait, 'accountVisited');
+    const src = read('./walkthrough.js');
+    for (const [w, cls] of [['jarVisited', 'jar-open'], ['askVisited', 'ask-open'], ['notesVisited', 'fut-notes-open'], ['accountVisited', 'acct-open']]) {
+      assert.match(src, new RegExp(`${w}: onRoundTrip\\('${cls}'\\)`), w);
+      assert.match(src, new RegExp(`'${cls}'`), `${cls} steps the tour aside`);
+    }
+  });
+
+  it('move on when the plan view opens, however the farmer opened it', () => {
+    assert.equal(byId('farm').try.wait, 'futuresOpened');
+    assert.match(read('./walkthrough.js'), /futuresOpened: onBodyClass\('plan-futures'\)/);
+  });
+
+  it('stay put after a Try it whose answer takes a moment (her read, her take, a field’s card)', () => {
+    assert.deepEqual(STEPS.filter((s) => s.try?.stay).map((s) => s.id), ['read', 'take', 'futCard']);
+    assert.match(TRIED_STAY, /Next/);
+    assert.match(TRIED_GO, /On we go/);
   });
 
   it('use only waits the tour knows', () => {
@@ -123,7 +224,39 @@ describe('the steps', () => {
   });
 });
 
+describe('main.js wiring', () => {
+  const main = read('../main.js');
+  it('opens and closes the plan view for the tour, without Manami’s own reel', () => {
+    assert.match(main, /openFutures: \(\) => \{[\s\S]*?openFutures\('priority', \{ reel: false \}\)/);
+    assert.match(main, /closeFutures: \(\) => planFutures\?\.stop\(\)/);
+    assert.match(main, /need === 'futures' \? !!planFutures\?\.active/);
+  });
+  it('keeps Manami’s reel out of the plan view while the tour is open', () => {
+    assert.match(main, /onFutures: \(kind, opts\) => openFutures\(kind, tour\.isOpen \? \{ \.\.\.opts, reel: false \} : opts\)/);
+  });
+  it('tells the tour which AI routes answer, and lets it switch the plans’ tab', () => {
+    assert.match(main, /hasAi: \(route\) => aiRoutes\.has\(route\)/);
+    assert.match(main, /showPlansTab: \(tab\) => plansPanel\.showView\(tab\)/);
+  });
+});
+
 describe('activeSteps', () => {
+  const avail = (hasAi, onScreen = () => true) => (s) => stepAvailable(s, { hasAi, onScreen });
+
+  it('drops the AI steps when AI is off (GitHub Pages, no key), whatever is on screen', () => {
+    const ids = activeSteps(STEPS, avail(() => false)).map((s) => s.id);
+    for (const id of ['read', 'ask', 'take']) assert.ok(!ids.includes(id), id);
+    assert.equal(ids.length, STEPS.length - 3);
+    assert.ok(ids.includes('time') && ids.includes('futSave'));
+  });
+
+  it('keeps each AI step whose route the server answers, though its panel isn’t open yet', () => {
+    const ids = activeSteps(STEPS, avail((r) => r === 'plan', () => false)).map((s) => s.id);
+    assert.ok(ids.includes('take'));
+    assert.ok(!ids.includes('read') && !ids.includes('ask') && !ids.includes('time'));
+    assert.equal(activeSteps(STEPS, avail(() => true)).length, STEPS.length);
+  });
+
   it('drops an optional step whose target isn’t on screen, and keeps the rest', () => {
     const ids = activeSteps(STEPS, (s) => s.id !== 'time').map((s) => s.id);
     assert.ok(!ids.includes('time'));
@@ -155,18 +288,44 @@ describe('needsChange', () => {
     assert.deepEqual(needsChange(undefined, s()), { release: null, ensure: null, clear: null });
   });
 
-  it('shuts what the next step needs out of the way', () => {
-    assert.deepEqual(needsChange(s('plans'), s('checkup', 'plans')), { release: 'plans', ensure: 'checkup', clear: 'plans' });
-    assert.deepEqual(needsChange(s(), s(undefined, 'plans')), { release: null, ensure: null, clear: 'plans' });
+  it('goes from the plans to the plan view and back', () => {
+    assert.deepEqual(needsChange(s('plans'), s('futures')), { release: 'plans', ensure: 'futures', clear: null });
+    assert.deepEqual(needsChange(s('futures'), s('futures', ['futCard'])), { release: null, ensure: 'futures', clear: ['futCard'] });
+    assert.deepEqual(needsChange(s('futures'), s('plans')), { release: 'futures', ensure: 'plans', clear: null });
+    assert.deepEqual(needsChange(s('futures'), s(undefined, ['futures'])), { release: 'futures', ensure: null, clear: ['futures'] });
   });
 
-  it('never shows a check-up or the field list under the plans', () => {
-    // the app keeps the field list inert while the plans are open, and opening them closes a check-up
+  it('shuts what the next step needs out of the way (one panel or several)', () => {
+    assert.deepEqual(needsChange(s('plans'), s('checkup', 'plans')), { release: 'plans', ensure: 'checkup', clear: ['plans'] });
+    assert.deepEqual(needsChange(s(), s(undefined, ['checkup', 'plans', 'futures'])), { release: null, ensure: null, clear: ['checkup', 'plans', 'futures'] });
+    // never shut what the step itself needs
+    assert.deepEqual(needsChange(s(), s('plans', ['plans', 'futures'])), { release: null, ensure: 'plans', clear: ['futures'] });
+  });
+
+  it('never shows a check-up or the field list under the plans or the plan view', () => {
+    // the app keeps the field list inert while either is open, and opening them closes a check-up
     for (const step of STEPS) {
       const onList = step.needs === 'checkup' || (step.target || []).some((t) => /#hub(Panel|Jar|List)/.test(t));
-      if (onList) assert.equal(step.clear, 'plans', step.id);
+      if (onList) for (const c of ['plans', 'futures']) assert.ok([step.clear].flat().includes(c), `${step.id} clears ${c}`);
     }
-    for (const step of STEPS.filter((x) => x.clear)) assert.notEqual(step.needs, step.clear, step.id);
+    for (const step of STEPS.filter((x) => x.clear)) assert.ok(![step.clear].flat().includes(step.needs), step.id);
+  });
+
+  it('walks the whole tour with one panel open at a time', () => {
+    // as go() does it, with every panel's state kept here
+    const open = new Set();
+    for (let i = 0; i < STEPS.length; i++) {
+      const { release, ensure, clear } = needsChange(STEPS[i - 1], STEPS[i]);
+      if (release) open.delete(release);
+      for (const c of clear || []) open.delete(c);
+      if (ensure === 'futures') open.delete('plans'); // (the plan view closes the plans as it opens)
+      if (ensure === 'plans') { open.delete('checkup'); open.delete('futures'); } // (and the plans close those)
+      if (ensure) open.add(ensure);
+      const workspaces = [...open].filter((p) => p !== 'futCard');
+      assert.ok(workspaces.length <= 1, `${STEPS[i].id}: ${workspaces}`);
+      if (STEPS[i].needs) assert.ok(open.has(STEPS[i].needs), STEPS[i].id);
+    }
+    assert.deepEqual([...open], []); // ends on the hub
   });
 });
 

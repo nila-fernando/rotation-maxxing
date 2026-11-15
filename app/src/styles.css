@@ -1883,6 +1883,11 @@ body.jar-open .hub-tip { display: none; }
 .tour-card .btn--small { height: 38px; padding: 0 16px; }
 /* Manami is in the card while the tour is on */
 body.is-touring .manami { opacity: 0; pointer-events: none; transform: translateY(24px) scale(.7); }
+/* ...except on the "Ask me" step: her face and the button, without a bubble (the card does the talking) */
+body.is-touring.tour-manami .manami { opacity: 1; pointer-events: auto; transform: none; }
+body.is-touring.tour-manami .manami__bubble { display: none; }
+/* (and her "When they see me rotate…" waits too: nothing talks over the card) */
+body.is-touring .rotate-bubble--farm { visibility: hidden; }
 @media (max-width: 520px) {
   .tour-card { padding: 10px 14px 12px; }
   .tour-card__body { font-size: 15px; }

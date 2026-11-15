@@ -293,6 +293,9 @@ const aiHost = {
   savedPlan: () => (app.plan ? { source: app.plan.source === 'ai' ? 'ai' : app.plan.choice ? 'pick' : 'built', startYear: app.plan.startYear } : null),
   today: () => today(),
 };
+// the routes the AI server answers ('chat', 'field', 'plan', 'jar'), for the tour's AI steps (asked once)
+const aiRoutes = new Set();
+adviceRoutes(AI_ENDPOINT).then((r) => { for (const x of r) aiRoutes.add(x); });
 const fieldRead = {
   available: () => adviceRoutes(AI_ENDPOINT).then((r) => r.has('field')),
   sig: (r) => JSON.stringify(fieldDetail(r)),
@@ -376,7 +379,8 @@ const plansPanel = createPlansPanel({
     syncManami();
   },
   onPreview: (info) => showPlanOnIsland(info, 0),
-  onFutures: (kind, opts) => openFutures(kind, opts),
+  // (not Manami's own walk while the tour is showing the farmer round: it has its own steps there)
+  onFutures: (kind, opts) => openFutures(kind, tour.isOpen ? { ...opts, reel: false } : opts),
   onIsland: (builder, { startYear }) => {
     if (!app.island?.view) return;
     islandPlanner.start(builder, { startYear, view: app.island.view });
@@ -747,7 +751,8 @@ const tour = createWalkthrough({
   sources: SOURCES,
   say: (line) => { if (app.island) manami.say(line); },
   ctx: {
-    isOpen: (need) => (need === 'checkup' ? !!app.openFieldId : need === 'plans' ? plansPanel.isOpen : false),
+    isOpen: (need) => (need === 'checkup' ? !!app.openFieldId : need === 'plans' ? plansPanel.isOpen : need === 'futures' ? !!planFutures?.active
+      : need === 'futCard' ? document.body.classList.contains('fut-card-open') : false),
     openField: () => {
       const id = document.querySelector('#hubList .hub-field')?.dataset.id || app.fields[0]?.id;
       if (id) hub.select(id);
@@ -755,6 +760,15 @@ const tour = createWalkthrough({
     closeField: () => hub.overview(),
     openPlans: () => plansPanel.open(),
     closePlans: () => plansPanel.close(),
+    showPlansTab: (tab) => plansPanel.showView(tab),
+    // the plan view, as "See it on the farm" opens it (the plans close first: it waits while they're open)
+    openFutures: () => {
+      if (plansPanel.isOpen) plansPanel.close({ restoreFocus: false });
+      openFutures('priority', { reel: false });
+    },
+    closeFutures: () => planFutures?.stop(),
+    closeFutCard: () => planFutures?.closeCard(),
+    hasAi: (route) => aiRoutes.has(route),
   },
 });
 $('hubHelp').addEventListener('click', () => tour.start());
