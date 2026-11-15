@@ -132,7 +132,7 @@ export function ribbonHtml(rot, { selectedKind, open = new Set(), stories = {} }
   const rows = fields.map((f) => {
     const isOpen = open.has(f.id);
     const tips = tipListAttr((f.seasons || []).map((s) => ({ year: s.year, cropId: s.crop, cover: s.cover })));
-    const verdict = f.verdict?.words ? `<span class="rib__verdict rib__verdict--${esc(f.verdict.key)}" title="${esc(f.verdict.words)}">${esc(f.verdict.words)}</span>` : '';
+    const verdict = f.verdict?.words ? `<span class="rib__verdict rib__verdict--${esc(f.verdict.key)}">${esc(f.verdict.words)}</span>` : '';
     const btn = `<button type="button" class="rib__open" data-field="${esc(f.id)}" aria-expanded="${isOpen}" aria-controls="story-${esc(f.id)}"${tips}>`
       + `<span class="rib__name">${esc(f.name)}</span><span class="rib__acres">${Math.round(f.acres)} ac</span>${verdict}`
       + '<svg class="rib__chev" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 10l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>';
