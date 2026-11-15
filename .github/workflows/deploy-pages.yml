@@ -1,0 +1,54 @@
+# Builds the app (app/) and publishes it to GitHub Pages:
+#   https://nila-fernando.github.io/rotation-maxxing/
+# Runs on every push to main, or by hand from the Actions tab ("Run workflow").
+# One-time setup: Settings > Pages > Build and deployment > Source: "GitHub Actions".
+name: Deploy the app to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# one deploy at a time; a newer push waits for the running one rather than cancelling it mid-deploy
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm test
+      # under the /rotation-maxxing/ base path; CropScape history stays off unless the
+      # VITE_CDL_PROXY repository variable points at a proxy (see app/README.md)
+      - run: npm run build:pages
+        env:
+          VITE_CDL_PROXY: ${{ vars.VITE_CDL_PROXY }}
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: app/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
