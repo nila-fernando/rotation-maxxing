@@ -208,9 +208,17 @@ export function marketPriceLine(market) {
   if (!market?.ok) return null;
   const list = priceList(market);
   if (!list) return null;
-  return market.standIn
-    ? `Priced with stand-ins: late-2025 Iowa cash price levels bundled with the app (${list}), because I couldn’t get this farm’s USDA NASS prices.`
-    : `Priced with ${priceSourceText(market)}: ${list}.`;
+  if (market.standIn) return `Priced with stand-ins: late-2025 Iowa cash price levels bundled with the app (${list}), because I couldn’t get this farm’s USDA NASS prices.`;
+  // grouped by where and when, so a crop on the US price isn't read as a state one
+  const groups = new Map();
+  for (const id of market.crops) {
+    const p = market.prices[id];
+    if (!p) continue;
+    const key = `${p.level === 'state' ? p.place : 'US'}, marketing year ${p.year}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(id);
+  }
+  return `Priced with USDA NASS prices received: ${[...groups].map(([k, ids]) => `${k} (${priceList(market, ids)})`).join('; ')}.`;
 }
 
 /** The prices for Ask Manami (get_plans): where they're from, and each crop's. */

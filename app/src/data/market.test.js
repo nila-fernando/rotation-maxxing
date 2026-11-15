@@ -215,7 +215,10 @@ describe('when the farm’s NASS data can’t be had: the stand-in, named as one
 
   it('says where the prices are from in the Money detail and to Ask Manami', () => {
     const nass = marketFor({ county: SALINE, rows: salineRows(), thisYear: 2026 });
-    assert.equal(marketPriceLine(nass), 'Priced with USDA NASS prices received, Kansas marketing year 2025: corn $4.00/bu, winter wheat $5.10/bu, sorghum $3.81/bu.');
+    assert.equal(marketPriceLine(nass), 'Priced with USDA NASS prices received: Kansas, marketing year 2025 (corn $4.00/bu, winter wheat $5.10/bu, sorghum $3.81/bu).');
+    // a crop on the US price is said apart from the state's
+    const mixed = { ...nass, prices: { ...nass.prices, sorghum: { ...nass.prices.sorghum, level: 'national', place: 'US' } } };
+    assert.equal(marketPriceLine(mixed), 'Priced with USDA NASS prices received: Kansas, marketing year 2025 (corn $4.00/bu, winter wheat $5.10/bu); US, marketing year 2025 (sorghum $3.81/bu).');
     assert.deepEqual(marketSummary(nass), {
       source: 'usda-nass', said: 'USDA NASS prices received, Kansas marketing year 2025', county: 'Saline County, KS',
       prices: [{ crop: 'corn', price: '$4.00/bu', year: 2025, where: 'Kansas' }, { crop: 'winter wheat', price: '$5.10/bu', year: 2025, where: 'Kansas' }, { crop: 'sorghum', price: '$3.81/bu', year: 2025, where: 'Kansas' }],
