@@ -18,7 +18,8 @@
 export const SNAPSHOT_VERSION = 1;
 
 /** The field properties that are kept (everything else on a field is rebuilt by the app). */
-export const FIELD_KEYS = ['id', 'name', 'autoName', 'geometry', 'acres', 'source', 'sourceIds', 'crops', 'cdlYears', 'soil', 'slopePct', 'rain', 'ndvi', 'jar', 'demoId'];
+// (cropsOriginal, cropsByFarmer, cropsCleared: the farmer's own crop history edits, src/fields/cropEdits.js)
+export const FIELD_KEYS = ['id', 'name', 'autoName', 'geometry', 'acres', 'source', 'sourceIds', 'crops', 'cdlYears', 'cropsOriginal', 'cropsByFarmer', 'cropsCleared', 'soil', 'slopePct', 'rain', 'ndvi', 'jar', 'demoId'];
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const strings = (v) => Array.isArray(v) && v.every((s) => typeof s === 'string');

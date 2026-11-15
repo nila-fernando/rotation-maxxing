@@ -39,7 +39,7 @@ const LEAF_COLS = [0xe0662a, 0xc23a22, 0xe89a2c, 0xe8bf3a, 0xa84a22, 0xd4502a, 0
 
 // keys that aren't buildings (the context counts every prop that isn't a tree, lamp or bale)
 const NOT_BUILDINGS = new Set(['dock', 'boat', 'rock', 'bush', 'barrel', 'crate', 'bench', 'mailbox', 'signpost', 'wheelbarrow', 'firewood', 'scarecrow', 'hayStack', 'sheep', 'manami', 'fence']);
-const ROUND = new Set(['silo', 'windmill', 'grainBins', 'well']);
+const ROUND = new Set(['silo', 'windmill', 'grainBins', 'well', 'lighthouse']);
 
 // ---------------------------------------------------------------- baking
 
@@ -895,7 +895,7 @@ export default function build(ctx) {
     const spin = new Set(ctx.view.spinners || []);
     const turning = (o) => { for (let p = o; p && p !== wrap; p = p.parent) if (spin.has(p)) return true; return false; };
     wrap.traverse((o) => {
-      if (!o.isMesh || o.isInstancedMesh || !o.geometry?.attributes?.position || turning(o)) return;
+      if (!o.isMesh || o.isInstancedMesh || o.userData.noBox || !o.geometry?.attributes?.position || turning(o)) return; // (nor a lighthouse's beam)
       const p = o.geometry.attributes.position, m = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
       const step = Math.max(1, Math.floor(p.count / 3000));
       for (let i = 0; i < p.count; i += step) { v.fromBufferAttribute(p, i).applyMatrix4(m); pts.push(v.x * s, v.y * s, v.z * s); }

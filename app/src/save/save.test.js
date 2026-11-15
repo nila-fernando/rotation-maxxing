@@ -242,6 +242,56 @@ describe('rows for the team’s schema, both ways', () => {
   });
 });
 
+describe('crop history edits in the account', () => {
+  // field-1 as the farmer left it: 2023 changed, 2025 (a CropScape year) changed, 2021 "not sure"
+  const edited = () => {
+    const f = appFields()[0];
+    const original = { ...f.crops };
+    const crops = { ...f.crops, 2023: 'Alfalfa', 2025: 'Soybeans' };
+    delete crops[2021];
+    return { ...f, crops, cropsOriginal: original, cropsByFarmer: [2021, 2023, 2025], cropsCleared: [2021] };
+  };
+
+  it('the farmer’s years go in crops, USDA’s record and the marks in crop_edits, CropScape’s answer in field_data', () => {
+    const f = edited();
+    const row = fieldRow(f, { farmId: 'c1' });
+    assert.equal(row.crops[2023], 'Alfalfa');
+    assert.equal(row.crops[2025], 'Soybeans'); // the farmer's, though CropScape filled that year
+    assert.equal(row.crops[2021], undefined);
+    assert.deepEqual(row.crop_edits, { original: f.cropsOriginal, by_farmer: [2021, 2023, 2025], cleared: [2021] });
+    assert.deepEqual(fieldDataRows(f, 'fid').find((r) => r.kind === 'cdl').data, { crops: { 2025: 'Corn' } });
+    assert.equal(fieldRow(appFields()[0], { farmId: 'c1' }).crop_edits, null); // nothing edited: nothing stored
+  });
+
+  it('come back the same from the rows', () => {
+    const f = edited();
+    const s = makeSnapshot({ id: 'local-1', farm: PLACE, fields: [f] });
+    const back = snapshotFromRows({
+      farm: { id: 'c1', ...farmRow(s, { id: 'c1', ownerId: USER }), updated_at: '2026-11-15T01:00:00Z' },
+      fields: [{ id: 'fid0', ...fieldRow(s.fields[0], { farmId: 'c1' }) }], fieldData: fieldDataRows(s.fields[0], 'fid0'), localId: 'local-2', ownerId: USER,
+    });
+    const g = back.fields[0];
+    assert.deepEqual(g.crops, s.fields[0].crops);
+    assert.deepEqual(g.cropsOriginal, f.cropsOriginal);
+    assert.deepEqual(g.cropsByFarmer, [2021, 2023, 2025]);
+    assert.deepEqual(g.cropsCleared, [2021]);
+    assert.deepEqual(g.cdlYears, [2025]);
+  });
+
+  it('a database without the crop_edits column still gets the farmer’s crops', async () => {
+    const db = createFakeSupabase({ userId: USER });
+    db.noColumns = { fields: ['crop_edits'] };
+    const cloud = createCloud(db.client);
+    const s = makeSnapshot({ id: 'local-1', farm: PLACE, fields: [edited()], cloud: { [USER]: { id: 'c1' } } });
+    const warn = console.warn;
+    console.warn = () => {};
+    try { await cloud.push(s, USER, new Map()); } finally { console.warn = warn; }
+    const row = db.tables.fields[0];
+    assert.equal(row.crops[2025], 'Soybeans');
+    assert.equal('crop_edits' in row, false);
+  });
+});
+
 /** A sync on a fake database, with fake timers. */
 function setup({ missing = false } = {}) {
   const db = createFakeSupabase({ userId: USER });

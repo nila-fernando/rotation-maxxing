@@ -27,7 +27,10 @@ import { JAR_LINES } from './plan/jarTest.js';
 import { fieldWeatherNote, weatherKey } from './plan/weatherWords.js';
 import { plannerFarm } from './plan/farmInput.js';
 import { createJars, jarKeepOuts } from './island/jarProps.js';
+import { createSeaLife } from './island/seaLife.js';
 import { createCheckIn, CROPS } from './screens/checkin.js';
+import { CROP_KEYS } from './island/crops.js';
+import { applyCropEdits, restoreCrops } from './fields/cropEdits.js';
 import { createFieldPanel } from './screens/fieldPanel.js';
 import { createJarPanel } from './screens/jarPanel.js';
 import { createPlansPanel, firstSeason, money } from './screens/plansPanel.js';
@@ -39,8 +42,11 @@ import { createReveal } from './screens/reveal.js';
 import { createTimeTravel } from './screens/timeTravel.js';
 import { createManami } from './ui/manami.js';
 import { createWalkthrough } from './ui/walkthrough.js';
+import { createAskManami } from './screens/askManami.js';
+import { aiEndpoint } from './ai/runner.js';
 import { createFarmSpins } from './ui/rotateManami.js';
 import { createSearchBox } from './ui/searchBox.js';
+import { installCropTips } from './ui/cropTip.js';
 import { warmUpLiveOutlines } from './fields/liveOutlines.js';
 import { createAmbience } from './audio/ambience.js';
 import { sceneOf } from './audio/mix.js';
@@ -52,10 +58,17 @@ import { createCloud, createSync } from './save/cloudSync.js';
 import { createAuth } from './save/auth.js';
 import { newId } from './save/rows.js';
 import { createAccountPanel } from './screens/accountPanel.js';
+import { weatherLine, weatherParam } from './island/weather.js';
+import { farmWeather } from './island/weatherState.js';
+import { startWeatherFeed } from './services/weatherFeed.js';
 
 const $ = (id) => document.getElementById(id);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const params = new URLSearchParams(location.search);
+
+// The one crop-name tooltip for every crop icon (hover, focus, touch). It goes in first, so its
+// window-capture Esc runs before the panels' own Esc handlers: the first Esc closes only the tip.
+installCropTips();
 
 /** What the app knows so far; later steps add fields, answers and satellite data. */
 const app = { farm: null, fields: [], farmProfile: null };
@@ -192,7 +205,7 @@ const evaluateMix = (plan) => planner.evaluate({ fields: app.fields, place: app.
 /** Manami steps aside (out of sight and the tab order) while the check-up, the plans or the jar test are open. */
 function syncManami() {
   const cl = document.body.classList;
-  const away = cl.contains('checkup-open') || cl.contains('plans-open') || cl.contains('jar-open');
+  const away = cl.contains('checkup-open') || cl.contains('plans-open') || cl.contains('jar-open') || cl.contains('ask-open');
   document.getElementById('manami').inert = away;
 }
 
@@ -262,6 +275,8 @@ const fieldPanel = createFieldPanel({
     fieldPanel.update(reportFor(id));
     paintStatuses();
   },
+  onAsk: (id, opener) => askManami.open({ focus: { kind: 'field', field_id: id, name: nameOf(id) }, opener }),
+  onCrops: (id, edits) => setCrops(id, edits),
   onJar: (id, mode) => {
     if (mode === 'remove') removeJar(id, { from: 'checkup' });
     else jarPanel.open({ fieldId: id, step: mode === 'open' ? 'result' : 'howto', from: 'checkup' });
@@ -468,6 +483,29 @@ function setJar(id, record) {
   return { prev, spots };
 }
 
+/**
+ * The farmer's own crop history for a field ({ year: cropKey | null }, or 'restore' for USDA's
+ * record): the app, the island's crops (now and each year on record), the field list, the check-up.
+ * The plans and Ask Manami read app.fields, so they use it from the next time they look.
+ */
+function setCrops(id, edits) {
+  const f = app.fields.find((x) => x.id === id);
+  if (!f) return;
+  const next = edits === 'restore' ? restoreCrops(f) : applyCropEdits(f, edits);
+  if (next === f) return;
+  app.fields = app.fields.map((x) => (x.id === id ? next : x));
+  persist(); // on this device, and in the account when signed in
+  // "now" on the island: the field's latest year on record
+  const last = [...(reportFor(id)?.history || [])].reverse().find((h) => h.crop != null) || null;
+  const key = last?.key || 'other';
+  if (app.island) app.island.fields = app.island.fields.map((x) => (x.id === id ? { ...x, crop: last?.crop ?? null, cropKey: key } : x));
+  hub.setLastCrop(id, key, last?.label || 'No crop on record');
+  if (timeTravel.session) timeTravel.session.setHistory(cropHistories(), new Map([[id, key]]));
+  else hub.setRowCrop(id, null);
+  paintStatuses();
+  if (fieldPanel.openId === id) fieldPanel.update(reportFor(id));
+}
+
 /** After a jar test came or went from the plan view: the plans again, on that field's card. */
 function replanFutures() {
   const s = planFutures.state;
@@ -583,6 +621,65 @@ function noCropsParam() {
   return [...new Set((params.get('nocrops') || '').split(',').map((k) => k.trim().toLowerCase()))].filter((k) => keys.has(k));
 }
 
+/**
+ * ?crops=cotton,rice,orchard (or ?crops=new for every crop added after the first eleven): the demo
+ * fields grow these this year, one after another (dev and demos, with ?hub= or ?reveal=; use
+ * ?hub=15 to see more of them at once).
+ */
+function cropsParam() {
+  const raw = (params.get('crops') || '').split(',').map((k) => k.trim().toLowerCase()).filter(Boolean);
+  if (raw.includes('new')) return CROP_KEYS.slice(CROP_KEYS.indexOf('other') + 1);
+  return raw.filter((k) => CROP_KEYS.includes(k));
+}
+
+// ---------------------------------------------------------------- the farm's weather
+// The real weather at the farm (src/services/weatherFeed.js, every 20 minutes) shows on the island
+// (through farmWeather, src/island/weatherState.js, which the island and anything else can follow).
+// ?weather=rain|snow|storm|fog|clear|cloudy|wind previews a look instead (the popover's Weather row
+// can go back to Live). Offline, the farm just has fair weather.
+let weatherFeed = null;
+let weatherSaid = false; // Manami mentions the live weather once
+let weatherSayAt = 0;
+let weatherRetry = 0;
+if (weatherParam(params.get('weather'))) farmWeather.pick(weatherParam(params.get('weather')));
+
+/** Where the farm is: the place it was found at, or the middle of its fields. */
+function farmPlace() {
+  if (Number.isFinite(app.farm?.lat) && Number.isFinite(app.farm?.lon)) return { lat: app.farm.lat, lon: app.farm.lon };
+  const ring = (g) => (g?.type === 'MultiPolygon' ? g.coordinates?.[0]?.[0] : g?.coordinates?.[0]) || [];
+  const pts = app.fields.flatMap((f) => ring(f.geometry)).filter((p) => Number.isFinite(p?.[0]) && Number.isFinite(p?.[1]));
+  if (!pts.length) return null;
+  return { lat: pts.reduce((a, p) => a + p[1], 0) / pts.length, lon: pts.reduce((a, p) => a + p[0], 0) / pts.length };
+}
+
+function startWeather() {
+  stopWeather();
+  weatherSayAt = Date.now() + 9000; // (after her hello on the island has been read)
+  weatherFeed = startWeatherFeed({ place: farmPlace, onReading: (r) => farmWeather.setLive(r) });
+}
+function stopWeather() {
+  weatherFeed?.stop();
+  weatherFeed = null;
+  farmWeather.setLive(null);
+  clearTimeout(weatherRetry);
+}
+
+/** "It's raining at your farm right now, so it's raining here too." Once, when she's free to say it. */
+function sayWeather() {
+  clearTimeout(weatherRetry);
+  const s = farmWeather.state;
+  const line = s.source === 'live' ? weatherLine(s.look) : null;
+  if (weatherSaid || !line || !app.island || !weatherFeed) return;
+  const busy = Date.now() < weatherSayAt || document.hidden
+    || !manami.el.querySelector('.manami__actions')?.hidden // she's asking something
+    || document.body.classList.contains('plans-open') || document.body.classList.contains('checkup-open')
+    || jarInert.size > 0 || planFutures?.active || islandPlanner.active || timeTravel.session?.mode === 'playing';
+  if (busy) { weatherRetry = setTimeout(sayWeather, 8000); return; }
+  weatherSaid = true;
+  manami.say(line);
+}
+farmWeather.subscribe(sayWeather);
+
 /** Today, or ?today=2026-12-24 to preview a season or holiday (dev and demos). */
 function today() {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(params.get('today') || '');
@@ -619,12 +716,16 @@ const reveal = createReveal({
     hub.show(island); // the farm's home screen from here on
     paintStatuses();
     startJars(island); // each field's soil jar test, by its gate
-    timeTravel.show(island, { history: cropHistories(), today: today(), hour: hourParam(), liveDate: !params.has('today') });
+    startWeather();
+    timeTravel.show(island, { history: cropHistories(), today: today(), hour: hourParam(), liveDate: !params.has('today'), weather: farmWeather });
     // the farm's sounds follow the time of day, the season and the festival (after the first tap)
     ambience.attach({ getScene: () => sceneOf(timeTravel.session), hasWindmill: () => !!island.view.spinners?.length });
     farmSpins?.dispose();
     farmSpins = createFarmSpins(island.view); // now and then Manami turns on the spot: "When they see me rotate…"
     if (restoredLine) { manami.say(restoredLine); restoredLine = null; } // a saved farm, opened again
+    seaLife?.dispose();
+    // an orca, dolphins and fish round the island, and now and then a whale (dev: ?whale=1 brings it)
+    seaLife = createSeaLife(island.view, { manami, date: today(), whaleNow: import.meta.env.DEV && params.has('whale') });
     // the first time the hub appears, Manami shows the farmer round (not over a dialog, nor a dev shortcut's plans)
     setTimeout(() => {
       const busy = plansPanel.isOpen || planFutures?.active || islandPlanner.active || document.body.classList.contains('jar-open');
@@ -639,7 +740,35 @@ const reveal = createReveal({
 });
 
 let farmSpins = null;
+let seaLife = null;
 // the island's ambient sound, and its switch on the top bar (src/audio/)
+// "Ask Manami": questions about the farm, answered by Claude through the app's own server (server/ai).
+// Her tools read the farm here; without the server (GitHub Pages, or no key) she says so plainly.
+const askManami = createAskManami({
+  endpoint: aiEndpoint(import.meta.env.VITE_AI_ENDPOINT, import.meta.env.BASE_URL),
+  host: {
+    fields: () => app.fields,
+    report: (id) => reportFor(id),
+    profile: () => app.farmProfile,
+    place: () => app.farm,
+    plansData: () => plansPanel.data,
+    savedPlan: () => (app.plan ? { source: app.plan.choice ? 'pick' : 'built', startYear: app.plan.startYear } : null),
+    today: () => today(),
+  },
+  onOpen: () => syncManami(),
+  onClose: () => syncManami(),
+});
+// the "Ask me" button beside her face (shown on the farm hub only)
+{
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'manami__ask';
+  b.id = 'askOpen';
+  b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h16v10H10l-4.5 3.5V15.5H4z" fill="currentColor" fill-opacity=".2"/><path d="M8.5 10.5h.01M12 10.5h.01M15.5 10.5h.01"/></svg><span>Ask me</span>';
+  b.addEventListener('click', () => askManami.open({ focus: null, opener: b }));
+  $('manami').appendChild(b);
+}
+
 const ambience = createAmbience();
 bindSoundToggle($('hubSound'), ambience);
 
@@ -647,6 +776,8 @@ function startReveal({ instant = false } = {}) {
   tour.stop();
   farmSpins?.dispose();
   farmSpins = null;
+  seaLife?.dispose();
+  seaLife = null;
   jarPanel.close({ restore: false });
   stopJars();
   jarSession.clear();
@@ -727,9 +858,12 @@ function handle(event) {
       tour.stop();
       farmSpins?.dispose();
       farmSpins = null;
+      seaLife?.dispose();
+      seaLife = null;
       jarPanel.close({ restore: false });
       stopJars();
       jarSession.clear();
+      stopWeather();
       app.farm = null;
       app.fields = [];
       app.farmProfile = null;
@@ -772,11 +906,19 @@ function testFields(n) {
   const shift = (g, dx, dy) => ({ ...g, coordinates: g.coordinates.map((ring) => ring.map(([x, y]) => [x + dx, y + dy])) });
   const offsets = [[0, 0], [0.04, 0.027], [-0.04, -0.027]];
   const out = [];
-  for (const [k, [dx, dy]] of offsets.entries()) {
+  copies: for (const [k, [dx, dy]] of offsets.entries()) {
     for (const f of base) {
-      if (out.length >= n) return out;
+      if (out.length >= n) break copies;
       out.push(k === 0 ? f : { ...f, id: `${f.id}-copy${k}`, name: `${f.name} ${k + 1}`, sourceIds: [`${f.sourceIds[0]}-copy${k}`], geometry: shift(f.geometry, dx, dy) });
     }
+  }
+  // ?crops=: this year's crop on each field in turn (the island shows a field's latest year)
+  const grow = cropsParam();
+  if (grow.length) {
+    return out.map((f, i) => {
+      const year = Object.keys(f.crops || {}).sort().pop() || String(HISTORY_YEARS[HISTORY_YEARS.length - 1]);
+      return { ...f, crops: { ...f.crops, [year]: grow[i % grow.length] } };
+    });
   }
   return out;
 }
@@ -901,7 +1043,7 @@ function offerSaved(snapOrRow, { signedIn = false } = {}) {
   });
 }
 
-if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, jarPanel, tour, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now(), ambience, local, sync, auth, account }; // for poking at in the console
+if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, jarPanel, tour, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now(), ambience, weather: farmWeather, whale: () => seaLife?.whale(), seaLife: () => seaLife, local, sync, auth, account }; // for poking at in the console
 
 // ---------------------------------------------------------------- the first five seconds
 (async function intro() {

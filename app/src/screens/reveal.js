@@ -28,6 +28,8 @@ import {
 } from '../island/props.js';
 import { BUILDING_FOOTPRINT, makeChickenCoop, makeFarmhouse, makeGrainBins, makeGreenhouse, makeMachineShed, makeWell } from '../island/buildings.js';
 import { LAMP_FOOTPRINT, makeFarmLamp } from '../island/lamps.js';
+import { openGround, placeLighthouse, placeWindmill } from '../island/landmarks.js';
+import { makeLighthouse } from '../island/lighthouse.js';
 import { buildIslandTerrain } from '../island/terrain.js';
 import { attachSeasons } from '../island/seasons.js';
 import { createFlock } from '../island/wander.js';
@@ -150,12 +152,14 @@ export function createReveal({ map, manami, onDone }) {
     const pops = [];
     const obstacles = []; // round footprints the sheep walk around
     const spinners = []; // windmill sails (they turn on the hub: src/screens/timeTravel.js)
+    const beacons = []; // the lighthouse's lantern and beam (src/island/dayNight.js lights them at night)
     // every prop placed: { key, x, z, r, ry, scale, height, y, box } (the festival themes dress them,
     // and keep clear of their real shapes: box is the prop's own unrotated, unscaled bounding box)
     const props = [];
     const addProp = (obj, [x, z], scale, ry = 0, key = null) => {
       if (key) obstacles.push({ x, z, r: (FOOTPRINT[key] ?? BUILDING_FOOTPRINT[key] ?? 0.4) * scale });
       if (obj.userData.blades) spinners.push(obj.userData.blades);
+      if (obj.userData.beacon) beacons.push(obj.userData.beacon);
       if (key) {
         // (its solid parts: not a lamp's glow on the ground or its halo)
         const box = new THREE.Box3();
@@ -182,7 +186,7 @@ export function createReveal({ map, manami, onDone }) {
     };
     let barn = null;
     let placeNearBarn = null; // (the windmill's last resort)
-    let windmillYard = () => []; // free spots in the farmyard, for the windmill
+    let windmillYard = () => []; // free spots in the farmyard, for the lighthouse and the windmill
     if (plan.farmstead) {
       const { at, facing = 0 } = plan.farmstead;
       barn = makeBarn();
@@ -200,6 +204,7 @@ export function createReveal({ map, manami, onDone }) {
         if (plan.fields.some((pf) => pf.polygons.some((rings) => inRing([x, z], rings[0])))) return false;
         // keep the reserved upgrade pads free, and the tree spots (the trees go in later)
         if (plan.slots.some((sl) => Math.hypot(sl.at[0] - x, sl.at[1] - z) < sl.r + r)) return false;
+        if (obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r + 0.12)) return false; // (and what went up since)
         return placed.every((p) => Math.hypot(p.at[0] - x, p.at[1] - z) > p.r + r + 0.12);
       };
       // candidates: beside the barn first, then anywhere round the farmyard
@@ -240,19 +245,7 @@ export function createReveal({ map, manami, onDone }) {
         sl.filled = key; // taken now (the upgrade pads left are the ones without this)
       });
       // open grass: off fields, pads, props and paths, level, on the island
-      const level = (x, z, r) => {
-        const h = terrain.heightAt(x, z);
-        for (let k = 0; k < 8; k++) {
-          const a = (k / 8) * Math.PI * 2;
-          if (Math.abs(terrain.heightAt(x + Math.cos(a) * r, z + Math.sin(a) * r) - h) > 0.11) return false;
-        }
-        return true;
-      };
-      const open = (x, z, r) => terrain.field.isFree?.(x, z, r, { strict: true }) !== false
-        && !obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r + 0.15)
-        && !plan.slots.some((sl) => Math.hypot(sl.at[0] - x, sl.at[1] - z) < sl.r + r + 0.15)
-        && !plan.fields.some((pf) => pf.polygons.some((rings) => inRing([x, z], rings[0]) || ringDistance([x, z], rings[0]) < r + 0.25))
-        && level(x, z, r);
+      const open = openGround({ terrain, plan, obstacles });
       const openSpot = (r) => {
         const cands = [];
         for (let d = (plan.farmstead.yard?.r || 1) + 0.5; d < 7; d += 0.35) {
@@ -267,6 +260,9 @@ export function createReveal({ map, manami, onDone }) {
         const c = cands.find((p) => open(p.x, p.z, r));
         return c ? [c.x, c.z] : null;
       };
+      // ---- the lighthouse on the island's highest point (the crag's flat top, a hill, or the
+      // farmyard if that's highest), before anything else takes it, seen from the front
+      const lighthouse = placeLighthouse({ terrain, plan, obstacles, open, addProp, make: makeLighthouse, props, yardSpots: windmillYard, scale: PROP_SCALE });
       // (a little smaller if a full-size one doesn't fit anywhere)
       for (const [key, make] of [['greenhouse', makeGreenhouse], ['well', makeWell]]) {
         for (const scale of [PROP_SCALE, PROP_SCALE * 0.82]) {
@@ -274,10 +270,10 @@ export function createReveal({ map, manami, onDone }) {
           if (spot) { addProp(make(), spot, scale, faceFrom(spot), key); break; }
         }
       }
-      // ---- the windmill on the island's high ground (the crag's flat top, a hill, or the farmyard
-      // if that's highest), where it catches the wind and can be seen from the front: never tucked
-      // behind a building or a tree. By the barn as a last resort.
-      if (!placeWindmillHigh({ terrain, plan, obstacles, open, addProp, makeWindmill, yardSpots: windmillYard })) placeNearBarn?.();
+      // ---- the windmill on other open, fairly high ground, seen from the front: never tucked
+      // behind a building or a tree, nor in front of the lighthouse (src/island/landmarks.js). By
+      // the barn as a last resort.
+      if (!placeWindmill({ terrain, plan, obstacles, open, addProp, make: makeWindmill, lighthouse, yardSpots: windmillYard, scale: PROP_SCALE })) placeNearBarn?.();
     }
 
     const kinds = ['tulip-green', 'round', 'pine', 'blossom', 'tulip-yellow', 'round'];
@@ -313,6 +309,9 @@ export function createReveal({ map, manami, onDone }) {
     const lamps = placeLamps({ terrain, plan, obstacles, addProp, fieldGroups, shore, dockAt, scale: PROP_SCALE });
 
     const swimmers = [];
+    // a whale out at sea (src/island/seaLife.js) sets keepOut(x, z) while it's up: the swimmers pick
+    // their next paddle round it
+    const seaGate = { keepOut: null };
     // the land sheep wander about, never through fields, fences, buildings, trees, rocks or each other
     const flock = createFlock({
       heightAt: terrain.heightAt,
@@ -332,7 +331,7 @@ export function createReveal({ map, manami, onDone }) {
         fisher.rotation.y = seat.ry;
         boat.add(fisher);
       }
-      swimmers.push(...makeSwimmers(island, tpl, terrain, seed, dockAt ? [dockAt, boatAt] : []));
+      swimmers.push(...makeSwimmers(island, tpl, terrain, seed, dockAt ? [dockAt, boatAt] : [], seaGate));
       return placeSheep(island, tpl, plan, terrain, flock);
     }).catch(() => []);
 
@@ -517,7 +516,11 @@ export function createReveal({ map, manami, onDone }) {
         slots: plan.slots, // reserved upgrade pads: decorations keep off them too
         lamps, // [{ glass, halo, pool, light, at }] for the day-night cycle
         spinners, // windmill sails: turn them with .rotation.z
+        beacons, // the lighthouse: beacon.update(dt, night) (src/island/dayNight.js)
         props, // the placed props, for the festival themes: [{ key, x, z, r, ry, scale, height, y }]
+        // what's out on the water, for the sea animals to keep clear of (src/island/seaLife.js):
+        // the dock (its landward end, and the way it points out to sea), the rowboat, the two swimmers
+        sea: { dockAt, dockOut: shore ? [Math.cos(shore.th), Math.sin(shore.th)] : null, boatAt, swimmers, gate: seaGate },
         seed,
         /** Runs fn(dt) every frame before the island is drawn; returns a remover. */
         onFrame(fn) { frameHooks.add(fn); return () => frameHooks.delete(fn); },
@@ -683,65 +686,6 @@ function pickShore(plan, terrain) {
 }
 
 /**
- * The windmill on the highest open ground of the island (a hill's the place for one), turned to
- * the camera's side, and not hidden behind a building, a big prop or a tree from there (the
- * camera looks from +z). Tries a slightly smaller windmill before giving up. Returns whether it did.
- */
-function placeWindmillHigh({ terrain, plan, obstacles, open, addProp, makeWindmill, yardSpots = () => [] }) {
-  const f = terrain.field;
-  if (!f?.center) return false;
-  const [cx, cz] = f.center;
-  const R = f.maxCoast || plan.radius || 7;
-  // higher first; on the same shelf, the front (toward the camera) and the middle win
-  const score = (x, z) => terrain.heightAt(x, z) + (z - cz) * 0.012 - Math.hypot(x - cx, z - cz) * 0.004;
-  const grid = [];
-  for (let x = cx - R; x <= cx + R; x += 0.25) for (let z = cz - R; z <= cz + R; z += 0.25) grid.push({ x, z, score: score(x, z) });
-  const trees = plan.slots.filter((sl) => sl.kind === 'tree');
-  // the camera looks from +z: nothing big in front of it, and it isn't standing in front of a building
-  const hidden = (x, z) => obstacles.some((o) => o.r > 0.4 && o.z > z && o.z - z < 3 && Math.abs(o.x - x) < o.r + 0.55)
-    || trees.some((t) => t.at[1] > z && t.at[1] - z < 2.2 && Math.abs(t.at[0] - x) < 0.8);
-  const blocking = (x, z) => obstacles.some((o) => o.r > 0.6 && o.z < z && z - o.z < 2.4 && Math.abs(o.x - x) < o.r * 0.8);
-  const ryAt = (x, z) => Math.atan2(cx - x, cz + 12 - z);
-  // the sails sweep a circle 1.3 across (makeWindmill: hub 2.2 up, 0.62 in front of the tower):
-  // nothing may stand in it, a tree or a building or the ground itself (at a cliff edge)
-  const sailsClear = (x, z, scale) => {
-    const ry = ryAt(x, z), fx = Math.sin(ry), fz = Math.cos(ry), px = fz, pz = -fx; // facing, and across it
-    const base = terrain.heightAt(x, z);
-    const R = 1.3 * scale, hubY = base + 2.2 * scale, sx = x + fx * 0.62 * scale, sz = z + fz * 0.62 * scale;
-    const inDisc = (ox, oz, or) => {
-      const dx = ox - sx, dz = oz - sz;
-      return Math.abs(dx * fx + dz * fz) < or + 0.15 && Math.abs(dx * px + dz * pz) < R + or;
-    };
-    if (obstacles.some((o) => inDisc(o.x, o.z, o.r))) return false;
-    if (trees.some((t) => inDisc(t.at[0], t.at[1], t.r))) return false;
-    for (let a = -Math.PI / 2; a <= Math.PI / 2 + 1e-6; a += Math.PI / 10) { // the lower half of the circle
-      const l = Math.sin(a) * R, y = hubY - Math.cos(a) * R;
-      if (terrain.heightAt(sx + px * l, sz + pz * l) > y - 0.05) return false;
-    }
-    return true;
-  };
-  for (const scale of [PROP_SCALE, PROP_SCALE * 0.85]) {
-    const r = FOOTPRINT.windmill * scale;
-    // open ground anywhere (the crag's flat top too), and the farmyard's free spots (clear of the
-    // buildings put up since)
-    const cands = [
-      ...grid.filter((p) => open(p.x, p.z, r)),
-      ...yardSpots(r).filter(([x, z]) => !obstacles.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r + 0.12))
-        .map(([x, z]) => ({ x, z, score: score(x, z) })),
-    ].sort((a, b) => b.score - a.score);
-    const c = cands.find((p) => !hidden(p.x, p.z) && !blocking(p.x, p.z) && sailsClear(p.x, p.z, scale));
-    if (c) {
-      addProp(makeWindmill(), [c.x, c.z], scale, ryAt(c.x, c.z), 'windmill');
-      // keep the space under the sails clear for what's placed after (lamps, decorations, festivals)
-      const ry = ryAt(c.x, c.z), R = 1.3 * scale, sx = c.x + Math.sin(ry) * 0.62 * scale, sz = c.z + Math.cos(ry) * 0.62 * scale;
-      for (const l of [-0.66, 0, 0.66]) obstacles.push({ x: sx + Math.cos(ry) * l * R, z: sz - Math.sin(ry) * l * R, r: R * 0.42 });
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
  * Lamps round the farm: two by the farmyard, one beside the gate of each field nearest it, and one
  * at the landward end of the dock, each on firm, fairly level ground clear of fields, pads,
  * buildings and each other, with its lantern turned toward what it lights. The four nearest the
@@ -845,7 +789,7 @@ function placeLamps({ terrain, plan, obstacles, addProp, fieldGroups, shore, doc
  * Two sheep swimming in the sea, like the prototype: each pops up at a spot a little offshore,
  * paddles along, dives with a ripple ring, then turns up somewhere else. update(t) moves them.
  */
-function makeSwimmers(island, template, terrain, seed, avoid = []) {
+function makeSwimmers(island, template, terrain, seed, avoid = [], gate = null) {
   const f = terrain.field;
   if (!f?.shoreR) return [];
   const [cx, cz] = f.center;
@@ -868,6 +812,7 @@ function makeSwimmers(island, template, terrain, seed, avoid = []) {
         const x = st.x + Math.cos(st.dir) * d, z = st.z + Math.sin(st.dir) * d;
         if (terrain.heightAt(x, z) > -0.3) return false;
         if (avoid.some(([ax, az]) => Math.hypot(x - ax, z - az) < 2.2)) return false;
+        if (gate?.keepOut?.(x, z)) return false;
         if (out.some((o) => o !== self && o.near?.(x, z, 1.0))) return false;
       }
       return true;
@@ -891,6 +836,8 @@ function makeSwimmers(island, template, terrain, seed, avoid = []) {
     self = {
       g,
       near: (x, z, r) => g.visible && Math.hypot(g.position.x - x, g.position.z - z) < r,
+      /** The paddle it's on now (or about to come up for), start to end: the fish keep out of its way. */
+      route: () => ({ ax: st.x, az: st.z, bx: st.x + Math.cos(st.dir) * st.dur * 0.13, bz: st.z + Math.sin(st.dir) * st.dur * 0.13 }),
       update(t) {
         let lt = t - st.t0;
         if (lt > st.dur + 1.8) { st.t0 = t; choose(); lt = 0; }

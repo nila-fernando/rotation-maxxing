@@ -326,6 +326,16 @@ export function createCoinStacks(view, { reduced = defaultReduced } = {}) {
     for (const st of stacks.values()) st.coins = [];
   }
 
+  /**
+   * Shows or hides every stack (the plans' "Show the money"). The stacks keep their spots, counts
+   * and columns while hidden (the camera's floor still counts them), so showing them again moves
+   * nothing; the coins still step, and come back as they are.
+   */
+  function setVisible(on) {
+    if (!alive) return;
+    mesh.visible = !!on;
+  }
+
   return {
     mesh,
     place,
@@ -334,6 +344,8 @@ export function createCoinStacks(view, { reduced = defaultReduced } = {}) {
     prewarm,
     dispose,
     countOf,
+    setVisible,
+    get visible() { return mesh.visible; },
     /** Where a field's stack is (null: no stack on it, its chip carries the money). */
     spotOf: (id) => stacks.get(id)?.spot ?? null,
     /** The top of a field's coins now (for its chip), or null with no stack. */

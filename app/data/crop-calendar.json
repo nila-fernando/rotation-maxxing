@@ -1,0 +1,241 @@
+{
+ "version": 1,
+ "built": "2026-11-15",
+ "sources": {
+  "h628": {
+   "title": "USDA NASS, Field Crops Usual Planting and Harvesting Dates, Agricultural Handbook 628",
+   "url": "https://esmis.nal.usda.gov/sites/default/release-files/vm40xr56k/dv13zw65p/z603r1055/planting-10-29-2010.txt",
+   "year": 2010,
+   "licence": "US government work, public domain (17 U.S.C. §105)",
+   "caveat": "Long-run dates from about 1990–2009. Planting is earlier now."
+  },
+  "nassProgress": {
+   "title": "USDA NASS Crop Progress: Iowa corn and soybeans 2021–2025, Iowa oats 2020–2024 average, Kansas winter wheat harvest 2021–2025",
+   "url": "https://esmis.nal.usda.gov/concern/publications/8336h188j",
+   "year": 2025,
+   "licence": "US government work, public domain",
+   "caveat": "State-wide pace, not your county."
+  },
+  "rma2026": {
+   "title": "USDA RMA Actuarial Data Master 2026, A00200 Date, insurance plans 01–03 (forage seeding: plan 50)",
+   "url": "https://pubfs-rma.fpac.usda.gov/pub/References/actuarial_data_master/2026/",
+   "year": 2026,
+   "licence": "US government work, public domain",
+   "caveat": "Insurance deadlines, not best dates."
+  },
+  "isuCorn2010": {
+   "title": "Abendroth and Elmore, Updated planting date recommendations for Iowa, Iowa State University Extension",
+   "url": "https://crops.extension.iastate.edu/cropnews/2010/04/updated-planting-date-recommendations-iowa",
+   "year": 2010,
+   "licence": "Cited facts only",
+   "caveat": "Best corn windows for Iowa by region."
+  },
+  "isuLicht2020": {
+   "title": "Licht, Updated views on corn and soybean planting recommendations, Iowa State University Extension",
+   "url": "https://crops.extension.iastate.edu/post/updated-views-corn-and-soybean-planting-recommendations",
+   "year": 2020,
+   "licence": "Cited facts only",
+   "caveat": "When yields start to slip, and the soil temperature to wait for."
+  },
+  "pfiWheat": {
+   "title": "Practical Farmers of Iowa, Delayed planting for winter small grains",
+   "url": "https://practicalfarmers.org/2018/10/delayed-planting-for-winter-small-grains",
+   "year": 2018,
+   "licence": "Cited facts only",
+   "caveat": "A farmer group’s advice on wheat, not a trial.",
+   "secondary": true
+  },
+  "nrcsRyeIA2025": {
+   "title": "NRCS and Iowa State, Cereal Rye Cover Crop Fact Sheet for Iowa",
+   "url": "https://nrcs-prod.azureedge.us/sites/default/files/2025-05/Cereal%20Rye%20Cover%20Crop%20Fact%20Sheet.pdf",
+   "year": 2025,
+   "licence": "US government work, public domain",
+   "caveat": "Seeding dates for cost-share programs. Check your county’s termination rule."
+  },
+  "nrcsTermV4": {
+   "title": "USDA NRCS Cover Crop Termination Guidelines, version 4",
+   "url": "https://secure.in.gov/isda/files/Termination_Guidelines_Designed_6.28_10.24am_002.pdf",
+   "year": 2019,
+   "licence": "US government work, public domain",
+   "caveat": "The zone map is an image; the Iowa zone is not confirmed."
+  },
+  "noaaNormals": {
+   "title": "NOAA NCEI 1991–2020 U.S. Climate Normals, freeze dates, station USC00130200 (Ames 8 WSW)",
+   "url": "https://www.ncei.noaa.gov/data/normals-annualseasonal/1991-2020/access/USC00130200.csv",
+   "year": 2021,
+   "licence": "US government work, public domain",
+   "caveat": "One weather station, the nearest to the farm."
+  }
+ },
+ "states": {
+  "IA": {
+   "corn": {
+    "recent": {
+     "years": "2021–2025",
+     "plant": {
+      "p10": "04-23",
+      "p50": "05-06",
+      "p90": "05-21"
+     },
+     "harvest": {
+      "p10": "09-27",
+      "p50": "10-19",
+      "p90": "11-08"
+     },
+     "src": "nassProgress"
+    },
+    "best": {
+     "from": "04-15",
+     "to": "05-09",
+     "note": "98% of top yield in central Iowa",
+     "src": "isuCorn2010"
+    },
+    "lossAfter": {
+     "date": "05-18",
+     "src": "isuLicht2020"
+    },
+    "soilCue": "isuLicht2020"
+   },
+   "soybeans": {
+    "recent": {
+     "years": "2021–2025",
+     "plant": {
+      "p10": "04-27",
+      "p50": "05-11",
+      "p90": "05-29"
+     },
+     "harvest": {
+      "p10": "09-24",
+      "p50": "10-09",
+      "p90": "10-29"
+     },
+     "src": "nassProgress"
+    },
+    "best": {
+     "from": null,
+     "to": "05-20",
+     "note": "yields slip after May 20",
+     "src": "isuLicht2020"
+    },
+    "soilCue": "isuLicht2020"
+   },
+   "oats": {
+    "recent": {
+     "years": "2020–2024",
+     "plant": {
+      "p10": "04-03",
+      "p50": "04-17",
+      "p90": "05-05"
+     },
+     "harvest": {
+      "p10": "07-12",
+      "p50": "07-26",
+      "p90": "08-11"
+     },
+     "src": "nassProgress"
+    }
+   },
+   "winter-wheat": {
+    "best": {
+     "from": "10-01",
+     "to": "10-10",
+     "note": "a farmer group’s advice",
+     "src": "pfiWheat",
+     "secondary": true
+    },
+    "rmaState": {
+     "final": "10-20",
+     "latePlantEnd": "11-04",
+     "salesClosing": "09-30",
+     "note": "45 of Iowa’s counties",
+     "src": "rma2026"
+    }
+   },
+   "alfalfa": {
+    "rmaState": {
+     "springFinal": "05-15",
+     "lateSummerFinal": "08-31",
+     "note": "58 of Iowa’s 85 counties with forage seeding",
+     "src": "rma2026"
+    }
+   }
+  },
+  "KS": {
+   "winter-wheat": {
+    "recent": {
+     "years": "2021–2025",
+     "harvest": {
+      "p10": "06-16",
+      "p50": "06-28",
+      "p90": "07-13"
+     },
+     "src": "nassProgress"
+    }
+   }
+  }
+ },
+ "counties": {
+  "19169": {
+   "name": "Story County, IA",
+   "state": "IA",
+   "region": "central Iowa",
+   "crops": {
+    "corn": {
+     "earliest": "04-10",
+     "final": "05-31",
+     "latePlantEnd": "06-25",
+     "salesClosing": "03-15",
+     "endInsurance": "12-10",
+     "src": "rma2026"
+    },
+    "soybeans": {
+     "earliest": "04-15",
+     "final": "06-15",
+     "latePlantEnd": "07-10",
+     "src": "rma2026"
+    },
+    "oats": {
+     "earliest": null,
+     "final": "04-25",
+     "latePlantEnd": "05-20",
+     "src": "rma2026"
+    }
+   },
+   "frost": {
+    "station": "USC00130200",
+    "stationName": "Ames 8 WSW",
+    "lastSpring": {
+     "p50": "04-23",
+     "p90": "05-05"
+    },
+    "firstFall": {
+     "p50": "10-14"
+    },
+    "hardFreeze": {
+     "p50": "10-24"
+    },
+    "src": "noaaNormals"
+   }
+  }
+ },
+ "cover": {
+  "cereal-rye": {
+   "IA": {
+    "seed": [
+     "08-15",
+     "10-31"
+    ],
+    "terminate": "at or before planting",
+    "zoneConfirmed": false,
+    "src": "nrcsRyeIA2025",
+    "termSrc": "nrcsTermV4"
+   }
+  }
+ },
+ "gaps": [
+  "Handbook 628 dates are from about 1990–2009.",
+  "No Iowa planting pace for winter wheat.",
+  "No Story County insurance dates for wheat.",
+  "The NRCS termination zone for Iowa isn’t confirmed."
+ ]
+}

@@ -76,10 +76,22 @@ export function farmRow(snap, { id, ownerId }) {
   };
 }
 
-/** The field's own crop years (from the outline's data), without the ones CDL filled in. */
+/** The field's own crop years (the outline's data and the farmer's edits), without the ones CDL filled in. */
 function ownCrops(f) {
-  const cdl = new Set((f.cdlYears || []).map(String));
+  const mine = new Set((f.cropsByFarmer || []).map(String));
+  const cdl = new Set((f.cdlYears || []).map(String).filter((y) => !mine.has(y)));
   return Object.fromEntries(Object.entries(f.crops || {}).filter(([y, c]) => c != null && !cdl.has(String(y))));
+}
+
+/**
+ * The farmer's crop history edits (src/fields/cropEdits.js) for the fields.crop_edits column: USDA's
+ * record as it was, the years the farmer set, and the years they said "not sure" about. null: none.
+ */
+export function cropEditsOf(f) {
+  if (!isObj(f.cropsOriginal) || !Array.isArray(f.cropsByFarmer) || !f.cropsByFarmer.length) return null;
+  const out = { original: f.cropsOriginal, by_farmer: f.cropsByFarmer.map(Number) };
+  if (Array.isArray(f.cropsCleared) && f.cropsCleared.length) out.cleared = f.cropsCleared.map(Number);
+  return out;
 }
 
 export function fieldRow(f, { farmId, irrigated = false }) {
@@ -92,6 +104,7 @@ export function fieldRow(f, { farmId, irrigated = false }) {
     source: f.source ?? null,
     source_ids: Array.isArray(f.sourceIds) ? f.sourceIds.map(String) : [],
     crops: ownCrops(f),
+    crop_edits: cropEditsOf(f), // (supabase/migrations/20261116000000_field_crop_edits.sql)
     irrigated: !!irrigated,
   };
 }
@@ -104,8 +117,10 @@ export function fieldDataRows(f, fieldId) {
   if (Number.isFinite(f.slopePct)) add('slope', { pct: f.slopePct });
   if (isObj(f.rain)) add('rain', f.rain);
   if (Array.isArray(f.ndvi) && f.ndvi.length) add('greenness', { series: f.ndvi });
-  const years = (f.cdlYears || []).filter((y) => f.crops?.[y] != null);
-  if (years.length) add('cdl', { crops: Object.fromEntries(years.map((y) => [String(y), f.crops[y]])) });
+  // what CropScape said (a year the farmer changed keeps CropScape's answer here, and theirs in fields.crops)
+  const cdlCrop = (y) => (f.cropsOriginal && y in f.cropsOriginal ? f.cropsOriginal[y] : f.crops?.[y]);
+  const years = (f.cdlYears || []).filter((y) => cdlCrop(y) != null);
+  if (years.length) add('cdl', { crops: Object.fromEntries(years.map((y) => [String(y), cdlCrop(y)])) });
   return rows;
 }
 
@@ -174,8 +189,21 @@ export function snapshotFromRows({ farm, fields, fieldData = [], jarTests = [], 
       sourceIds: r.source_ids || [],
       crops: Object.keys(crops).length ? crops : null,
     };
-    const cdlYears = Object.keys(cdl).filter((y) => own[y] == null).map(Number).sort();
+    const edits = isObj(r.crop_edits) && isObj(r.crop_edits.original) && Array.isArray(r.crop_edits.by_farmer) && r.crop_edits.by_farmer.length ? r.crop_edits : null;
+    const mine = new Set((edits?.by_farmer || []).map(String));
+    const cdlYears = Object.keys(cdl).filter((y) => own[y] == null || mine.has(y)).map(Number).sort();
     if (cdlYears.length) f.cdlYears = cdlYears;
+    if (edits) {
+      // the farmer's own crop history: their years over USDA's, "not sure" years off the record
+      f.cropsOriginal = edits.original;
+      f.cropsByFarmer = edits.by_farmer.map(Number);
+      const cleared = (edits.cleared || []).map(Number);
+      if (cleared.length) {
+        f.cropsCleared = cleared;
+        for (const y of cleared) delete crops[y];
+        f.crops = Object.keys(crops).length ? crops : null;
+      }
+    }
     if (isObj(d.soil)) f.soil = d.soil;
     if (Number.isFinite(d.slope?.pct)) f.slopePct = d.slope.pct;
     if (isObj(d.rain)) f.rain = d.rain;

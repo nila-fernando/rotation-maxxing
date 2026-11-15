@@ -35,6 +35,8 @@ describe('Manami’s lines on the demo farm (profit first)', () => {
     assert.deepEqual(said, {
       intro: 'This is 2027 if you keep going. Home place, West 140 and East place grow corn again.',
       flip: `Here’s my pick. It changes 3 fields in 2027. Over 3 seasons it earns about ${k(t.priority.expectedGM - t.current.expectedGM)} more, and beats keeping going in ${Math.round(t.priority.probBeatsCurrent * 100)}% of the weather years I tried.`,
+      handoff: 'In 2028 Home place goes to corn after the beans. It gets their nitrogen, about $20 an acre less to buy.',
+      repeat: 'North draw grows corn once more in 2027. Watch for rootworm that year.',
       gain: 'West 140 gains the most, about $25k over 3 seasons. Soybeans here in 2027 earn about $73 more an acre than more corn. The beans also leave nitrogen for the 2028 corn.',
       sameCrop: 'Same corn on Home place in 2028, but it earns about $57 more an acre. Corn after beans yields about 9 bu more than corn after corn.',
       giveUp: 'North draw is the one place my pick earns less, about $2k over 3 seasons. It ends on corn after beans, so its soil scores 70 in 2029 instead of 42. Careful: beans in 2028 leave this slope only about a quarter covered.',
@@ -44,6 +46,15 @@ describe('Manami’s lines on the demo farm (profit first)', () => {
       yourTurn: 'Your turn. Tap a field to pick its plan, then press Use this plan.',
     });
     assert.equal(skipHintLine(cmp), 'Have a look round. West 140 changes the most. Start there if you like.');
+  });
+
+  it('says the walk’s repeat without rootworm, and nothing for a handoff that isn’t one', () => {
+    const c = structuredClone(cmp);
+    const s = c.fields.find((f) => f.id === 'f3').byKind.priority.seasons[0];
+    s.warnings = s.warnings.filter((w) => w.lens !== 'pest');
+    assert.equal(reelLine(c, { id: 'repeat', fieldId: 'f3', season: 0 }), 'North draw grows corn once more in 2027. So I expect a little less yield that year.');
+    assert.equal(reelLine(cmp, { id: 'handoff', fieldId: 'f1', season: 0 }), null, 'beans after corn get no credit');
+    assert.equal(reelLine(cmp, { id: 'repeat' }), null);
   });
 
   it('says the Notes lines', () => {
@@ -209,6 +220,9 @@ describe('a pick of covers alone', () => {
       const line = reelLine(cmp, s);
       if (line != null) assert.deepEqual(lintLine(line), [], line);
     }
+    // every corn field keeps its corn: the walk's repeat is corn again, not "once more"
+    const rep = reelStops(cmp).find((s) => s.id === 'repeat');
+    assert.equal(reelLine(cmp, rep), 'Home place grows corn again in 2027. Watch for rootworm that year.');
     assert.equal(goodFitLine(compareFutures(demoData(['profit']), { startYear: START_YEAR })), 'Your rotation is already a good fit. My pick changes little over the 3 seasons.');
   });
 });

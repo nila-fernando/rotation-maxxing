@@ -15,6 +15,7 @@
 // the island (webs, spiders, lights, pumpkins, ghosts, bats) are one mesh or InstancedMesh each.
 import * as THREE from 'three';
 import { makeHayBale, rng } from '../props.js';
+import { towerRadiusAt as lhR } from '../lighthouse.js';
 
 const TAU = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -825,8 +826,9 @@ export default function build(ctx) {
     greenhouse: { eave: [0.72, 0.46, 0.55], R: 0.46, roof: [[0.3, 0.7, 0, 1.15]] },
     silo: { web: [0, 1.25, 0.56], R: 0.46, roof: [[0, 2.5, 0, 1.4]] },
     windmill: { web: [0, 0.48, 0.6], R: 0.36 }, // low on the base, under the sails
+    lighthouse: { web: [0, 1.75, lhR(1.75) + 0.01], R: 0.3 }, // up the tower, over its front window
   };
-  const ROUND = new Set(['silo', 'windmill', 'grainBins', 'well']);
+  const ROUND = new Set(['silo', 'windmill', 'grainBins', 'well', 'lighthouse']);
   const SKIP = new Set(['rock', 'bush', 'dock', 'boat', 'bench', 'barrel', 'crate', 'mailbox', 'signpost', 'wheelbarrow', 'firewood', 'hayStack', 'scarecrow', 'fence']);
   const DIMS = { barn: [0.92, 0.69, 0.56], farmhouse: [0.78, 0.7, 0.52], machineShed: [0.8, 0.7, 0.6], chickenCoop: [0.7, 0.62, 0.55], greenhouse: [0.75, 0.68, 0.6] };
   for (const b of ctx.buildings) {

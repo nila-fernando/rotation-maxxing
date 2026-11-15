@@ -19,7 +19,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ISLAND_COLORS, rng, mat, mesh } from './props.js';
-import { CROP_KEYS, CROP_STYLE, cropKeyFor, plantField } from './crops.js';
+import { CROP_KEYS, CROP_STYLE, ROW_GAP, cropKeyFor, plantField } from './crops.js';
 
 // ---------------------------------------------------------------------------------------------
 // Tunables
@@ -46,8 +46,8 @@ const PLANTS_PER_UNIT2 = 120;
 const MAX_PLANTS = 900;
 const FENCE_POP = 0.3; // the fence pops in during growth t = 0 .. 0.3
 
-// Crops grown in tilled rows get ridges under every row. Row gaps mirror crops.js (rowGap).
-const ROW_GAP = { corn: 1.5, soybeans: 1.9, wheat: 1.05, barley: 1.05, oats: 1.05, sorghum: 1.45 };
+// Crops grown in tilled rows get ridges under every row: ROW_GAP from crops.js (the crops marked
+// ridges: true, with their rowGap).
 
 // Round-field test (isRound).
 const ROUND_COMPACTNESS = 0.8; // 4 pi A / P^2 of the simplified outline: circle 1, square 0.785

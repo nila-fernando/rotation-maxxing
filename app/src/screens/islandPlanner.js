@@ -15,6 +15,7 @@
 //   planner.start(builder, { startYear, view })   planner.stop()
 import * as THREE from 'three';
 import { APP_CROP } from '../plan/farmInput.js';
+import { hideCropTip } from '../ui/cropTip.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const SEV = { 1: 'Note', 2: 'Careful', 3: 'Avoid' };
@@ -155,7 +156,8 @@ export function createIslandPlanner({ hub, timeTravel, manami, money = (n) => `$
   }
 
   function paintPalette() {
-    paletteEl.innerHTML = [...b.palette().map((id) => `<button type="button" class="isle-crop bcrop" data-crop="${esc(id)}" aria-pressed="false">${b.iconOf(id)}<span>${esc(b.nameOf(id))}</span></button>`),
+    // each crop's name in the shared crop tip, on hover (its icon) and keyboard focus (the button)
+    paletteEl.innerHTML = [...b.palette().map((id) => `<button type="button" class="isle-crop bcrop" data-crop="${esc(id)}" data-crop-tip="${esc(b.nameOf(id))}" aria-pressed="false">${b.iconOf(id)}<span>${esc(b.nameOf(id))}</span></button>`),
       `<button type="button" class="isle-crop bcrop bcrop--clear" data-crop="" aria-pressed="false">${ERASER}<span>Clear</span></button>`].join('');
   }
 
@@ -303,6 +305,7 @@ export function createIslandPlanner({ hub, timeTravel, manami, money = (n) => `$
   }
 
   function startDrag(x, y) {
+    hideCropTip(); // a crop picked up: the ghost carries it now
     drag.active = true;
     drag.ghost = document.createElement('div');
     drag.ghost.className = 'isle-ghost';

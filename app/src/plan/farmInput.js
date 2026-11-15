@@ -11,8 +11,12 @@ import { mapTexture } from '../vendor/rotation-maxxing/data/ssurgo.ts';
 import { continueHistory } from '../vendor/rotation-maxxing/algorithm/plans.ts';
 import { cropKeyFor } from '../island/crops.js';
 import { demoRecordFor } from '../data/fieldReport.js';
+import { getFarm } from '../data/farmData.js';
 
-/** App crop keys (src/island/crops.js) -> planner crop ids. hay, pasture and other have no planner crop. */
+/**
+ * App crop keys (src/island/crops.js) -> planner crop ids, as the planner's own CDL mapping does
+ * (vendor data/cdl.ts). The other keys (hay, pasture, potatoes, vegetables...) have no planner crop.
+ */
 export const PLANNER_CROP = {
   corn: 'corn',
   soybeans: 'soybeans',
@@ -22,12 +26,20 @@ export const PLANNER_CROP = {
   sorghum: 'sorghum',
   alfalfa: 'alfalfa',
   fallow: 'fallow',
+  springwheat: 'spring-wheat',
+  cotton: 'cotton',
+  sunflower: 'sunflower',
+  canola: 'canola',
+  drybeans: 'dry-beans',
+  // a rye year reads as winter wheat in the planner's history, as it did before rye had its own key
+  // (the planner's CDL mapping has no grain rye; its cereal-rye is the winter cover crop)
+  rye: 'winter-wheat',
 };
 /** Planner crop ids -> the app's crop keys (for icons, the island and the check-in's answers). */
 export const APP_CROP = {
-  corn: 'corn', soybeans: 'soybeans', 'winter-wheat': 'wheat', 'spring-wheat': 'wheat', barley: 'barley', oats: 'oats',
-  sorghum: 'sorghum', alfalfa: 'alfalfa', fallow: 'fallow', 'cereal-rye': 'other', cotton: 'other', sunflower: 'other',
-  canola: 'other', 'dry-beans': 'soybeans',
+  corn: 'corn', soybeans: 'soybeans', 'winter-wheat': 'wheat', 'spring-wheat': 'springwheat', barley: 'barley', oats: 'oats',
+  sorghum: 'sorghum', alfalfa: 'alfalfa', fallow: 'fallow', 'cereal-rye': 'rye', cotton: 'cotton', sunflower: 'sunflower',
+  canola: 'canola', 'dry-beans': 'drybeans',
 };
 
 /**
@@ -120,6 +132,7 @@ export function historyRunFor(field, demo) {
   const byYear = new Map();
   for (const c of demo?.cropHistory || []) byYear.set(Number(c.year), c.crop);
   for (const [y, c] of Object.entries(field.crops || {})) byYear.set(Number(y), c);
+  for (const y of field.cropsCleared || []) byYear.delete(Number(y)); // the farmer said "not sure" (src/fields/cropEdits.js)
   const years = [...byYear.keys()].sort((a, b) => a - b);
   const out = [];
   for (let i = years.length - 1; i >= 0 && out.length < 3; i--) {
@@ -222,6 +235,10 @@ export function plannerFarm({ fields, place = null, profile = null, firstSeason 
   };
   const state = place?.demo ? 'IA' : stateOf(place);
   if (state) farm.state = state;
+  // the county (5-digit FIPS) for the crop calendar's county rows (insurance dates, frost); the demo
+  // farm's comes from its data file. The planner itself doesn't read it.
+  const fips = place?.fips ?? (place?.demo ? getFarm()?.fips : null);
+  if (fips && /^\d{5}$/.test(String(fips))) farm.fips = String(fips);
   return { farm, gaps };
 }
 

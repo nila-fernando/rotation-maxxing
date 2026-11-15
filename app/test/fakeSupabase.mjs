@@ -5,6 +5,7 @@
 //   const db = createFakeSupabase({ userId })
 //   db.client.from('farms').select('id').eq('owner_id', id)    (thenable: { data, error })
 //   db.tables.farms   db.requests   db.missing = true (PGRST205)   db.failNext(n) (network errors)
+//   db.noColumns = { fields: ['crop_edits'] }   a column a later migration adds isn't there yet (PGRST204)
 
 const KEYS = {
   farms: ['id'],
@@ -27,7 +28,7 @@ function parseIn(list) {
 
 export function createFakeSupabase({ userId = 'user-1' } = {}) {
   const tables = { farms: [], fields: [], field_data: [], jar_tests: [], plans: [], profiles: [{ id: userId, priorities: ['profit'], excluded_crops: [] }] };
-  const db = { tables, requests: [], missing: false, failures: 0, clock: 0 };
+  const db = { tables, requests: [], missing: false, failures: 0, clock: 0, noColumns: {} };
   db.failNext = (n = 1) => { db.failures = n; };
   const now = () => new Date(Date.UTC(2026, 10, 15, 12, 0, db.clock++)).toISOString();
 
@@ -67,6 +68,8 @@ export function createFakeSupabase({ userId = 'user-1' } = {}) {
         return { data: clone(out), error: null };
       }
       if (q.op === 'insert' || q.op === 'upsert') {
+        const gone = (db.noColumns[table] || []).find((c) => q.rows.some((r) => c in r));
+        if (gone) return { data: null, error: { code: 'PGRST204', message: `Could not find the '${gone}' column of '${table}' in the schema cache` } };
         const keys = q.onConflict ? q.onConflict.split(',') : KEYS[table];
         const out = [];
         // foreign keys (and RLS's owns_farm / owns_field, which fail the same way for a deleted farm)

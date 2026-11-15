@@ -7,6 +7,7 @@
 //   seasonChanges(cmp, 'priority')              [Map id -> 'crop'|'margin'] x 3
 //   coinPlan(cmp).countsFor('mix', choice)      Map id -> coins
 //   reelStops(cmp)                              the walk, in order
+//   rotationOrder(cmp)                          field ids in the rotation ribbon's order
 //   frostIds(cmp, 'priority', 1)                Set of ids whose wheat has a spring freeze that season
 //
 // Pure data, no DOM, so node:test runs it on a real planner result. The numbers per field and
@@ -36,15 +37,20 @@ export function mixedPlan(plans, choice) {
 
 /**
  * The parts of a season's numbers that only live in the planner's term labels:
- * N credit ($/ac), yield drag (bu/ac, negative), cover crop cost ($/ac, negative) and name,
- * ground cover (0-1) with bare and covered months, and water used, short and wanted (inches).
+ * N credit ($/ac) and its pounds of N an acre (nLb), yield drag (bu/ac, negative), cover crop
+ * cost ($/ac, negative) and name, ground cover (0-1) with bare and covered months, water used,
+ * short and wanted (inches), and the rotation diversity term (1 breaks family and pest cycles,
+ * 0 repeats a family or pest host; null when the planner doesn't say).
  */
 export function termsOf(year) {
-  const out = { nCredit: 0, drag: 0, coverCost: 0, coverName: null, groundCover: null, bareMonths: null, coverMonths: 0, water: null, waterShort: 0, waterDemand: null };
+  const out = { nCredit: 0, nLb: 0, drag: 0, coverCost: 0, coverName: null, groundCover: null, bareMonths: null, coverMonths: 0, water: null, waterShort: 0, waterDemand: null, diversity: null };
   for (const t of year?.terms || []) {
     const label = String(t.label || '');
     let m;
-    if (/^N credit from/.test(label)) out.nCredit += t.value;
+    if (/^N credit from/.test(label)) {
+      out.nCredit += t.value;
+      if ((m = /N credit from .+?\((\d+) lb N\/ac/.exec(label))) out.nLb += Number(m[1]);
+    } else if (/^Rotation diversity:/.test(label)) out.diversity = t.value;
     else if (/yield drag$/.test(label)) out.drag += t.value;
     else if ((m = /^Winter cover crop: (.+?) \(/.exec(label))) { out.coverCost += t.value; out.coverName = m[1]; }
     else if (/^Ground cover:/.test(label)) {
@@ -530,14 +536,58 @@ export function isGoodFit(cmp) {
   return sameMains && Math.abs(pickGain(cmp)) < 1000;
 }
 
+/** How many of a field's seasons on a plan grow the same main crop as the season before (the last one in its history for the first). */
+export function repeatsOf(f, kind) {
+  const seasons = f.byKind[kind].seasons;
+  return seasons.filter((s, y) => s.crop === (y > 0 ? seasons[y - 1].crop : f.history[f.history.length - 1])).length;
+}
+
+/**
+ * The fields in the rotation ribbon's order (rotationStory.orderFields): the ones the pick changes
+ * first, by how many repeats it saves against keeping going (most first, then the farm's order),
+ * and the ones it leaves as they are last.
+ */
+export function rotationOrder(cmp) {
+  const rows = (cmp?.fields ?? []).map((f, i) => {
+    if (!f.byKind) return { id: f.id, i, same: false, saved: 0 };
+    const same = f.byKind.priority.seasons.every((s, y) => sameCrops(s, f.byKind.current.seasons[y]));
+    return { id: f.id, i, same, saved: repeatsOf(f, 'current') - repeatsOf(f, 'priority') };
+  });
+  rows.sort((a, b) => (a.same - b.same) || (b.saved - a.saved) || (a.i - b.i));
+  return rows.map((r) => r.id);
+}
+
+/** The walk's nitrogen handoff: the first field (ribbon order) and season where the pick's crop gets an N credit that keeping going's doesn't. */
+export function handoffPick(cmp) {
+  for (const id of rotationOrder(cmp)) {
+    const f = fieldOf(cmp, id);
+    const p = f.byKind.priority.seasons, c = f.byKind.current.seasons;
+    const y = SEASONS.find((i) => p[i].nCredit > 0 && !(c[i].nCredit > 0));
+    if (y != null) return { id, season: y };
+  }
+  return null;
+}
+
+/**
+ * The walk's repeat: the first field (farm order) whose pick grows its last crop once more in the
+ * first season, one that turns the season after if there is one (that's the repeat the pick chose).
+ */
+export function repeatPick(cmp) {
+  const reps = cmp.fields.filter((x) => x.history?.length && x.byKind.priority.seasons[0].crop === x.history[x.history.length - 1]);
+  const f = reps.find((x) => x.byKind.priority.seasons[1]?.crop !== x.byKind.priority.seasons[0].crop) ?? reps[0];
+  return f ? { id: f.id, season: 0 } : null;
+}
+
 /**
  * Manami's walk through the plans, in order: { id, view, season, fieldId?, camera, marksBase,
- * growStagger }. camera is 'overview', 'field' or 'none' (stay put); marksBase is the plan the
- * change outlines are measured against (null: no outlines); growStagger the grow-in delay per field.
+ * growStagger, money }. camera is 'overview', 'field' or 'none' (stay put); marksBase is the plan the
+ * change outlines are measured against (null: no outlines); growStagger the grow-in delay per field;
+ * money whether the stop is about cash (the farm shows the coins and the cash chips while it is on).
  * The weather stops add frostLens (outline the frost fields) or dryLens, and noFocus (no gold field).
+ * Rotation first: after the flip, a nitrogen handoff and a repeat, then the money stops.
  */
 export function reelStops(cmp) {
-  const stop = (id, o = {}) => ({ id, view: 'priority', season: 0, camera: 'overview', marksBase: 'current', growStagger: 0.06, ...o });
+  const stop = (id, o = {}) => ({ id, view: 'priority', season: 0, camera: 'overview', marksBase: 'current', growStagger: 0.06, money: false, ...o });
   const weather = [];
   const fz = frostStop(cmp);
   if (fz) {
@@ -549,13 +599,17 @@ export function reelStops(cmp) {
   const out = [stop('intro', { view: 'current', marksBase: null, growStagger: 0 })];
   if (isGoodFit(cmp)) return [...out, stop('goodFit'), ...weather, stop('yourTurn', { view: 'mix' })];
   out.push(stop('flip', { growStagger: 0.12 }));
+  const hand = handoffPick(cmp);
+  if (hand) out.push(stop('handoff', { fieldId: hand.id, season: hand.season, camera: 'field' }));
+  const rep = repeatPick(cmp);
+  if (rep) out.push(stop('repeat', { fieldId: rep.id, season: rep.season, camera: 'field' }));
   const g = gainField(cmp);
-  if (g) out.push(stop('gain', { fieldId: g.id, season: firstCropChange(cmp, g.id), camera: 'field' }));
+  if (g) out.push(stop('gain', { fieldId: g.id, season: firstCropChange(cmp, g.id), camera: 'field', money: true }));
   const same = sameCropPick(cmp, g ? [g.id] : []);
-  if (same) out.push(stop('sameCrop', { fieldId: same.id, season: same.season, camera: 'field' }));
+  if (same) out.push(stop('sameCrop', { fieldId: same.id, season: same.season, camera: 'field', money: true }));
   const lose = giveUpFields(cmp)[0];
-  if (lose) out.push(stop('giveUp', { fieldId: lose.id, season: 2, camera: 'field' }));
-  if (!samePlans(cmp, 'maxProfit', 'priority')) out.push(stop('vsProfit', { view: 'maxProfit', marksBase: 'priority' }));
+  if (lose) out.push(stop('giveUp', { fieldId: lose.id, season: 2, camera: 'field', money: true }));
+  if (!samePlans(cmp, 'maxProfit', 'priority')) out.push(stop('vsProfit', { view: 'maxProfit', marksBase: 'priority', money: true }));
   out.push(stop('why', { camera: 'none', growStagger: 0 }));
   out.push(...weather);
   out.push(stop('watch', { season: watchSeason(cmp) }));

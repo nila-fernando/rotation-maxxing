@@ -1,16 +1,17 @@
 {
   "name": "rotation-maxxing-app",
   "private": true,
-  "version": "0.10.0",
+  "version": "0.11.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "build:pages": "vite build --mode pages --base=/rotation-maxxing/",
     "preview": "vite preview",
-    "test": "node --import ./test/ts-resolve.mjs --test \"src/**/*.test.js\""
+    "test": "node --import ./test/ts-resolve.mjs --test \"src/**/*.test.js\" \"server/**/*.test.js\""
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "@mapbox/vector-tile": "3.0.0",
     "@supabase/supabase-js": "2.118.0",
     "@turf/turf": "7.4.0",

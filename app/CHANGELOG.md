@@ -1,5 +1,50 @@
 # Changelog
 
+## v0.11.1 (2026-11-15)
+
+### What's new
+
+- **Edit a field's crop history.** In a field's check-up, "Edit crop history" lets you set what you
+  really grew each year from 2018 to 2025, or "Not sure" to take a year off the record. Your years
+  count over USDA's: the plans, the crops on the island, Manami's notes and Ask Manami all use them.
+  Your years get a small dot, and "Put back USDA's record" undoes it all. For now your edits last
+  until you leave the page; saving them comes with sign-in.
+
+### Fixed
+
+- After the farm tour, a field's check-up no longer loses its header (the name, acres and "Ask about
+  this field") off the top of the panel.
+
+## v0.11.0 (2026-11-15)
+
+### What's new
+
+- **Ask Manami.** Tap "Ask me" by Manami (or "Ask about this field" in a check-up) and ask anything
+  about your farm, your fields or the plans. She looks at your real field data before she answers.
+  It runs on Anthropic's Claude (Sonnet 5.5), through a small server, so no key is ever in the website.
+- **The jar test reads your photo with AI.** Pick a photo of your settled jar and Manami reads the
+  layers with Claude's vision. If she can't read it, or AI is off, the app reads it on your device
+  as before. The app tells you before a photo leaves your device, and photos are never stored.
+- **Plans, rotation first.** "Plan my next seasons" now leads with the rotation, why it's good for
+  the soil, then the money. Each field shows its next three seasons as a simple strip, and every
+  crop icon shows its name when you point at it or tap it.
+- **When to sow.** A new tab gives the best sowing and harvest windows for each crop, from USDA's
+  usual planting and harvest dates and its crop progress reports, with each source named.
+- **The real weather on your farm.** The island now shows the weather at your farm right now:
+  rain, snow, fog, storms, clouds and wind, on top of the season and the time of day. It checks
+  again every 20 minutes, and when you're offline the farm just has a fair day. The time-of-day
+  popover has a Weather row if you want to try another look.
+- **Sea life round the island.** An orca, a pod of dolphins and little schools of fish swim round
+  the island, out of the way of the sheep when they go for a swim. Now and then, and sooner
+  on World Whale Day, a whale comes up for a moment. It's rare, so keep an eye on the sea.
+- **A lighthouse.** A striped lighthouse stands on the island's highest point, and at night its
+  lamp glows and a soft beam sweeps slowly round. The windmill moves to other high ground nearby,
+  and every festival dresses the lighthouse too.
+- **More crops.** Cotton, sunflowers, canola, rye, dry beans, spring wheat, potatoes, sugar beets,
+  peanuts, rice, vegetables, strawberries, berries, grapes, orchards, sugarcane and tobacco now
+  grow on the island as themselves, with their own icons and names. Cotton bursts white and rice
+  paddies drain as they ripen.
+
 ## v0.10.0 (2026-11-15)
 
 The first release on the web: https://nila-fernando.github.io/rotation-maxxing/

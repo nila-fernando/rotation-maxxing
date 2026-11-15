@@ -33,6 +33,7 @@ function fakeView() {
     { key: 'farmhouse', x: -1.6, z: 0.6, r: 0.75, ry: 0.3, scale: 0.75, height: 1.2, y: 0.6 },
     { key: 'machineShed', x: 1.8, z: 0.4, r: 0.8, ry: -0.3, scale: 0.75, height: 1.0, y: 0.6 },
     { key: 'windmill', x: 0.4, z: -5.2, r: 0.5, ry: 0, scale: 0.75, height: 2.6, y: 1.6 },
+    { key: 'lighthouse', x: -2.2, z: -5.6, r: 0.5, ry: 0.2, scale: 0.75, height: 2.72, y: 1.9 },
     { key: 'silo', x: 1.0, z: -1.4, r: 0.45, ry: 0, scale: 0.75, height: 1.8, y: 0.6 },
     { key: 'tree', x: -5.6, z: 0.2, r: 0.34, ry: 0, scale: 0.75, height: 1.6, y: 0.6 },
     { key: 'pine', x: 5.5, z: 0.4, r: 0.3, ry: 0, scale: 0.75, height: 1.8, y: 0.6 },

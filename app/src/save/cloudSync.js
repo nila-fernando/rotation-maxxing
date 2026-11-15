@@ -28,6 +28,9 @@ export class CloudError extends Error {
   }
 }
 
+/** "That column isn't in the table": the crop_edits column (a later migration) may not be added yet. */
+const isMissingColumn = (e, col) => (e?.code === 'PGRST204' || e?.code === '42703') && String(e?.message || '').includes(col);
+
 const must = (res) => {
   if (res?.error) throw new CloudError(res.error);
   return res?.data ?? [];
@@ -39,6 +42,7 @@ const inList = (vals) => `(${vals.map((v) => `"${String(v).replace(/\\/g, '\\\\'
  */
 export function createCloud(client) {
   const from = (t) => client.from(t);
+  let noCropEdits = false; // the fields table has no crop_edits column (yet): send fields without it
 
   /** Whether the tables are there (a cheap read; RLS returns nothing to others). */
   async function probe() {
@@ -115,11 +119,26 @@ export function createCloud(client) {
 
     // its fields (the farm_id + app_key pair is unique, so a field is updated, never doubled)
     const irrigated = irrigatedOf(snap);
-    const rows = snap.fields.map((f) => fieldRow(f, { farmId, irrigated: irrigated.has(f.id) }));
+    const rows = snap.fields.map((f) => {
+      const r = fieldRow(f, { farmId, irrigated: irrigated.has(f.id) });
+      if (noCropEdits) delete r.crop_edits;
+      return r;
+    });
     const ids = memo.get('fieldIds') || new Map();
     const changed = rows.filter((r) => !ids.has(r.app_key) || memo.get(`field:${r.app_key}`) !== stableJson(r));
     if (changed.length) {
-      const back = must(await from('fields').upsert(changed, { onConflict: 'farm_id,app_key' }).select('id,app_key'));
+      let back;
+      try {
+        back = must(await from('fields').upsert(changed, { onConflict: 'farm_id,app_key' }).select('id,app_key'));
+      } catch (e) {
+        if (noCropEdits || !isMissingColumn(e, 'crop_edits')) throw e;
+        // the database hasn't had the crop_edits migration yet: the farmer's crops still go up (in
+        // crops), only which years were theirs is left on this device
+        console.warn('fields.crop_edits is missing: run supabase/migrations/20261116000000_field_crop_edits.sql');
+        noCropEdits = true;
+        for (const r of changed) delete r.crop_edits;
+        back = must(await from('fields').upsert(changed, { onConflict: 'farm_id,app_key' }).select('id,app_key'));
+      }
       for (const b of back) ids.set(b.app_key, b.id);
       for (const r of changed) memo.set(`field:${r.app_key}`, stableJson(r));
       memo.set('fieldIds', ids);

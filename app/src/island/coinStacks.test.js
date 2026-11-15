@@ -200,6 +200,29 @@ describe('coin stacks', () => {
     assert.equal(coins.mesh.count, 24);
   });
 
+  it('hides and shows every stack without moving a coin or a column ("Show the money")', () => {
+    const view = fakeView();
+    const coins = createCoinStacks(view, { reduced: () => true });
+    coins.place();
+    coins.set(COUNTS, BASE);
+    const top = coins.columnTop;
+    const counts = ['f0', 'f1', 'f2'].map(coins.countOf);
+    assert.equal(coins.visible, true);
+    coins.setVisible(false);
+    assert.equal(coins.visible, false);
+    assert.equal(coins.mesh.visible, false);
+    assert.equal(coins.mesh.parent, view.island, 'still built');
+    coins.set({ f0: 1 }, BASE); // counts still follow while hidden
+    assert.equal(coins.countOf('f0'), 1);
+    assert.equal(coins.columnTop, top, 'the camera floor counts the columns either way');
+    coins.set(COUNTS, BASE);
+    coins.setVisible(true);
+    assert.equal(coins.mesh.visible, true);
+    assert.deepEqual(['f0', 'f1', 'f2'].map(coins.countOf), counts);
+    coins.dispose();
+    coins.setVisible(true); // (after dispose: nothing)
+  });
+
   it('clamps counts to 0..12', () => {
     const view = fakeView();
     const coins = createCoinStacks(view, { reduced: () => true });

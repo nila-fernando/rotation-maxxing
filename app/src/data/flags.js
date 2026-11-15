@@ -5,7 +5,7 @@
 //   statusFor(flags)        'green' | 'amber' | 'red'   (the hub's status dot)
 //   shownFlags(flags)       the 1–2 Manami says out loud, most field-specific first
 
-import { cropKeyFor } from '../island/crops.js';
+import { CROP_STYLE, cropKeyFor } from '../island/crops.js';
 
 export const FLAG_CONFIG = {
   /** Same crop this many years in a row (anywhere in the history) → a rotation flag. */
@@ -13,7 +13,7 @@ export const FLAG_CONFIG = {
   /** No legume in this many years → a nitrogen flag (only when the history covers that many years). */
   legumeYears: 8,
   /** Crop keys that count as legumes, plus a name pattern for crops without their own key. */
-  legumeKeys: ['soybeans', 'alfalfa'],
+  legumeKeys: ['soybeans', 'alfalfa', 'drybeans', 'peanuts'],
   legumeNames: /(soy|\bbeans?\b|\bpeas?\b|\blentils?\b|\bclover\b|\bvetch\b|\balfalfa\b|\bchickpeas?\b|\bpeanuts?\b)/i,
   /**
    * Years that aren't a crop (grass, idle ground, built-up land, water, woods): left out of the
@@ -27,7 +27,7 @@ export const FLAG_CONFIG = {
   /** Average slope above this (%) and a row crop last year → an erosion flag. */
   steepSlopePct: 6,
   /** Crop keys that count as row crops, plus a name pattern for ones without a key. */
-  rowCropKeys: ['corn', 'soybeans', 'sorghum'],
+  rowCropKeys: ['corn', 'soybeans', 'sorghum', 'cotton', 'sunflower', 'drybeans', 'potatoes', 'sugarbeets', 'peanuts', 'tobacco'],
   rowCropNames: /\b(cotton|sunflowers?|sugarbeets?|potatoes|dry beans|peanuts?|tobacco)\b/i,
   /** Erosion risk label: under lowBelowPct low, up to highAbovePct medium, above that high. */
   erosion: { lowBelowPct: 2, highAbovePct: 6 },
@@ -64,7 +64,7 @@ const isRowCrop = (c, cfg) => cfg.rowCropKeys.includes(cropKeyFor(c)) || cfg.row
 export const isCrop = (c, cfg = FLAG_CONFIG) => !cfg.notCropKeys.includes(cropKeyFor(c)) && !cfg.notCropNames.test(String(c));
 const cropLabel = (c) => {
   const key = cropKeyFor(c);
-  const name = key === 'other' ? String(c) : key;
+  const name = key === 'other' ? String(c) : CROP_STYLE[key]?.label || key;
   return name.charAt(0).toUpperCase() + name.slice(1);
 };
 
