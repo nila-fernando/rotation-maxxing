@@ -578,6 +578,13 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
     row.querySelector('.rib__open')?.focus({ preventScroll: true });
   }
 
+  /** Shows a tab without taking the focus (the tour): drawn now if the plans are in, else when they arrive. */
+  function showView(v) {
+    if (!TABS.some((t) => t.view === v) || view === v) return;
+    view = v;
+    if (data && !root.hidden) render();
+  }
+
   /** Switches tab (and focuses the new one). */
   function goTo(v) {
     if (!v) return;
@@ -661,5 +668,5 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
   /** Saves a plan picked elsewhere (the plans on the island), the same way "Use this plan" does. */
   const saveChosen = (plan, info) => onSave?.(plan, info);
 
-  return { open, openBuild, close, saveBuilt, saveChosen, ensureData, getChoice, setChoice, showField, get isOpen() { return !root.hidden; }, get data() { return data; } };
+  return { open, openBuild, close, saveBuilt, saveChosen, ensureData, getChoice, setChoice, showField, showView, get isOpen() { return !root.hidden; }, get data() { return data; } };
 }

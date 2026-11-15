@@ -1452,6 +1452,8 @@ export function createPlanFutures({ hub, timeTravel, manami, getData, getCurrent
     start,
     stop,
     insets,
+    /** Puts the open field card away (the tour, moving on from it). */
+    closeCard: () => { if (active) closeCard({ restore: false }); },
     get active() { return active; },
     /** For debugging in the console: the state of the mode. */
     get state() { return { view, season, choice: { ...choice }, cardId, notesOpen, frostLens, peek, reel: reel ? reel.stops[reel.i]?.id : null, limits, mixScore: mixScore?.expectedGM ?? null }; },
