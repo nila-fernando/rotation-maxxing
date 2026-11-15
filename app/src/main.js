@@ -44,6 +44,10 @@ import { createManami } from './ui/manami.js';
 import { createWalkthrough } from './ui/walkthrough.js';
 import { createAskManami } from './screens/askManami.js';
 import { aiEndpoint } from './ai/runner.js';
+import { adviceFailLine, adviceRoutes, askAdvice, fieldBody, planBody } from './ai/advice.js';
+import { fieldDetail } from './ai/context.js';
+import { createPlanTake } from './screens/planTake.js';
+import { createConversationStore } from './save/conversations.js';
 import { createFarmSpins } from './ui/rotateManami.js';
 import { createSearchBox } from './ui/searchBox.js';
 import { installCropTips } from './ui/cropTip.js';
@@ -251,7 +255,29 @@ function paintStatuses() {
   for (const f of app.fields) hub.setStatus(f.id, reportFor(f.id)?.status || 'unknown');
 }
 
+// Manami's AI helpers (server/ai): Ask Manami, her take on the plans and her read on a field. They
+// all read the farm through this one host. Without an AI server (GitHub Pages, no key) they hide.
+const AI_ENDPOINT = aiEndpoint(import.meta.env.VITE_AI_ENDPOINT, import.meta.env.BASE_URL);
+const aiHost = {
+  fields: () => app.fields,
+  report: (id) => reportFor(id),
+  profile: () => app.farmProfile,
+  place: () => app.farm,
+  plansData: () => plansPanel.data,
+  savedPlan: () => (app.plan ? { source: app.plan.source === 'ai' ? 'ai' : app.plan.choice ? 'pick' : 'built', startYear: app.plan.startYear } : null),
+  today: () => today(),
+};
+const fieldRead = {
+  available: () => adviceRoutes(AI_ENDPOINT).then((r) => r.has('field')),
+  sig: (r) => JSON.stringify(fieldDetail(r)),
+  ask: async (r) => {
+    const res = await askAdvice(AI_ENDPOINT, 'field', fieldBody(aiHost, r));
+    return res.read ? res : { line: adviceFailLine(res.error) };
+  },
+};
+
 const fieldPanel = createFieldPanel({
+  fieldRead,
   onRename: (id, name) => {
     const f = app.fields.find((x) => x.id === id);
     if (!f) return name;
@@ -309,6 +335,7 @@ const plansPanel = createPlansPanel({
   today: () => today(),
   getSaved: () => app.plan?.plan || null, // "Build your own" starts from the plan saved last
   evaluateMix,
+  aiTake: createPlanTake({ endpoint: AI_ENDPOINT, buildBody: () => planBody(aiHost), evaluate: evaluateMix }),
   onOpen: () => {
     jarPanel.close({ restore: false }); // (the jar test, if it was open over the farm)
     openSeq++; // a "See them on the farm" still loading stays shut
@@ -742,17 +769,16 @@ let seaLife = null;
 // the island's ambient sound, and its switch on the top bar (src/audio/)
 // "Ask Manami": questions about the farm, answered by Claude through the app's own server (server/ai).
 // Her tools read the farm here; without the server (GitHub Pages, or no key) she says so plainly.
+// signed in, her conversations are kept in the account (one thread per farm, reopened next time)
+const conversations = createConversationStore({
+  getClient: () => auth.client(),
+  getUser: () => auth.user,
+  getFarmId: () => (saveCtx && auth.user ? local.get(saveCtx.id)?.cloud?.[auth.user.id]?.id ?? null : null),
+});
 const askManami = createAskManami({
-  endpoint: aiEndpoint(import.meta.env.VITE_AI_ENDPOINT, import.meta.env.BASE_URL),
-  host: {
-    fields: () => app.fields,
-    report: (id) => reportFor(id),
-    profile: () => app.farmProfile,
-    place: () => app.farm,
-    plansData: () => plansPanel.data,
-    savedPlan: () => (app.plan ? { source: app.plan.choice ? 'pick' : 'built', startYear: app.plan.startYear } : null),
-    today: () => today(),
-  },
+  endpoint: AI_ENDPOINT,
+  host: aiHost,
+  conversations: { latest: () => conversations.latest(), save: (m, o) => conversations.save(m, o), startNew: () => conversations.startNew(), forget: () => conversations.forget() },
   onOpen: () => syncManami(),
   onClose: () => syncManami(),
 });
@@ -931,6 +957,7 @@ function openSaved(snap) {
   journeyStarted = true;
   introDone = true;
   saveCtx = { id: snap.id };
+  askManami.resetSaved(); // her last conversation about this farm, not the one on screen before
   local.setCurrent(snap.id);
   app.plan = snap.plan || null;
   restoring = true;
@@ -1044,7 +1071,7 @@ authReady.then(({ user, linkError }) => {
       : 'That sign-in link didn’t work. Pop your email in again and I’ll send a new one.');
   }
 });
-auth.onChange((user) => { sync.setUser(user); account.refresh(); });
+auth.onChange((user) => { sync.setUser(user); account.refresh(); askManami.resetSaved(); });
 
 /** "Welcome back! Open West Farm?" for the farm saved last (or, signed in, the newest in the account). */
 function offerSaved(snapOrRow, { signedIn = false } = {}) {

@@ -136,6 +136,8 @@ export function createSession({ endpoint, getContext, tools, fetchImpl = (...a) 
   return {
     ask,
     reset() { history = []; pending = []; },
+    /** Carries on a conversation kept earlier (src/save/conversations.js). */
+    restore(h) { if (Array.isArray(h)) { history = [...h]; pending = []; } },
     get history() { return history; },
     get busy() { return !!busy; },
   };

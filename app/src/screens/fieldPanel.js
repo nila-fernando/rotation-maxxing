@@ -21,6 +21,10 @@
 //   panel.jarNote(id, text)   a short line under the jar strip (said to screen readers too)
 //   panel.close()
 //   panel.insets()         { right, bottom }: how much of the screen it covers (for the camera)
+//
+// With `fieldRead` ({ available(), sig(report), ask(report) }, src/ai/advice.js) and a server that has
+// the 'field' route, "Manami says" ends with a "Manami's read" button: Claude's short read on the
+// field from its own data, asked for only when pressed (and kept until the field's data changes).
 import { formatAcres } from '../fields/geometry.js';
 import { SOURCES } from '../data/fieldReport.js';
 import { cropBadge, hideCropTip, installCropTips } from '../ui/cropTip.js';
@@ -169,6 +173,8 @@ export function ndviCurve(ndvi) {
  * @param {() => void} o.onClose
  */
 // a speech bubble, for "Ask about this field"
+// an open book with a small spark: Manami reading the field's data
+const READ_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5c3-1.2 6-1.2 9 .5v12c-3-1.7-6-1.7-9-.5z" fill="currentColor" fill-opacity=".2"/><path d="M12 7c2-1.1 4-1.5 6-1.2M12 19c2.5-1.4 5.5-1.6 9-.5V12M19.5 2.5v4M17.5 4.5h4"/></svg>';
 const ASK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h16v10H10l-4.5 3.5V15.5H4z" fill="currentColor" fill-opacity=".2"/><path d="M8.5 10.5h.01M12 10.5h.01M15.5 10.5h.01"/></svg>';
 
 // a pencil, for "Edit" on the crop history
@@ -199,7 +205,30 @@ export function historyEdits(history, draft) {
   return out;
 }
 
-export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onCrops, onClose }) {
+/** "Manami's read" in the check-up, for a state (pure, for the tests). */
+export function readHtml(st) {
+  const btn = (label) => `<button class="btn btn--quiet btn--small ck-read__ask" type="button" data-read>${READ_ICON}<span>${label}</span></button>`;
+  if (!st || st.status === 'idle') return `${st?.stale ? '<p class="ck-read__note">This field changed since my last read.</p>' : ''}${btn('Manami’s read')}`;
+  if (st.status === 'loading') return '<p class="ck-read__wait" role="status"><span class="plans__spinner" aria-hidden="true"></span>Reading this field’s data…</p>';
+  if (st.status === 'error') return `<p class="ck-read__note">${esc(st.line)}</p>${btn('Try again')}`;
+  const r = st.read;
+  const list = (items, cls) => (items.length ? `<ul class="says__list ck-read__list ${cls}">${items.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '');
+  // her first two sentences up front; the rest of the summary and the lists fold out under "More"
+  const parts = String(r.summary || '').trim().split(/(?<=[.!?])\s+/);
+  const lead = parts.slice(0, 2).join(' ');
+  const rest = parts.slice(2).join(' ');
+  const more = [
+    rest ? `<p>${esc(rest)}</p>` : '',
+    r.good.length ? `<p class="ck-read__sub">Going well</p>${list(r.good, 'ck-read__list--good')}` : '',
+    r.watch.length ? `<p class="ck-read__sub">Keep an eye on</p>${list(r.watch, 'ck-read__list--watch')}` : '',
+  ].join('');
+  return `<div class="ck-read__box"><p class="ck-read__h">${READ_ICON}Manami’s read</p><p class="ck-read__lead">${esc(lead)}</p>
+    ${r.next_step ? `<p class="ck-read__next"><b>Next:</b> ${esc(r.next_step)}</p>` : ''}
+    ${more ? `<details class="ck-read__more"><summary>More from Manami</summary>${more}</details>` : ''}
+    <p class="ck-read__note">From Claude, an AI, reading this field’s data. It can be wrong.</p></div>`;
+}
+
+export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onCrops, onClose, fieldRead = null }) {
   const root = document.getElementById('checkup');
   const head = document.getElementById('checkupHead');
   const body = document.getElementById('checkupBody');
@@ -210,6 +239,30 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onCrops,
   let jarSaid = null; // { id, text }: the jar strip's last line (kept through a redraw)
   let histEdit = null; // { id, draft: { year: cropKey | '' } }: the crop history being edited
   let histSaid = null; // { id, text }: the crop history's last line (kept through a redraw)
+  let readOn = false; // the server reads fields (asked once)
+  const reads = new Map(); // field id -> { status, sig, read?, line? }: Manami's read, kept per field
+  fieldRead?.available().then((on) => { readOn = !!on; if (report) drawRead(); }).catch(() => {});
+  const readState = (r) => {
+    const st = reads.get(r.id);
+    if (st && st.status !== 'loading' && st.sig !== fieldRead.sig(r)) return { status: 'idle', stale: st.status === 'done' };
+    return st || { status: 'idle' };
+  };
+  function drawRead() {
+    const el = body.querySelector('[data-read-host]');
+    if (!el || !report) return;
+    el.hidden = !readOn;
+    el.innerHTML = readOn ? readHtml(readState(report)) : '';
+  }
+  async function askRead() {
+    const r = report;
+    const sig = fieldRead.sig(r);
+    reads.set(r.id, { status: 'loading', sig });
+    drawRead();
+    const res = await fieldRead.ask(r);
+    if (reads.get(r.id)?.sig !== sig) return;
+    reads.set(r.id, res.read ? { status: 'done', sig, read: res.read } : { status: 'error', sig, line: res.line || 'I couldn’t read this field just now.' });
+    if (report?.id === r.id) { drawRead(); body.querySelector('[data-read-host] .ck-read__box, [data-read]')?.focus?.({ preventScroll: true }); }
+  }
 
   closeBtn.addEventListener('click', () => onClose?.());
   // "Ask about this field": Ask Manami, about this field (the header is redrawn, so the click is caught here)
@@ -223,6 +276,7 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onCrops,
     if (b && report) onJar?.(report.id, b.dataset.jar);
     const h = e.target.closest?.('[data-hist]');
     if (h && report) histAction(h.dataset.hist);
+    if (e.target.closest?.('[data-read]') && report && fieldRead) askRead();
   });
 
   // the crop history: Edit, Save, Cancel, and putting USDA's record back
@@ -372,6 +426,7 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onCrops,
       <section class="says" aria-labelledby="ckSays">
         <h3 id="ckSays" class="says__title"><img src="${MANAMI_SVG}" alt="" width="24" height="22"> Manami says</h3>
         ${says}${more}
+        ${fieldRead ? `<div class="ck-read" data-read-host${readOn ? '' : ' hidden'}>${readOn ? readHtml(readState(r)) : ''}</div>` : ''}
       </section>
       ${section('ckHist', 'Crop history', '2018–2025', `${chip('CSB')}${r.cdlYears?.length ? ` ${chip('CDL')}` : ''}`, histBody + histNote)}
       ${section('ckSoil', 'Soil', '', r.soil ? chip('SSURGO', ph.soil) : '', soil + jarStrip(r.jar, jarSaid?.id === r.id ? jarSaid.text : ''))}

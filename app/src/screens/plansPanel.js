@@ -94,7 +94,7 @@ export function loadRotationViews() {
  * @param {() => Date} [o.today]
  * @param {() => object|null} [o.getSaved]  the plan the farmer saved last (the builder starts from it)
  */
-export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFutures, onSave, onIsland, onOpen, onClose, today = () => new Date(), getSaved = () => null }) {
+export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFutures, onSave, onIsland, onOpen, onClose, today = () => new Date(), getSaved = () => null, aiTake = null }) {
   const root = document.getElementById('plans');
   const body = document.getElementById('plansBody');
   const title = document.getElementById('plansTitle');
@@ -457,6 +457,7 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
 
     body.innerHTML = `${tabs()}<div class="plans__rot" role="tabpanel" id="plansView" aria-labelledby="plansTab-rotation">
       <div class="plans__manami"><img src="${MANAMI_SVG}" alt="" width="40" height="36"><p>${esc(said)}</p>${host('farm', 'span', 'plans__farmhost')}</div>
+      ${aiTake ? '<section class="plans__take" hidden></section>' : ''}
       ${host('switch')}
       ${host('ribbon')}
       ${host('check')}
@@ -470,6 +471,11 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
       <details class="plans__more"><summary>The planner’s own words</summary><div class="rot-raw">${own || '<p class="plans__none">Nothing to note.</p>'}</div></details>
       <div class="plans__mix plans__mix--sticky" aria-live="polite"><span id="plansMix">${mixLine()}</span>
         <button class="btn btn--primary btn--small" type="button" data-act="save">Use this plan</button></div></div>`;
+    // Manami's take (AI, server/ai/advice.js): saved as source 'ai'; hidden when the server has no 'plan' route
+    aiTake?.mount(body.querySelector('.plans__take'), {
+      data,
+      save: (plan) => { close({ restoreFocus: false }); onSave?.(plan, { source: 'ai', startYear: firstSeason(today()) }); },
+    });
     scoreMix();
   }
 
