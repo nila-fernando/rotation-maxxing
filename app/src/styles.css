@@ -1741,3 +1741,66 @@ body.jar-open .hub-tip { display: none; }
   #jar .linkish { min-height: 44px; }
   .jar-more summary { min-height: 44px; padding: 12px 0; box-sizing: border-box; }
 }
+
+/* ------------------------------------------------------------------ Ask Manami (src/screens/askManami.js) */
+.manami__ask { display: none; }
+body.is-hub .manami__ask {
+  position: absolute; z-index: 1; right: 0; bottom: 88px; display: inline-flex; align-items: center; gap: 4px;
+  height: 34px; padding: 0 10px 0 8px; border-radius: 999px; font: 600 14px/1 var(--font); white-space: nowrap;
+  color: var(--ink); background: var(--cream); border: 3px solid var(--wood); box-shadow: 0 3px 0 var(--wood-deep), 0 8px 16px rgb(0 0 0 / .3);
+}
+body.is-hub .manami__ask:hover { background: var(--paper); }
+.manami__ask svg { width: 18px; height: 18px; flex: none; }
+body.ask-open .manami { opacity: 0; pointer-events: none; }
+.checkup__ask { margin-top: 10px; height: 36px; padding: 0 14px; font-size: 14.5px; }
+.checkup__ask svg { width: 18px; height: 18px; }
+
+.ask {
+  --ask-w: min(400px, calc(100vw - 2 * var(--gutter)));
+  position: fixed; z-index: 32; left: var(--gutter); bottom: 22px; top: 76px; width: var(--ask-w);
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--cream); border: 5px solid var(--wood); border-radius: 26px;
+  box-shadow: 0 0 0 2px var(--wood-deep), 0 8px 0 -2px var(--wood-deep), 0 20px 40px rgb(60 40 80 / .28);
+  animation: ask-in .4s var(--spring) both;
+}
+.ask[hidden] { display: none; }
+@keyframes ask-in { from { opacity: 0; transform: translateY(18px) scale(.97); } }
+.ask__top { flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px; border-bottom: 2px solid #ead8c0; }
+.ask__face { flex: none; width: 40px; height: 36px; object-fit: contain; }
+.ask__heading { flex: 1; min-width: 0; }
+.ask__title { font-size: 19px; font-weight: 700; line-height: 1.2; }
+.ask__about { font-size: 13px; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask__reset { height: 34px; padding: 0 12px; font-size: 13.5px; }
+.ask__log { flex: 1; min-height: 0; overflow-y: auto; list-style: none; display: flex; flex-direction: column; gap: 10px; padding: 14px; overscroll-behavior: contain; }
+.ask__log:focus { outline: none; }
+.ask__msg { max-width: 88%; }
+.ask__msg p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15.5px; line-height: 1.42; padding: 9px 13px; border-radius: 16px; }
+.ask__msg--manami { align-self: flex-start; }
+.ask__msg--manami p { background: var(--paper); border: 2px solid #ead8c0; border-bottom-left-radius: 6px; }
+.ask__msg--me { align-self: flex-end; }
+.ask__msg--me p { background: #e3f4e7; border: 2px solid #b9dfc3; color: var(--green-ink); border-bottom-right-radius: 6px; }
+.ask__msg--note p { background: none; border: 2px dashed var(--tile-line); color: var(--ink-soft); font-size: 13.5px; }
+.ask__msg.is-typing p:empty::after { content: "…"; color: var(--ink-soft); }
+.ask__status { flex: none; min-height: 0; padding: 0 16px; font-size: 13.5px; color: var(--ink-soft); }
+.ask__status:not(:empty) { padding-bottom: 6px; }
+.ask__chips { flex: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 10px; }
+.ask__chips[hidden] { display: none; }
+.ask__chip {
+  min-height: 34px; padding: 6px 12px; border-radius: 999px; font: 500 14px/1.25 var(--font); text-align: left;
+  color: var(--ink); background: var(--tile); border: 2px solid var(--tile-line);
+}
+.ask__chip:hover:not(:disabled) { background: var(--tile-hover); }
+.ask__chip:disabled { opacity: .55; cursor: default; }
+.ask__form { flex: none; display: flex; align-items: flex-end; gap: 8px; padding: 10px 12px 12px; border-top: 2px solid #ead8c0; }
+.ask__input {
+  flex: 1; min-width: 0; min-height: 44px; max-height: 140px; resize: none; overflow-y: hidden; padding: 10px 14px; border-radius: 18px;
+  font: 400 16px/1.35 var(--font); color: var(--ink); background: #fff; border: 2px solid var(--tile-line);
+}
+.ask__input:disabled { background: var(--cream-2); }
+.ask__send { flex: none; width: 48px; padding: 0; }
+.ask__send:disabled { opacity: .5; cursor: default; }
+
+@media (max-width: 640px) {
+  .ask { --ask-w: auto; left: 8px; right: 8px; top: auto; bottom: 8px; height: min(78vh, 620px); border-radius: 22px; }
+}
+@media (prefers-reduced-motion: reduce) { .ask { animation: none; } }

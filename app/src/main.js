@@ -36,6 +36,8 @@ import { createHub } from './screens/hub.js';
 import { createReveal } from './screens/reveal.js';
 import { createTimeTravel } from './screens/timeTravel.js';
 import { createManami } from './ui/manami.js';
+import { createAskManami } from './screens/askManami.js';
+import { aiEndpoint } from './ai/runner.js';
 import { createFarmSpins } from './ui/rotateManami.js';
 import { createSearchBox } from './ui/searchBox.js';
 import { warmUpLiveOutlines } from './fields/liveOutlines.js';
@@ -132,7 +134,7 @@ const evaluateMix = (plan) => planner.evaluate({ fields: app.fields, place: app.
 /** Manami steps aside (out of sight and the tab order) while the check-up, the plans or the jar test are open. */
 function syncManami() {
   const cl = document.body.classList;
-  const away = cl.contains('checkup-open') || cl.contains('plans-open') || cl.contains('jar-open');
+  const away = cl.contains('checkup-open') || cl.contains('plans-open') || cl.contains('jar-open') || cl.contains('ask-open');
   document.getElementById('manami').inert = away;
 }
 
@@ -200,6 +202,7 @@ const fieldPanel = createFieldPanel({
     fieldPanel.update(reportFor(id));
     paintStatuses();
   },
+  onAsk: (id, opener) => askManami.open({ focus: { kind: 'field', field_id: id, name: nameOf(id) }, opener }),
   onJar: (id, mode) => {
     if (mode === 'remove') removeJar(id, { from: 'checkup' });
     else jarPanel.open({ fieldId: id, step: mode === 'open' ? 'result' : 'howto', from: 'checkup' });
@@ -539,6 +542,33 @@ const reveal = createReveal({
 
 let farmSpins = null;
 // the island's ambient sound, and its switch on the top bar (src/audio/)
+// "Ask Manami": questions about the farm, answered by Claude through the app's own server (server/ai).
+// Her tools read the farm here; without the server (GitHub Pages, or no key) she says so plainly.
+const askManami = createAskManami({
+  endpoint: aiEndpoint(import.meta.env.VITE_AI_ENDPOINT, import.meta.env.BASE_URL),
+  host: {
+    fields: () => app.fields,
+    report: (id) => reportFor(id),
+    profile: () => app.farmProfile,
+    place: () => app.farm,
+    plansData: () => plansPanel.data,
+    savedPlan: () => (app.plan ? { source: app.plan.choice ? 'pick' : 'built', startYear: app.plan.startYear } : null),
+    today: () => today(),
+  },
+  onOpen: () => syncManami(),
+  onClose: () => syncManami(),
+});
+// the "Ask me" button beside her face (shown on the farm hub only)
+{
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'manami__ask';
+  b.id = 'askOpen';
+  b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h16v10H10l-4.5 3.5V15.5H4z" fill="currentColor" fill-opacity=".2"/><path d="M8.5 10.5h.01M12 10.5h.01M15.5 10.5h.01"/></svg><span>Ask me</span>';
+  b.addEventListener('click', () => askManami.open({ focus: null, opener: b }));
+  $('manami').appendChild(b);
+}
+
 const ambience = createAmbience();
 bindSoundToggle($('hubSound'), ambience);
 

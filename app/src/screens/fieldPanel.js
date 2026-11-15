@@ -167,7 +167,10 @@ export function ndviCurve(ndvi) {
  * @param {(id: string, mode: 'new'|'open'|'remove') => void} [o.onJar]   the jar strip's buttons
  * @param {() => void} o.onClose
  */
-export function createFieldPanel({ onRename, onIrrigated, onJar, onClose }) {
+// a speech bubble, for "Ask about this field"
+const ASK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h16v10H10l-4.5 3.5V15.5H4z" fill="currentColor" fill-opacity=".2"/><path d="M8.5 10.5h.01M12 10.5h.01M15.5 10.5h.01"/></svg>';
+
+export function createFieldPanel({ onRename, onIrrigated, onJar, onAsk, onClose }) {
   const root = document.getElementById('checkup');
   const head = document.getElementById('checkupHead');
   const body = document.getElementById('checkupBody');
@@ -178,6 +181,11 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onClose }) {
   let jarSaid = null; // { id, text }: the jar strip's last line (kept through a redraw)
 
   closeBtn.addEventListener('click', () => onClose?.());
+  // "Ask about this field": Ask Manami, about this field (the header is redrawn, so the click is caught here)
+  head.addEventListener('click', (e) => {
+    const b = e.target.closest?.('[data-ask]');
+    if (b && report) onAsk?.(report.id, b);
+  });
   // the jar strip's buttons (redrawn with the panel, so the click is caught here)
   body.addEventListener('click', (e) => {
     const b = e.target.closest?.('[data-jar]');
@@ -300,7 +308,7 @@ export function createFieldPanel({ onRename, onIrrigated, onJar, onClose }) {
           <span class="switch__track" aria-hidden="true"><span class="switch__knob"></span></span>
           Irrigated
         </label>
-      </div>`;
+      </div>${onAsk ? `<button class="btn btn--quiet btn--small checkup__ask" type="button" data-ask>${ASK_ICON}<span>Ask about this field</span></button>` : ''}`;
 
     body.innerHTML = `
       <section class="says" aria-labelledby="ckSays">
