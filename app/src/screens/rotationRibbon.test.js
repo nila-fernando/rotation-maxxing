@@ -123,7 +123,7 @@ describe('the rotation check', () => {
     assert.equal(html.match(/<li class="rot-check__row/g).length, 5);
     assert.match(html, /<h3 class="plans__h" id="rotCheckH">Rotation check<\/h3>/);
     assert.match(html, /rot-check__row--repeats is-better"><span class="rot-check__icon" aria-hidden="true"><svg/);
-    assert.match(html, /<span class="rot-check__value">2 seasons<\/span><span class="rot-check__base"><span class="sr-only">, <\/span>keeping going: 9<\/span>/);
+    assert.match(html, /<span class="rot-check__value">2 seasons <span class="rot-check__base"><span class="sr-only">, <\/span>keeping going: 9<\/span><\/span>/);
     assert.doesNotMatch(html, /\$/);
   });
   it('says "my pick" when Keep going is the one on show, and leaves a base that names itself', () => {

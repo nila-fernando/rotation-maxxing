@@ -418,8 +418,9 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
       const [cash, bad, soil, beats] = cf.tiles(cmp, kind, mixScore, choice);
       const on = kind === selected;
       return `<tr${on ? ' class="is-on"' : ''}><th scope="row">${esc(planName(kind))}${on ? '<span class="sr-only"> (on show)</span>' : ''}</th>`
-        + `<td>${cell(cash.value, money)}</td><td>${cell(bad.value, money)}</td><td>${cell(soil.value, (v) => `${v}/100`)}</td>`
-        + `<td>${kind === 'current' ? '–' : cell(beats.value, (v) => `${v}% of years`)}</td></tr>`;
+        // (data-label: a phone shows each plan as a small card, its numbers labelled one by one)
+        + `<td data-label="Cash margin, 3 seasons">${cell(cash.value, money)}</td><td data-label="In a bad year">${cell(bad.value, money)}</td><td data-label="Soil score in ${cmp.years[2]}">${cell(soil.value, (v) => `${v}/100`)}</td>`
+        + `<td data-label="Beats keeping going">${kind === 'current' ? '–' : cell(beats.value, (v) => `${v}% of years`)}</td></tr>`;
     }).join('');
     const lines = [fv.priceLine(cmp.price), fv.vsProfitLine(cmp), fv.nCarriedLine(cmp, selected, mixScore, choice)].filter(Boolean);
     return `<div class="rot-money__wrap"><table class="rot-money__table"><caption class="sr-only">Money for each plan, over 3 seasons</caption>
@@ -556,6 +557,23 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
     } catch { /* keep the line without a number */ }
   }
 
+  /**
+   * A field picked in the field list while the plans are open: its row on "Your rotation", brought
+   * into view and lit for a moment (the list stays live beside the plans for this).
+   */
+  function showField(id) {
+    if (root.hidden || !id) return;
+    if (view !== 'rotation') { view = 'rotation'; render(); }
+    const row = body.querySelector(`.rib__row[data-field="${attrSel(id)}"]`);
+    if (!row) return;
+    const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    row.scrollIntoView({ block: 'center', behavior: calm ? 'auto' : 'smooth' });
+    row.classList.remove('is-lit');
+    void row.offsetWidth; // (so the light plays again on a second pick)
+    row.classList.add('is-lit');
+    row.querySelector('.rib__open')?.focus({ preventScroll: true });
+  }
+
   /** Switches tab (and focuses the new one). */
   function goTo(v) {
     if (!v) return;
@@ -639,5 +657,5 @@ export function createPlansPanel({ planSeasons, evaluateMix, onPreview, onFuture
   /** Saves a plan picked elsewhere (the plans on the island), the same way "Use this plan" does. */
   const saveChosen = (plan, info) => onSave?.(plan, info);
 
-  return { open, openBuild, close, saveBuilt, saveChosen, ensureData, getChoice, setChoice, get isOpen() { return !root.hidden; }, get data() { return data; } };
+  return { open, openBuild, close, saveBuilt, saveChosen, ensureData, getChoice, setChoice, showField, get isOpen() { return !root.hidden; }, get data() { return data; } };
 }
