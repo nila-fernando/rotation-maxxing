@@ -25,6 +25,20 @@
   </a>
 
   <!-- your farms and signing in (src/screens/accountPanel.js); the farm saves on this device without it -->
+  <!-- farm updates: the week's weather, the climate trend, what the farm is waiting on (src/screens/updatesPanel.js) -->
+  <button class="notif-btn" id="notifBtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="notif" aria-label="Farm updates" title="Farm updates">
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6.2 10.4a5.8 5.8 0 0 1 11.6 0c0 4.6 1.8 6.2 1.8 6.2H4.4s1.8-1.6 1.8-6.2z" fill="currentColor" fill-opacity=".18"/><path d="M10 19.6a2.2 2.2 0 0 0 4 0"/></svg>
+    <span class="notif-btn__count" id="notifCount" aria-hidden="true" hidden></span>
+  </button>
+  <section class="notif" id="notif" role="dialog" aria-labelledby="notifTitle" hidden>
+    <div class="acct__top">
+      <h2 class="acct__title" id="notifTitle" tabindex="-1">Farm updates</h2>
+      <button class="checkup__close" id="notifClose" type="button" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="notif__body" id="notifBody"></div>
+  </section>
   <button class="acct-btn" id="acctBtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="acct" aria-label="Your farms and sign-in" title="Your farms and sign-in">
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.4" r="3.9" fill="currentColor" fill-opacity=".18"/><path d="M4.6 20.2c.9-3.9 3.9-6 7.4-6s6.5 2.1 7.4 6"/></svg>
     <span class="acct-btn__dot" aria-hidden="true"></span>

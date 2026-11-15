@@ -1,3 +1,4 @@
+@import './styles/updates.css';
 @import './styles/season.css';
 @import './styles/crop-tip.css';
 @import './styles/rotation.css';
@@ -1910,7 +1911,7 @@ body.is-touring .manami { opacity: 0; pointer-events: none; transform: translate
 /* ------------------------------------------------------------------ your farms and signing in (src/screens/accountPanel.js) */
 /* the round button top right: on the opening globe and on the farm's hub (not while picking fields,
    during the check-in or the reveal, nor over the plans or the jar test) */
-body.is-hub { --acct-w: 56px; }
+body.is-hub { --acct-w: 112px; } /* (the bell and your-farms: "Plan my next seasons" sits left of both) */
 .acct-btn {
   position: fixed; z-index: 27; top: 16px; right: var(--gutter); width: 46px; height: 46px; display: none; place-items: center;
   border-radius: 50%; background: var(--cream); color: var(--ink); border: 3px solid var(--wood);
@@ -1988,7 +1989,7 @@ body.isle-planning .acct-btn { display: none; }
 .acct .btn:focus-visible, .acct-farm__del:focus-visible, .acct .linkish:focus-visible, .acct .checkup__close:focus-visible { outline: 3px solid var(--green-dark); outline-offset: 2px; box-shadow: none; }
 
 @media (max-width: 900px) and (min-height: 521px) {
-  body.is-hub { --acct-w: 50px; }
+  body.is-hub { --acct-w: 100px; }
   body.is-hub .acct-btn { top: 12px; width: 40px; height: 40px; }
   body.is-hub .acct { top: 62px; }
 }
