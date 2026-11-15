@@ -36,6 +36,14 @@ describe('the jar test in the field check-up', () => {
     assert.equal(r.jar.mapTexture, null);
     assert.equal(r.jar.sameAsMap, false);
   });
+  it('says honestly whether the jar is planned with: only on top of a soil survey, and only a usable jar', () => {
+    assert.equal(fieldReportFor({ ...appField('f2'), jar: JAR }).jar.planned, true);
+    const noSurvey = buildFieldReport({ id: 'field-9', name: 'Field 9', acres: 40, jar: { ...JAR, fieldId: 'field-9' } });
+    assert.equal(noSurvey.jar.noSurvey, true);
+    assert.equal(noSurvey.jar.planned, false);
+    const unclear = fieldReportFor({ ...appField('f2'), jar: { ...JAR, confidence: 'low' } });
+    assert.equal(unclear.jar.planned, false);
+  });
   it('the soil section itself is unchanged by a jar', () => {
     const f = appField('f2');
     assert.deepEqual(fieldReportFor({ ...f, jar: JAR }).soil, fieldReportFor(f).soil);

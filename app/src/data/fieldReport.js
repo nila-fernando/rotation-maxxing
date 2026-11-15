@@ -19,7 +19,7 @@ import { CROP_STYLE, cropKeyFor } from '../island/crops.js';
 import { findFieldBySourceId, getField } from './farmData.js';
 import { FLAG_CONFIG, erosionRisk, flagsFor, shownFlags, statusFor } from './flags.js';
 import { mapTexture } from '../vendor/rotation-maxxing/data/ssurgo.ts';
-import { textureBucket } from '../plan/farmInput.js';
+import { textureBucket, usableJar } from '../plan/farmInput.js';
 import { cdlAvailable } from './cdlHistory.js';
 
 /** The 8 CSB years shown in the crop history. */
@@ -93,7 +93,10 @@ export function buildFieldReport(field, { demo = null, weather = null, profile =
   const irrigated = !!profile?.irrigatedFieldIds?.includes(field.id);
   const jar = field.jar
     ? { ...field.jar, mapTexture: soil?.texture ?? null,
-        sameAsMap: soil?.texture ? textureBucket(soil.texture) === mapTexture(field.jar.sandPct, field.jar.clayPct) : false }
+        sameAsMap: soil?.texture ? textureBucket(soil.texture) === mapTexture(field.jar.sandPct, field.jar.clayPct) : false,
+        // the planner uses a jar's texture only on top of the field's soil survey (no stand-in soil)
+        planned: !!field.soil?.land && usableJar(field.jar),
+        noSurvey: !field.soil?.land }
     : null;
   return {
     id: field.id,
