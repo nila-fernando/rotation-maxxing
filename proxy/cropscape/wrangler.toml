@@ -1,0 +1,9 @@
+# Cloudflare Worker: CORS proxy for USDA CropScape (see README.md)
+name = "cropscape-proxy"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+# Extra origins allowed to use the proxy, comma separated (exact match), on top of the
+# ones listed in worker.js, e.g. a custom domain for the app.
+[vars]
+EXTRA_ORIGINS = ""
