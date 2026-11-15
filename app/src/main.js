@@ -70,6 +70,8 @@ import { farmWeather } from './island/weatherState.js';
 import { startWeatherFeed } from './services/weatherFeed.js';
 import { assessmentLines, cleanReports, seasonsDue, seasonsOpen } from './plan/seasons.js';
 import { createSeasonCheckin } from './screens/seasonCheckin.js';
+import { createUpdatesPanel } from './screens/updatesPanel.js';
+import { buildUpdates, fetchForecast } from './notify/updates.js';
 
 const $ = (id) => document.getElementById(id);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -599,6 +601,7 @@ async function saveSeason(report) {
   for (const [id, r] of Object.entries(report.fields)) if (r.crop) setCrops(id, { [report.season]: r.crop });
   persist();
   syncSeasonButton();
+  updatesPanel.refresh(); // (the check-in is no longer due)
   const out = await planSeasons();
   const entry = out.learned?.log?.find((e) => e.season === report.season);
   const events = Object.fromEntries(Object.entries(report.fields).map(([id, f]) => [id, f.events]));
@@ -617,6 +620,26 @@ function syncSeasonButton() {
   $('hubSeasonText').textContent = due.length ? `How did ${due[due.length - 1]} go?` : `Your ${open[open.length - 1]} season`;
 }
 $('hubSeason').addEventListener('click', () => seasonPanel.open());
+
+// ---------------------------------------------------------------- farm updates (the bell)
+// The week's weather at the farm (Open-Meteo), the rain trend (NASA POWER), and the season check-in
+// when it's due (src/notify/updates.js). The forecast is asked for once per farm per hour.
+let forecastFor = { key: null, at: 0, job: null };
+function farmForecast() {
+  const p = app.farm;
+  if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lon)) return Promise.resolve(null);
+  const key = `${p.lat.toFixed(2)},${p.lon.toFixed(2)}`;
+  if (forecastFor.key !== key || Date.now() - forecastFor.at > 3600e3) {
+    forecastFor = { key, at: Date.now(), job: fetchForecast({ lat: p.lat, lon: p.lon }) };
+    forecastFor.job.then((f) => { if (!f) forecastFor.at = 0; }); // (try again next time)
+  }
+  return forecastFor.job;
+}
+let updatesPanel = null;
+updatesPanel = createUpdatesPanel({
+  getUpdates: async () => buildUpdates({ today: today(), forecast: await farmForecast(), fields: app.fields, seasonsDue: seasonsDue(today(), app.fields, app.seasons) }),
+  onAction: (act) => { if (act === 'season') seasonPanel.open(); else if (act === 'plans') plansPanel.open(); },
+});
 
 /** Once per visit, when a season is due and nothing else is going on, Manami asks how it went. */
 const seasonAsked = new Set();
@@ -858,6 +881,7 @@ const reveal = createReveal({
       if (app.island === island && !busy) tour.maybeAutoStart();
     }, TOUR_AFTER_MS);
     syncSeasonButton();
+    updatesPanel.refresh();
     setTimeout(() => { if (app.island === island) offerSeason(); }, TOUR_AFTER_MS + 2600);
     // dev shortcut: ?hub=5&futures=1 opens the plans on the island with Manami's walk, &futures=explore without
     if (import.meta.env.DEV && params.has('futures') && !app.futuresShown) {
@@ -1116,11 +1140,12 @@ const SHEETS = ['checkup-open', 'ask-open'];
 let surfacesWere = new Set();
 function syncSurfaces() {
   const cl = document.body.classList;
-  const now = new Set([...WORKSPACES, ...SHEETS, 'acct-open'].filter((c) => cl.contains(c)));
+  const now = new Set([...WORKSPACES, ...SHEETS, 'acct-open', 'notif-open'].filter((c) => cl.contains(c)));
   const opened = [...now].filter((c) => !surfacesWere.has(c));
   surfacesWere = now;
   if (opened.length) timeTravel.closeDay();
   if (opened.some((c) => c !== 'acct-open') && account?.isOpen) account.close({ restoreFocus: false });
+  if (opened.some((c) => c !== 'notif-open') && updatesPanel?.isOpen) updatesPanel.close({ restoreFocus: false });
   if (opened.some((c) => WORKSPACES.includes(c)) && askManami.isOpen) askManami.close();
   const busy = cl.contains('plans-open') || cl.contains('jar-open') || cl.contains('season-open');
   const bar = $('timebar');
@@ -1140,7 +1165,11 @@ for (const type of ['click', 'keydown']) {
   }, true);
 }
 // the time-of-day popover has no class on <body>: watch it, so the two popovers never show together
-new MutationObserver(() => { if (!$('dayPop').hidden && account?.isOpen) account.close({ restoreFocus: false }); })
+new MutationObserver(() => {
+  if ($('dayPop').hidden) return;
+  if (account?.isOpen) account.close({ restoreFocus: false });
+  if (updatesPanel?.isOpen) updatesPanel.close({ restoreFocus: false });
+})
   .observe($('dayPop'), { attributes: true, attributeFilter: ['hidden'] });
 
 account = createAccountPanel({
