@@ -227,6 +227,9 @@
       <div class="fut-seasons" id="futSeasons" role="radiogroup" aria-label="Season"></div>
       <div class="fut-score" id="futScore"></div>
       <button class="fut-more btn btn--quiet btn--small" id="futMore" type="button" aria-expanded="false" aria-controls="futScore">More</button>
+      <button class="btn btn--quiet btn--small fut-money" id="futMoney" type="button" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.6 9.4c-.5-.9-1.5-1.4-2.6-1.4-1.5 0-2.6.8-2.6 1.9 0 1.2 1.1 1.7 2.7 2s2.8.9 2.8 2.1-1.2 2-2.8 2c-1.3 0-2.4-.6-2.8-1.5M12 6.4V8M12 16v1.6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Show the money</span>
+      </button>
     </div>
     <div class="fut-dock__row fut-dock__row--foot">
       <p class="fut-caption" id="futCaption"></p>
@@ -248,11 +251,11 @@
     </div>
     <p class="sr-only" id="futStatus" role="status" aria-live="polite"></p>
   </section>
-  <aside class="fut-card" id="futCard" aria-labelledby="futCardTitle" hidden></aside>
+  <aside class="fut-card" id="futCard" aria-labelledby="futCardTitle" data-tip-bounds hidden></aside>
   <section class="fut-notes" id="futNotes" role="dialog" aria-modal="false" aria-labelledby="futNotesTitle" hidden></section>
 
   <!-- Part 4 · "Plan my next seasons": the planner's three plans (src/screens/plansPanel.js) -->
-  <section class="plans" id="plans" role="dialog" aria-labelledby="plansTitle" hidden>
+  <section class="plans" id="plans" role="dialog" aria-labelledby="plansTitle" data-tip-bounds hidden>
     <div class="plans__top">
       <div>
         <p class="plans__kicker">Plan my next seasons</p>
@@ -281,7 +284,7 @@
   </section>
 
   <!-- Part 3.5 · the field check-up panel (src/screens/fieldPanel.js) -->
-  <aside class="checkup" id="checkup" aria-labelledby="checkupTitle" hidden>
+  <aside class="checkup" id="checkup" aria-labelledby="checkupTitle" data-tip-bounds hidden>
     <div class="checkup__top">
       <div class="checkup__head" id="checkupHead"></div>
       <button class="checkup__close" id="checkupClose" type="button" aria-label="Close the field check-up">

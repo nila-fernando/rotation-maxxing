@@ -43,6 +43,7 @@ import { createAskManami } from './screens/askManami.js';
 import { aiEndpoint } from './ai/runner.js';
 import { createFarmSpins } from './ui/rotateManami.js';
 import { createSearchBox } from './ui/searchBox.js';
+import { installCropTips } from './ui/cropTip.js';
 import { warmUpLiveOutlines } from './fields/liveOutlines.js';
 import { createAmbience } from './audio/ambience.js';
 import { sceneOf } from './audio/mix.js';
@@ -54,6 +55,10 @@ import { startWeatherFeed } from './services/weatherFeed.js';
 const $ = (id) => document.getElementById(id);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const params = new URLSearchParams(location.search);
+
+// The one crop-name tooltip for every crop icon (hover, focus, touch). It goes in first, so its
+// window-capture Esc runs before the panels' own Esc handlers: the first Esc closes only the tip.
+installCropTips();
 
 /** What the app knows so far; later steps add fields, answers and satellite data. */
 const app = { farm: null, fields: [], farmProfile: null };

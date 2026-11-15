@@ -11,6 +11,7 @@ import { mapTexture } from '../vendor/rotation-maxxing/data/ssurgo.ts';
 import { continueHistory } from '../vendor/rotation-maxxing/algorithm/plans.ts';
 import { cropKeyFor } from '../island/crops.js';
 import { demoRecordFor } from '../data/fieldReport.js';
+import { getFarm } from '../data/farmData.js';
 
 /**
  * App crop keys (src/island/crops.js) -> planner crop ids, as the planner's own CDL mapping does
@@ -233,6 +234,10 @@ export function plannerFarm({ fields, place = null, profile = null, firstSeason 
   };
   const state = place?.demo ? 'IA' : stateOf(place);
   if (state) farm.state = state;
+  // the county (5-digit FIPS) for the crop calendar's county rows (insurance dates, frost); the demo
+  // farm's comes from its data file. The planner itself doesn't read it.
+  const fips = place?.fips ?? (place?.demo ? getFarm()?.fips : null);
+  if (fips && /^\d{5}$/.test(String(fips))) farm.fips = String(fips);
   return { farm, gaps };
 }
 

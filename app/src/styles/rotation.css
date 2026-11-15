@@ -1,0 +1,231 @@
+/* The rotation ribbon, field stories, rotation check, plan switch and money for "Plan my next
+   seasons" (src/screens/rotationRibbon.js, src/screens/plansPanel.js). Track D.
+   Imported at the top of styles.css, so selectors here carry one more class than the plain rules
+   there (".plans .plan-cell", ".story .plan-cell") where both style the same thing. */
+
+.plans {
+  --rib-old: .5;            /* the faded past seasons */
+  --rib-name-w: 168px;      /* the field column */
+  --rib-cell-w: 58px;
+  --rib-corn: #e3b23c;
+  --rib-beans: #7fb069;
+  --rib-grain: #c99a5b;
+  --rib-other: #b9a3d6;
+  --rib-nitrogen: #3f8a4f;
+  --rib-break: #3f78a8;
+  --rib-repeat: #c7792b;
+  --rib-family: #9c8a7a;
+  --rib-cover: #6f9a57;
+}
+
+/* ---- the plan switch ---- */
+.rib-switch {
+  display: flex; flex-wrap: wrap; gap: 3px; margin-top: 14px; padding: 3px; width: fit-content; max-width: 100%;
+  border-radius: 16px; background: var(--tile); box-shadow: inset 0 0 0 2px var(--tile-line);
+}
+.rib-switch__seg {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 12px; border-radius: 13px;
+  font-size: 14.5px; font-weight: 600; color: var(--ink-soft);
+}
+.rib-switch__seg:hover { color: var(--ink); background: var(--tile-hover); }
+.rib-switch__seg.is-on { background: var(--cream); color: var(--ink); box-shadow: inset 0 0 0 2px var(--green-dark), 0 2px 0 var(--green-dark); }
+.plans .rib-switch__seg:focus-visible { outline: 3px solid var(--green-dark); outline-offset: 2px; box-shadow: none; }
+.rib-switch__icon { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: none; }
+.rib-switch__icon svg, .rib-switch__icon img { width: 20px; height: 20px; }
+.rib-switch__badge {
+  padding: 1px 7px; border-radius: 999px; background: var(--green); color: var(--green-ink);
+  font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+}
+.rib-switch__note { margin-top: 6px; font-size: 13.5px; line-height: 1.4; color: var(--ink-soft); }
+
+/* ---- the ribbon ---- */
+.rib-wrap { margin-top: 14px; }
+.rib { width: 100%; border-collapse: separate; border-spacing: 0 6px; table-layout: fixed; }
+.rib thead th { padding: 0 4px 2px; font-size: 12.5px; font-weight: 700; color: var(--ink-soft); text-align: center; }
+.rib thead .rib__fieldh { width: var(--rib-name-w); text-align: left; padding-left: 2px; }
+.rib__was { display: block; font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+.rib thead .rib__past, .rib td.rib__past > * { opacity: var(--rib-old); }
+.rib td { padding: 0; text-align: center; vertical-align: middle; }
+.rib__row > td, .rib__row > th { background: var(--paper); }
+.rib__row > th { border-radius: 14px 0 0 14px; }
+.rib__row > td:last-child { border-radius: 0 14px 14px 0; }
+.rib__row.is-open > th, .rib__row.is-open > td { background: #fff3dd; }
+.rib__row.is-open > th { border-bottom-left-radius: 0; }
+.rib__row.is-open > td:last-child { border-bottom-right-radius: 0; }
+
+.rib__fieldc { padding: 0; text-align: left; }
+.rib__open {
+  width: 100%; min-height: 48px; display: grid; grid-template-columns: 1fr auto; grid-template-areas: "name chev" "acres chev" "verdict chev";
+  align-items: center; column-gap: 6px; padding: 6px 8px 6px 10px; border-radius: 14px 0 0 14px; text-align: left;
+}
+.rib__open:hover { background: var(--tile-hover); }
+.plans .rib__open:focus-visible { outline: 3px solid var(--green-dark); outline-offset: -3px; box-shadow: none; }
+.rib__name { grid-area: name; font-size: 15px; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
+.rib__acres { grid-area: acres; font-size: 12px; color: var(--ink-soft); }
+.rib__verdict {
+  grid-area: verdict; justify-self: start; margin-top: 3px; padding: 1px 7px; border-radius: 8px; max-width: 100%;
+  font-size: 11.5px; font-weight: 600; line-height: 1.3; background: #eef8ec; color: var(--green-ink); box-shadow: inset 0 0 0 1.5px #a9d6b4;
+}
+.rib__verdict--keepsSame, .rib__verdict--repeatsLater, .rib__verdict--onceMore { background: #fff1dc; color: #7a4a17; box-shadow: inset 0 0 0 1.5px #e7bf86; }
+.rib__chev { grid-area: chev; width: 18px; height: 18px; color: var(--ink-soft); transition: transform .15s; }
+.rib__open[aria-expanded="true"] .rib__chev { transform: rotate(180deg); }
+
+.rib__cell { position: relative; height: 48px; }
+.rib .plan-crop { display: inline-grid; vertical-align: middle; }
+.rib .plan-crop--sm { width: 24px; height: 24px; border-radius: 7px; border-width: 1.5px; }
+.rib .plan-crop--sm svg { width: 16px; height: 16px; }
+.rib__link {
+  position: absolute; left: -9px; top: 50%; z-index: 1; width: 18px; height: 18px; margin-top: -9px;
+  display: grid; place-items: center; border-radius: 50%; background: var(--cream); color: var(--rib-family);
+  box-shadow: 0 0 0 1.5px currentColor;
+}
+.rib__link svg { width: 13px; height: 13px; }
+.rib__link--nitrogen { color: var(--rib-nitrogen); }
+.rib__link--break { color: var(--rib-break); }
+.rib__link--repeat { color: var(--rib-repeat); background: #fff1dc; }
+.rib__link--same-family { color: var(--rib-family); }
+.rib__link--cover { color: var(--rib-cover); }
+.rib__cell--repeat .plan-crop { border-color: var(--rib-repeat); }
+.rib__blanket {
+  position: absolute; right: 3px; bottom: 3px; width: 16px; height: 16px; display: grid; place-items: center;
+  border-radius: 6px; background: #e4f0da; color: var(--rib-cover);
+}
+.rib__blanket svg { width: 13px; height: 13px; }
+
+/* the acre split under each planned season */
+.rib__foot th, .rib__foot td { padding-top: 2px; vertical-align: top; }
+.rib__splith { font-size: 11.5px; font-weight: 700; color: var(--ink-soft); padding-left: 10px; }
+.rib-split { font-size: 11px; line-height: 1.3; color: var(--ink-soft); }
+.rib-split__words { display: block; white-space: nowrap; }
+.rib-split__bar { display: flex; height: 5px; margin: 3px 6px 0; border-radius: 3px; overflow: hidden; background: var(--tile); }
+.rib-split__seg { display: block; min-width: 2px; }
+.rib-split__seg--corn { background: var(--rib-corn); }
+.rib-split__seg--soybeans { background: var(--rib-beans); }
+.rib-split__seg--grain { background: var(--rib-grain); }
+.rib-split__seg--other { background: var(--rib-other); }
+.rib-splitlist { display: none; list-style: none; margin-top: 6px; font-size: 12.5px; color: var(--ink-soft); }
+.rib-splitlist li { margin-top: 4px; }
+.rib-splitlist b { color: var(--ink); margin-right: 4px; }
+.rib-splitlist .rib-split__bar { margin: 3px 0 0; max-width: 260px; }
+
+.rib-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; list-style: none; font-size: 12.5px; color: var(--ink-soft); }
+.rib-legend__item { display: inline-flex; align-items: center; gap: 6px; }
+.rib-legend .rib__link { position: static; margin: 0; flex: none; }
+
+/* ---- a field's story, under its row ---- */
+.rib__story > td { padding: 0; text-align: left; background: #fff3dd; border-radius: 0 0 14px 14px; }
+.story { padding: 4px 12px 14px; font-size: 14px; line-height: 1.45; }
+.story__lead { font-size: 15px; color: var(--ink); }
+.story__seasons { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; list-style: none; }
+.story-card { min-width: 0; padding: 10px; border-radius: 12px; background: var(--cream); border: 2px solid #ead8c0; }
+.story-card__h { display: flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 700; color: var(--ink); }
+.story-card__year { color: var(--ink-soft); }
+.story-card__row { margin-top: 6px; }
+.story-card__k { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); }
+.story-card__when svg { display: block; width: 100%; max-width: 300px; height: auto; margin-top: 4px; }
+.story-card__watch { margin-top: 6px; list-style: none; display: grid; gap: 4px; }
+.story-card__w { padding-left: 8px; border-left: 3px solid #e9a23b; }
+.story-card__w--careful, .story-card__w--stop { border-left-color: var(--rose-dark); }
+.story-card__w--info { border-left-color: var(--tile-line); }
+.story__whynot, .story__money { margin-top: 10px; }
+.story__money { color: var(--ink-soft); }
+.story__pick { margin-top: 12px; padding-top: 10px; border-top: 2px solid #ead8c0; }
+.story__pickh { font-size: 14px; font-weight: 700; color: var(--ink); }
+.story__cells { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 6px; }
+.story .plan-cell { flex-direction: column; align-items: center; gap: 4px; min-height: 44px; padding: 8px 6px; }
+.plan-cell__name { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+.plan-cell__crops { display: inline-flex; gap: 3px; }
+.story .plan-cell .plan-crop { width: 24px; height: 24px; border-radius: 7px; border-width: 1.5px; }
+.story .plan-cell .plan-crop svg { width: 16px; height: 16px; }
+.plan-cell__cash { font-size: 12px; color: var(--ink-soft); }
+.story__picked { min-height: 1.4em; margin-top: 6px; font-size: 13.5px; color: var(--green-ink); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .rib__story:not([hidden]) .story { animation: rib-story-in .18s ease-out both; }
+}
+@keyframes rib-story-in { from { opacity: 0; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) {
+  .rib__chev { transition: none; }
+}
+
+/* ---- the rotation check ---- */
+.rot-check__list { list-style: none; margin-top: 6px; display: grid; gap: 4px; }
+.rot-check__row {
+  display: grid; grid-template-columns: 26px minmax(140px, auto) 1fr auto; align-items: baseline; gap: 4px 10px;
+  padding: 7px 10px; border-radius: 12px; background: var(--paper); font-size: 14px; line-height: 1.35;
+}
+/* wider screens: the five rows share one set of columns, so the values line up under each other */
+@media (min-width: 641px) {
+  @supports (grid-template-columns: subgrid) {
+    .rot-check__list { grid-template-columns: 26px max-content 1fr auto; column-gap: 10px; }
+    .rot-check__row { grid-column: 1 / -1; grid-template-columns: subgrid; }
+  }
+}
+.rot-check__icon { align-self: center; display: grid; place-items: center; width: 24px; height: 24px; color: var(--ink-soft); }
+.rot-check__icon svg { width: 20px; height: 20px; }
+.rot-check__row--repeats .rot-check__icon, .rot-check__row--repeat .rot-check__icon { color: var(--rib-repeat); }
+.rot-check__row--handoffs .rot-check__icon, .rot-check__row--nitrogen .rot-check__icon, .rot-check__row--soil .rot-check__icon { color: var(--rib-nitrogen); }
+.rot-check__row--cover .rot-check__icon { color: var(--rib-cover); }
+.rot-check__label { font-weight: 700; color: var(--ink); }
+.rot-check__value { color: var(--ink); }
+.rot-check__base { font-size: 12.5px; color: var(--ink-soft); white-space: nowrap; }
+.rot-check__row.is-better .rot-check__value { color: var(--green-ink); }
+
+/* ---- money, second ---- */
+.rot-money__line { margin-top: 4px; font-size: 13px; line-height: 1.45; color: var(--ink); }
+.rot-money__wrap { margin-top: 8px; overflow-x: auto; }
+.rot-money__table { width: 100%; min-width: 420px; border-collapse: collapse; font-size: 13px; }
+.rot-money__table th, .rot-money__table td { padding: 5px 8px; text-align: right; border-bottom: 1.5px solid #ead8c0; }
+.rot-money__table th:first-child { text-align: left; }
+.rot-money__table thead th { font-size: 11.5px; font-weight: 700; color: var(--ink-soft); vertical-align: bottom; }
+.rot-money__table tr.is-on th, .rot-money__table tr.is-on td { background: #eef8ec; }
+.rot-money__note { margin-top: 8px; font-size: 13px; line-height: 1.45; color: var(--ink-soft); }
+
+.rot-why { margin-top: 8px; font-size: 14px; line-height: 1.45; }
+.rot-watch__h, .rot-raw__h { margin-top: 10px; font-size: 13.5px; font-weight: 700; color: var(--ink); }
+.plans__list--raw { color: var(--ink-soft); font-size: 13px; }
+.plans__more .linkish { display: inline; margin: 0; padding: 2px 0; }
+.plans__farmhost { display: contents; }
+
+/* When to sow: which plan its dates follow */
+.plans__calfor { margin: 0 0 8px; font-size: 13px; color: var(--ink-soft); }
+.plans__calfor b { color: var(--ink); }
+
+/* the footer stays in reach while the rotation scrolls */
+.plans__mix.plans__mix--sticky {
+  position: sticky; bottom: 0; z-index: 2; margin-top: 16px;
+  box-shadow: 0 -6px 12px -6px rgb(94 66 50 / .25), inset 0 0 0 2px var(--tile-line);
+}
+
+/* ---- narrower ---- */
+@media (max-width: 900px) {
+  .plans { --rib-name-w: 136px; }
+  .story__seasons { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .plans { --rib-name-w: 92px; }
+  .rib .rib__y--old { display: none; }        /* 2025 goes; 2026 stays, faded */
+  .rib__foot { display: none; }               /* the split as a list instead, under the table */
+  .rib-splitlist { display: block; }
+  .rib__open { padding: 5px 4px 5px 7px; column-gap: 2px; grid-template-columns: 1fr auto; }
+  .rib__name { font-size: 13.5px; }
+  .rib__verdict { font-size: 10.5px; padding: 1px 5px; }
+  .rib__chev { width: 14px; height: 14px; }
+  .rib .plan-crop { width: 26px; height: 26px; border-radius: 8px; }
+  .rib .plan-crop svg { width: 18px; height: 18px; }
+  .rib__link { left: -8px; width: 16px; height: 16px; margin-top: -8px; }
+  .rib__link svg { width: 11px; height: 11px; }
+  .story { padding: 4px 8px 12px; }
+  .story__cells { grid-template-columns: 1fr; }
+  .story .plan-cell { flex-direction: row; justify-content: space-between; }
+  .rot-check__row { grid-template-columns: 24px 1fr; }
+  .rot-check__value, .rot-check__base { grid-column: 2; }
+  /* three tabs side by side, inside the panel's width (no sideways scroll at 375 px) */
+  .plans .plans__tabs { display: flex; width: 100%; }
+  .plans .plans__tab { flex: 1 1 0; min-width: 0; height: auto; min-height: 36px; padding: 4px 6px; font-size: 13px; line-height: 1.15; }
+  .rib-switch { width: 100%; }
+  .rib-switch__seg { flex: 1 1 auto; justify-content: center; padding: 0 8px; font-size: 13.5px; }
+  /* the sticky footer on one line, so it doesn't cover a sixth of the phone */
+  .plans__mix.plans__mix--sticky { flex-wrap: nowrap; gap: 8px; padding: 7px 8px 7px 10px; font-size: 13px; line-height: 1.3; }
+  .plans__mix.plans__mix--sticky .btn { flex: none; height: 36px; padding: 0 12px; font-size: 13.5px; }
+}

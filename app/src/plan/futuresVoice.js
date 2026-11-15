@@ -593,10 +593,39 @@ export function skipHintLine(cmp) {
   return f ? `Have a look round. ${f.name} changes the most. Start there if you like.` : 'Have a look round. Tap any field to see its three plans.';
 }
 
+/** The walk's nitrogen handoff: "In 2028 Home place goes to corn after the beans. It gets their nitrogen, …" (null without one). */
+export function handoffLine(cmp, stop) {
+  const f = stop?.fieldId ? fieldOf(cmp, stop.fieldId) : null;
+  if (!f) return null;
+  const y = stop.season ?? 0;
+  const seasons = f.byKind.priority.seasons;
+  const s = seasons[y];
+  const prev = prevCrop(f, seasons, y);
+  if (!(s?.nCredit > 0) || !prev) return null;
+  const their = wordsOf(prev).plural ? 'their' : 'its';
+  return `In ${cmp.years[y]} ${f.name} goes to ${word(s.crop)} after the ${short(prev)}. It gets ${their} nitrogen, about ${perAcre(s.nCredit)} an acre less to buy.`;
+}
+
+/**
+ * The walk's repeat: "North draw grows corn once more in 2027. Watch for rootworm that year."
+ * "once more" only when the field turns the season after; else "again" (null without one).
+ */
+export function repeatLine(cmp, stop) {
+  const f = stop?.fieldId ? fieldOf(cmp, stop.fieldId) : null;
+  if (!f) return null;
+  const y = stop.season ?? 0;
+  const seasons = f.byKind.priority.seasons;
+  const s = seasons[y];
+  if (!s) return null;
+  const turnsAfter = seasons[y + 1] ? seasons[y + 1].crop !== s.crop : false;
+  const rootworm = s.warnings.some((w) => w.lens === 'pest' && /rootworm/i.test(w.reason || ''));
+  return `${f.name} grows ${word(s.crop)} ${turnsAfter ? 'once more' : 'again'} in ${cmp.years[y]}. ${rootworm ? 'Watch for rootworm that year.' : 'So I expect a little less yield that year.'}`;
+}
+
 /** The line for a stop from reelStops() (null when the stop has nothing to say). */
 export function reelLine(cmp, stop) {
   const say = {
-    intro: introLine, flip: flipLine, gain: gainLine, sameCrop: sameCropLine, giveUp: giveUpLine, vsProfit: vsProfitLine,
+    intro: introLine, flip: flipLine, handoff: handoffLine, repeat: repeatLine, gain: gainLine, sameCrop: sameCropLine, giveUp: giveUpLine, vsProfit: vsProfitLine,
     why: (c) => weightsLine(c.weights), watch: watchLine, yourTurn: yourTurnLine, goodFit: goodFitLine,
     frost: frostLine, dry: (c, st) => dryLine(c, st.season ?? 0),
   }[stop.id];

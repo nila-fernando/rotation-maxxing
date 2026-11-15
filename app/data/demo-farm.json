@@ -7,7 +7,8 @@
       "fields[].acres",
       "fields[].cropHistory",
       "fields[].sourceId",
-      "farm.center"
+      "farm.center",
+      "farm.fips"
     ],
     "placeholder": [
       "farm.name",
@@ -87,6 +88,7 @@
     "name": "Sheeeep Hollow",
     "county": "Story",
     "state": "IA",
+    "fips": "19169",
     "center": [
       -93.3555,
       42.0255
