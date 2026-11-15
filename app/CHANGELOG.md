@@ -20,6 +20,39 @@
   `/nass/` with the Quick Stats key as a Worker secret; set `VITE_NASS_PROXY` to turn it on for the
   live site. Locally, `NASS_API_KEY` in the environment or `app/.env.local`.
 
+## v1.0.0 (2026-11-15)
+
+Rotation-Maxxing 1.0: crop rotation plans for US farmers, rotation first and profit second, from
+real NASA and USDA data, on a farm you can walk around.
+
+### What's new since 0.12
+
+- **The season check-in: the plans learn from your farm.** Once a harvest is in, Manami asks how each
+  field did: what it grew, the yield, anything that went wrong. She compares each yield with what she
+  expected for that year's real weather and tunes your next three seasons to how your fields really
+  do (slowly, so one odd year can't swing them; hail, flood and replant years aren't learned from).
+- **Farm updates.** A bell on your farm: frost, heavy rain, strong wind, heat and dry spells in the
+  week's forecast at your farm, how recent seasons' rain compares with normal, and what's waiting on
+  you.
+- **The full walkthrough.** Manami's tour now covers the whole farm, from your fields and their
+  check-ups through the plans and the plan view to saving your farm, farm updates and the season
+  check-in.
+- **Roomier plan view.** A field's card takes the field list's column, and Manami no longer covers
+  "Why and watch out".
+
+### Everything in 1.0
+
+- Find your farm on a spinning globe, pick your fields from USDA outlines, and watch it rise as an
+  island, with the real time of day, season, weather and festivals.
+- A check-up for every field: USDA crop history (which you can correct), SSURGO soil, slope, NASA
+  rain and greenness, and the soil jar test read by AI.
+- Three plans for your next three seasons from 24 years of NASA weather, your soil and your county's
+  USDA crops, yields and prices, with "When to sow" dates, played out on the island.
+- Manami's AI: Ask Manami anything about your farm, her take on the plans (scored by the planner,
+  never by the AI) and her read on a field.
+- Your farm saves itself; sign in with an emailed link to keep it on any device. The demo needs no
+  sign-in.
+
 ## v0.12.0 (2026-11-15)
 
 ### What's new
