@@ -6,7 +6,7 @@
 //   - snow settles on whatever faces up (ground, roofs, fence rails, beds), in soft patches
 //   - grass: fresh green in spring, straw-dry in fall (only the green parts: cliffs stay sandstone)
 //   - leaves: reds and golds in fall, bare greys in winter (pines stay green)
-//   - crops: ripen to straw in fall
+//   - crops: ripen to straw in fall (cotton bolls burst white instead, rice paddies drain to mud)
 //
 //   const seasons = createSeasons(view)
 //   seasons.attach(object)     patch an object's materials (the island, new paddocks, decorations)
@@ -143,6 +143,22 @@ const KINDS = {
     float l = dot(c, vec3(0.3, 0.59, 0.11));
     vec3 straw = vec3(0.93, 0.78, 0.42) * (0.62 + l * 0.6);
     c = mix(c, straw, uRipe * 0.88);
+    diffuseColor.rgb = sSnow(c);
+  }`,
+  // cotton bolls: shut green buds through the summer that burst white as the crop ripens
+  boll: `{
+    vec3 c = diffuseColor.rgb;
+    float l = dot(c, vec3(0.3, 0.59, 0.11));
+    vec3 bud = vec3(0.42, 0.6, 0.28) * (0.55 + l * 0.5);
+    c = mix(bud, c, smoothstep(0.25, 0.85, uRipe));
+    diffuseColor.rgb = sSnow(c);
+  }`,
+  // a rice paddy's water: drained to damp mud as the rice ripens
+  paddy: `{
+    vec3 c = diffuseColor.rgb;
+    float l = dot(c, vec3(0.3, 0.59, 0.11));
+    vec3 mud = vec3(0.6, 0.5, 0.38) * (0.7 + l * 0.35);
+    c = mix(c, mud, smoothstep(0.1, 0.7, uRipe));
     diffuseColor.rgb = sSnow(c);
   }`,
 };

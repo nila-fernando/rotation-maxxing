@@ -12,7 +12,10 @@ import { continueHistory } from '../vendor/rotation-maxxing/algorithm/plans.ts';
 import { cropKeyFor } from '../island/crops.js';
 import { demoRecordFor } from '../data/fieldReport.js';
 
-/** App crop keys (src/island/crops.js) -> planner crop ids. hay, pasture and other have no planner crop. */
+/**
+ * App crop keys (src/island/crops.js) -> planner crop ids, as the planner's own CDL mapping does
+ * (vendor data/cdl.ts). The other keys (hay, pasture, potatoes, vegetables...) have no planner crop.
+ */
 export const PLANNER_CROP = {
   corn: 'corn',
   soybeans: 'soybeans',
@@ -22,12 +25,20 @@ export const PLANNER_CROP = {
   sorghum: 'sorghum',
   alfalfa: 'alfalfa',
   fallow: 'fallow',
+  springwheat: 'spring-wheat',
+  cotton: 'cotton',
+  sunflower: 'sunflower',
+  canola: 'canola',
+  drybeans: 'dry-beans',
+  // a rye year reads as winter wheat in the planner's history, as it did before rye had its own key
+  // (the planner's CDL mapping has no grain rye; its cereal-rye is the winter cover crop)
+  rye: 'winter-wheat',
 };
 /** Planner crop ids -> the app's crop keys (for icons, the island and the check-in's answers). */
 export const APP_CROP = {
-  corn: 'corn', soybeans: 'soybeans', 'winter-wheat': 'wheat', 'spring-wheat': 'wheat', barley: 'barley', oats: 'oats',
-  sorghum: 'sorghum', alfalfa: 'alfalfa', fallow: 'fallow', 'cereal-rye': 'other', cotton: 'other', sunflower: 'other',
-  canola: 'other', 'dry-beans': 'soybeans',
+  corn: 'corn', soybeans: 'soybeans', 'winter-wheat': 'wheat', 'spring-wheat': 'springwheat', barley: 'barley', oats: 'oats',
+  sorghum: 'sorghum', alfalfa: 'alfalfa', fallow: 'fallow', 'cereal-rye': 'rye', cotton: 'cotton', sunflower: 'sunflower',
+  canola: 'canola', 'dry-beans': 'drybeans',
 };
 
 /**

@@ -119,7 +119,7 @@ export function createHub({ onOpenFieldPanel, onCloseFieldPanel, getPanelInsets 
         name: info.name || 'Field',
         acres: info.acres,
         cropKey,
-        cropLabel: info.crop ? (CROP_STYLE[cropKey]?.label === 'Other' ? String(info.crop) : CROP_STYLE[cropKey]?.label || String(info.crop)) : 'No crop on record',
+        cropLabel: info.crop ? (cropKey === 'other' ? String(info.crop) : CROP_STYLE[cropKey]?.label || String(info.crop)) : 'No crop on record',
         polygons: vf.polygons,
         topY: vf.topY,
         center: fp.center,

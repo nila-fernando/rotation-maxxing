@@ -11,6 +11,7 @@
 //   const tt = createTimeTravel({ hub, onYear })
 //   tt.show(island, { history, today })   history: Map id -> [{ year, key, label }] (2018–2025)
 //   tt.hide()
+import { CROP_STYLE } from '../island/crops.js';
 import { createCropYears } from '../island/cropYears.js';
 import { createDayNight } from '../island/dayNight.js';
 import { formatHour } from '../island/daylight.js';
@@ -46,7 +47,7 @@ const OCCASION_NAME = { halloween: 'Halloween', christmas: 'Christmas', easter: 
 /** "New Year 2027" (the year it starts), "Easter 2026". */
 const occasionLabel = (state) => `${OCCASION_NAME[state.occasion]} ${state.occasion === 'newyear' ? state.year + 1 : state.year}`;
 const CROP_NAMES = { corn: 'Corn', soybeans: 'Soybeans', wheat: 'Wheat', barley: 'Barley', oats: 'Oats', sorghum: 'Sorghum', alfalfa: 'Alfalfa', hay: 'Hay', pasture: 'Pasture', fallow: 'Fallow', other: 'Other' };
-const cropName = (key) => CROP_NAMES[key] || 'No crop';
+const cropName = (key) => CROP_NAMES[key] || CROP_STYLE[key]?.label || 'No crop';
 
 /**
  * @param {object} o

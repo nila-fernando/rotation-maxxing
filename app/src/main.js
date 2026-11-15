@@ -27,6 +27,7 @@ import { plannerFarm } from './plan/farmInput.js';
 import { createJars, jarKeepOuts } from './island/jarProps.js';
 import { createSeaLife } from './island/seaLife.js';
 import { createCheckIn, CROPS } from './screens/checkin.js';
+import { CROP_KEYS } from './island/crops.js';
 import { createFieldPanel } from './screens/fieldPanel.js';
 import { createJarPanel } from './screens/jarPanel.js';
 import { createPlansPanel, firstSeason, money } from './screens/plansPanel.js';
@@ -513,6 +514,17 @@ function noCropsParam() {
   return [...new Set((params.get('nocrops') || '').split(',').map((k) => k.trim().toLowerCase()))].filter((k) => keys.has(k));
 }
 
+/**
+ * ?crops=cotton,rice,orchard (or ?crops=new for every crop added after the first eleven): the demo
+ * fields grow these this year, one after another (dev and demos, with ?hub= or ?reveal=; use
+ * ?hub=15 to see more of them at once).
+ */
+function cropsParam() {
+  const raw = (params.get('crops') || '').split(',').map((k) => k.trim().toLowerCase()).filter(Boolean);
+  if (raw.includes('new')) return CROP_KEYS.slice(CROP_KEYS.indexOf('other') + 1);
+  return raw.filter((k) => CROP_KEYS.includes(k));
+}
+
 // ---------------------------------------------------------------- the farm's weather
 // The real weather at the farm (src/services/weatherFeed.js, every 20 minutes) shows on the island
 // (through farmWeather, src/island/weatherState.js, which the island and anything else can follow).
@@ -727,11 +739,19 @@ function testFields(n) {
   const shift = (g, dx, dy) => ({ ...g, coordinates: g.coordinates.map((ring) => ring.map(([x, y]) => [x + dx, y + dy])) });
   const offsets = [[0, 0], [0.04, 0.027], [-0.04, -0.027]];
   const out = [];
-  for (const [k, [dx, dy]] of offsets.entries()) {
+  copies: for (const [k, [dx, dy]] of offsets.entries()) {
     for (const f of base) {
-      if (out.length >= n) return out;
+      if (out.length >= n) break copies;
       out.push(k === 0 ? f : { ...f, id: `${f.id}-copy${k}`, name: `${f.name} ${k + 1}`, sourceIds: [`${f.sourceIds[0]}-copy${k}`], geometry: shift(f.geometry, dx, dy) });
     }
+  }
+  // ?crops=: this year's crop on each field in turn (the island shows a field's latest year)
+  const grow = cropsParam();
+  if (grow.length) {
+    return out.map((f, i) => {
+      const year = Object.keys(f.crops || {}).sort().pop() || String(HISTORY_YEARS[HISTORY_YEARS.length - 1]);
+      return { ...f, crops: { ...f.crops, [year]: grow[i % grow.length] } };
+    });
   }
   return out;
 }
