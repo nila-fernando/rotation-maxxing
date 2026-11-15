@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import {
-  STEPS, TOUR_KEY, END_LINES, activeSteps, countLabel, keyAction, needsChange, placeCard, shouldAutoStart, tourMemory, unionRect,
+  STEPS, TOUR_KEY, END_LINES, activeSteps, countLabel, keyAction, needsChange, placeCard, resolveStep, shouldAutoStart, tourMemory, unionRect,
 } from './walkthrough.js';
 
 const read = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8');
@@ -75,6 +75,28 @@ describe('the steps', () => {
     assert.deepEqual(STEPS.filter((s) => s.needs === 'plans').map((s) => s.id), ['farm']);
   });
 
+  it('say “when it shows up” only while the button isn’t there yet', () => {
+    const farm = STEPS.find((s) => s.id === 'farm');
+    assert.doesNotMatch(farm.try.text, /when it shows up/);
+    assert.match(farm.try.busyText, /when it shows up/);
+  });
+
+  it('end over the plan view when the farmer went to see the plans on the farm', () => {
+    const done = STEPS.at(-1);
+    const v = resolveStep(done, (c) => c === 'plan-futures');
+    assert.deepEqual(v.target, ['#futPlans', '#futDock']);
+    assert.doesNotMatch(v.body, /tap the \? on Your fields\./i);
+    assert.equal(v.next, 'Finish');
+    assert.equal(v.when, undefined);
+    assert.equal(resolveStep(done, () => false), done);
+    const html = read('../../index.html');
+    for (const sel of v.target) assert.ok(html.includes(`id="${sel.slice(1)}"`), sel);
+  });
+
+  it('wait by the jar step while the jar test is open', () => {
+    assert.equal(STEPS.find((s) => s.id === 'jar').try.wait, 'jarVisited');
+  });
+
   it('use only waits the tour knows', () => {
     const src = read('./walkthrough.js');
     for (const s of STEPS.filter((x) => x.try)) assert.match(src, new RegExp(`\\b${s.try.wait}: on`), s.id);
@@ -126,12 +148,24 @@ describe('keyAction', () => {
   it('leaves the arrows to a text box or a control that uses them', () => {
     assert.equal(keyAction('ArrowRight', { typing: true }), null);
     assert.equal(keyAction('ArrowLeft', { ownsArrows: true }), null);
-    assert.equal(keyAction('Escape', { typing: true }), 'end');
+    assert.equal(keyAction('Escape', { ownsArrows: true }), 'end');
   });
 
-  it('lets an open dialog have Esc first', () => {
+  it('leaves Esc to a text box, where it puts the old text back', () => {
+    assert.equal(keyAction('Escape', { typing: true }), null);
+  });
+
+  it('leaves every key to an open dialog or popover', () => {
     assert.equal(keyAction('Escape', { dialog: true }), null);
-    assert.equal(keyAction('ArrowRight', { dialog: true }), 'next');
+    assert.equal(keyAction('ArrowRight', { dialog: true }), null);
+    assert.equal(keyAction('ArrowLeft', { dialog: true }), null);
+  });
+
+  it('steps with the arrows only from the tour’s card, but skips with Esc from anywhere', () => {
+    assert.equal(keyAction('ArrowRight', { inTour: false }), null);
+    assert.equal(keyAction('ArrowLeft', { inTour: false }), null);
+    assert.equal(keyAction('Escape', { inTour: false }), 'end');
+    assert.equal(keyAction('ArrowRight', { inTour: true }), 'next');
   });
 });
 
@@ -226,6 +260,19 @@ describe('placeCard', () => {
     const big = { width: 358, height: 600 };
     const p = placeCard({ target: { left: 0, top: 300, right: 390, bottom: 700 }, card: big, vp: phone, side: 'left' });
     assert.ok(p.x >= 12 && p.y >= 12 && p.x + big.width <= phone.width - 12 + 0.5 && p.y + big.height <= phone.height - 12 + 0.5);
+  });
+
+  it('cuts the card down above or below rather than cover the spotlight, when no side has room', () => {
+    const p = placeCard({ target: { left: 140, top: 436, right: 347, bottom: 474 }, card: { width: 340, height: 460 }, vp: phone, side: 'bottom' });
+    assert.equal(p.side, 'top');
+    assert.ok(p.maxHeight >= 190 && p.maxHeight < 460);
+    assert.ok(p.y >= 12 && p.y + p.maxHeight <= p.spot.top, JSON.stringify(p));
+  });
+
+  it('centres a card that nearly fills a phone’s width instead of pushing it to one edge', () => {
+    const p = placeCard({ target: { left: 300, top: 100, right: 370, bottom: 140 }, card: { width: 340, height: 260 }, vp: phone, side: 'bottom' });
+    assert.equal(p.side, 'bottom');
+    assert.equal(p.x, 25);
   });
 
   it('never leaves the card wider than the screen at phone width (no sideways scroll)', () => {

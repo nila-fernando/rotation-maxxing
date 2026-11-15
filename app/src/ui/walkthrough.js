@@ -3,12 +3,15 @@
 //
 // Each step spotlights part of the hub and Manami's card sits beside it: "n of N", a title, a few
 // lines, where the data comes from, and sometimes a "Try it" that moves the tour on once it's done.
-// Next, Back and Skip are always there; Esc skips, ← and → step. The dimming never takes the
-// pointer, so the farm stays usable the whole way through (the pattern of Halation's tutorial).
+// Next, Back and Skip are always there; Esc skips (unless you're typing, or an app dialog is up),
+// and ← and → step while the card has the focus. The dimming never takes the pointer, so the farm
+// stays usable the whole way through (the pattern of Halation's tutorial). While an app dialog or
+// popover is open over the hub (the jar test, the time of day), the tour steps aside until it closes.
 //
 // Steps name their targets as CSS selectors, tried in order: the first that matches something on
 // screen gets the spotlight (several matches are lit together). A step whose target isn't on screen
-// shows its card in the middle instead, and an `optional` one is left out of the tour.
+// shows its card in the middle instead, and an `optional` one is left out of the tour. A step's
+// `variants` swap in another target and words while a mode is on (a class on <body>).
 // Some steps need a panel open (`needs`: the field check-up or the plans); the tour opens it, and
 // closes it again when it leaves, but only if it was the one that opened it.
 //
@@ -26,7 +29,9 @@ export const SETTLE_MS = 900; // after a "Try it" is done, before the tour moves
 /**
  * The steps. target: selectors tried in order. needs: a panel the step needs open. side: where the
  * card would like to go. sources: keys of the data sources (fieldReport.js SOURCES) to name.
- * try: { text, wait } with wait one of the waits in createWalkthrough.
+ * try: { text, wait, busyText? } with wait one of the waits in createWalkthrough.
+ * busyBody / try.busyText: the words while the plans are still being worked out.
+ * variants: [{ when: a <body> class, ...fields to use instead while it's there }].
  */
 export const STEPS = [
   {
@@ -102,6 +107,7 @@ export const STEPS = [
     side: 'right',
     title: 'Test your soil',
     body: 'Shake some soil in a jar of water, let it settle, and take a photo. I read the layers as sand, silt and clay, plan with your result, and stand the jar by that field’s gate.',
+    try: { text: 'Tap it to have a look. I’ll wait here until you close it.', wait: 'jarVisited' },
   },
   {
     id: 'time',
@@ -128,7 +134,7 @@ export const STEPS = [
     title: 'See them on the farm',
     body: 'Here are your plans, side by side. “See them on the farm” puts them on the island, so you can flip between plans and seasons and watch each field change.',
     busyBody: 'I’m working out your plans now. When they’re ready, “See them on the farm” puts them on the island, so you can flip between plans and seasons and watch each field change.',
-    try: { text: 'Tap “See them on the farm” when it shows up.', wait: 'futuresOpened' },
+    try: { text: 'Tap “See them on the farm”.', busyText: 'Tap “See them on the farm” when it shows up.', wait: 'futuresOpened' },
   },
   {
     id: 'done',
@@ -137,6 +143,13 @@ export const STEPS = [
     title: 'You’re all set!',
     body: 'Tap any field for a closer look whenever you like. If you want this tour again, tap the ? on Your fields.',
     next: 'Finish',
+    variants: [{
+      // they tapped "See them on the farm": the field list is faded (gone on a phone) under the plan view
+      when: 'plan-futures',
+      target: ['#futPlans', '#futDock'],
+      side: 'top',
+      body: 'Here are your plans on the farm. Pick a plan and a season down here and watch each field change. Once you leave this view, the ? on Your fields plays this tour again.',
+    }],
   },
 ];
 
@@ -178,6 +191,18 @@ export function shouldAutoStart({ seen, search = '' }) {
 
 // ------------------------------------------------------------------ navigation
 
+/**
+ * The step as it is right now: its first variant whose <body> class is on, laid over it.
+ * @param {object} step
+ * @param {(cls: string) => boolean} isOn
+ */
+export function resolveStep(step, isOn) {
+  const v = step?.variants?.find((x) => isOn(x.when));
+  if (!v) return step;
+  const { when, ...over } = v;
+  return { ...step, ...over };
+}
+
 /** The steps that make up this tour: optional ones only when their target is on screen. */
 export function activeSteps(steps, isAvailable) {
   return steps.filter((s) => !s.optional || isAvailable(s));
@@ -197,15 +222,18 @@ export function needsChange(from, to) {
 
 /**
  * What a key does while the tour is open: 'end', 'next', 'back' or null (left to the app).
- * The arrows are left alone while typing, or in a control that uses them itself (a slider, a select,
- * a radio group such as the year picker).
+ * Esc is left to a text box (it puts the old text back there) and to an open app dialog or popover
+ * (it closes that first). The arrows step only from the tour's card (or with nothing focused), and
+ * never while typing or in a control that uses them itself (a slider, a select, a radio group).
  * @param {string} key
- * @param {{ typing?: boolean, ownsArrows?: boolean, dialog?: boolean }} [where]
- *   dialog: an app dialog (the jar test) is open over the tour: its Esc closes that first
+ * @param {{ typing?: boolean, ownsArrows?: boolean, dialog?: boolean, inTour?: boolean }} [where]
+ *   dialog: an app dialog (the jar test, the time-of-day popover) is open over the tour
+ *   inTour: the focus is in the tour's card, or on nothing in particular
  */
-export function keyAction(key, { typing = false, ownsArrows = false, dialog = false } = {}) {
-  if (key === 'Escape') return dialog ? null : 'end';
-  if (typing || ownsArrows) return null;
+export function keyAction(key, { typing = false, ownsArrows = false, dialog = false, inTour = true } = {}) {
+  if (dialog || typing) return null;
+  if (key === 'Escape') return 'end';
+  if (ownsArrows || !inTour) return null;
   if (key === 'ArrowRight') return 'next';
   if (key === 'ArrowLeft') return 'back';
   return null;
@@ -235,14 +263,18 @@ export function unionRect(rects, vp) {
 
 /**
  * Where the spotlight and the card go. The spotlight is the target padded (kept on screen); the card
- * takes the preferred side if it fits, else the first side with room (bottom, top, right, left),
- * else the roomiest, and is always kept inside the viewport with a margin.
+ * takes the preferred side if it fits, else the first side with room (bottom, top, right, left).
+ * When no side has room for all of it, it goes above or below (whichever has more room) cut down to
+ * fit, so it never covers the spotlight, as long as at least `minHeight` of it is left; else the
+ * roomiest side. It is always kept inside the viewport with a margin, and centred across a screen
+ * it nearly fills (a phone) rather than pushed against one edge.
  * With no target, the card sits in the middle.
  * @param {{ target: object|null, card: {width: number, height: number}, vp: {width: number, height: number}, side?: string }} o
- * @returns {{ spot: object|null, x: number, y: number, side: string }}
+ * @returns {{ spot: object|null, x: number, y: number, side: string, maxHeight?: number }}
  */
-export function placeCard({ target, card, vp, side }, { margin = 12, gap = 14, pad = 6 } = {}) {
+export function placeCard({ target, card, vp, side }, { margin = 12, gap = 14, pad = 6, minHeight = 190 } = {}) {
   const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), Math.max(lo, hi));
+  const narrow = vp.width - card.width < 2 * margin + 60;
   if (!target) {
     return { spot: null, x: Math.round(clamp((vp.width - card.width) / 2, margin, vp.width - card.width - margin)), y: Math.round(clamp((vp.height - card.height) / 2, margin, vp.height - card.height - margin)), side: 'center' };
   }
@@ -257,19 +289,32 @@ export function placeCard({ target, card, vp, side }, { margin = 12, gap = 14, p
     top: s.top - gap - margin - card.height,
   };
   const order = [side, 'bottom', 'top', 'right', 'left'].filter((k) => k && k in room);
-  const pick = order.find((k) => room[k] >= 0) || order.reduce((a, b) => (room[b] > room[a] ? b : a));
+  let pick = order.find((k) => room[k] >= 0);
+  let height = card.height, maxHeight;
+  if (!pick) {
+    const v = room.top > room.bottom ? 'top' : 'bottom';
+    if (card.height + room[v] >= minHeight) {
+      pick = v;
+      height = maxHeight = Math.floor(card.height + room[v]);
+    } else {
+      pick = order.reduce((a, b) => (room[b] > room[a] ? b : a));
+    }
+  }
   const cx = (s.left + s.right) / 2, cy = (s.top + s.bottom) / 2;
-  let x = cx - card.width / 2, y = cy - card.height / 2;
+  let x = cx - card.width / 2, y = cy - height / 2;
   if (pick === 'right') x = s.right + gap;
   else if (pick === 'left') x = s.left - gap - card.width;
   else if (pick === 'bottom') y = s.bottom + gap;
-  else y = s.top - gap - card.height;
-  return {
+  else y = s.top - gap - height;
+  if (narrow && (pick === 'top' || pick === 'bottom')) x = (vp.width - card.width) / 2;
+  const out = {
     spot: { left: s.left, top: s.top, width: s.right - s.left, height: s.bottom - s.top },
     x: Math.round(clamp(x, margin, vp.width - card.width - margin)),
-    y: Math.round(clamp(y, margin, vp.height - card.height - margin)),
+    y: Math.round(clamp(y, margin, vp.height - height - margin)),
     side: pick,
   };
+  if (maxHeight) out.maxHeight = maxHeight;
+  return out;
 }
 
 /** What Manami says when the tour closes. */
@@ -286,7 +331,14 @@ const ICON_DONE = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"
 
 const isTyping = (t) => (t instanceof HTMLInputElement && !['range', 'checkbox', 'radio', 'button'].includes(t.type))
   || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || !!t?.isContentEditable;
-const ownsArrows = (t) => !!t?.closest?.('[role="radiogroup"], [role="slider"], [role="listbox"], [role="tablist"], input[type="range"], select');
+const ownsArrows = (t) => !!t?.closest?.('[role="radiogroup"], [role="slider"], [role="listbox"], [role="tablist"], [role="grid"], input[type="range"], select, .bcell');
+/** An app dialog or popover is open over the hub: the tour steps aside, and leaves it the keys. */
+const appDialogUp = () => {
+  const b = document.body.classList;
+  if (b.contains('jar-open') || b.contains('fut-notes-open')) return true;
+  const day = document.getElementById('dayPop');
+  return !!day && !day.hidden;
+};
 
 /**
  * @param {object} o
@@ -307,6 +359,9 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
   let settle = 0;
   let tick = 0;
   let lastFocus = null;
+  let aside = false; // stepped aside for an app dialog
+  // the jar opening and closing, a popover, a mode coming on: look again straight away
+  const looks = typeof MutationObserver === 'function' ? new MutationObserver(() => place()) : null;
   const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(() => place()) : null;
   const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -336,6 +391,17 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
     return () => mo.disconnect();
   };
+  // the dialog opened and then closed again (the farmer had a look)
+  const onRoundTrip = (cls) => (done) => {
+    let opened = document.body.classList.contains(cls);
+    const mo = new MutationObserver(() => {
+      const on = document.body.classList.contains(cls);
+      if (on) opened = true;
+      else if (opened) done();
+    });
+    mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    return () => mo.disconnect();
+  };
   const onClick = (sel) => (done) => {
     const fn = (e) => { if (e.target.closest?.(sel)) done(); };
     document.addEventListener('click', fn, true);
@@ -344,6 +410,7 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
   const WAITS = {
     fieldOpened: onBodyClass('checkup-open'),
     plansOpened: onBodyClass('plans-open'),
+    jarVisited: onRoundTrip('jar-open'),
     timeMoved: onClick('#timePrev, #timeNext, #timePlay, #timeYears [role="radio"]'),
     futuresOpened: onClick('#plans [data-act="futures"]'),
   };
@@ -371,10 +438,12 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
         <button class="tour-card__close" type="button" title="Skip the tour (Esc)" aria-label="Skip the tour">${ICON_CLOSE}</button>
       </div>
       <div class="tour-card__bar" aria-hidden="true"><span></span></div>
-      <h2 class="tour-card__title" id="tourTitle"></h2>
-      <p class="tour-card__body" id="tourBody"></p>
-      <p class="tour-card__src"></p>
-      <p class="tour-card__try" aria-live="polite"><span class="tour-card__try-icon"></span><span class="tour-card__try-text"></span></p>
+      <div class="tour-card__main">
+        <h2 class="tour-card__title" id="tourTitle"></h2>
+        <p class="tour-card__body" id="tourBody"></p>
+        <p class="tour-card__src"></p>
+        <p class="tour-card__try" aria-live="polite"><span class="tour-card__try-icon"></span><span class="tour-card__try-text"></span></p>
+      </div>
       <div class="tour-card__foot">
         <button class="tour-card__skip" type="button">Skip tour</button>
         <span class="tour-card__spacer"></span>
@@ -423,6 +492,10 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     addEventListener('keydown', onKey, true);
     addEventListener('resize', place);
     document.addEventListener('scroll', place, { capture: true, passive: true });
+    looks?.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    const day = document.getElementById('dayPop');
+    if (day) looks?.observe(day, { attributes: true, attributeFilter: ['hidden'] });
+    aside = false;
     // targets come and go (the plans arrive, a panel slides in): look again now and then
     tick = setInterval(place, 400);
     index = -1;
@@ -443,6 +516,7 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     release('plans');
     memory.remember();
     resize?.disconnect();
+    looks?.disconnect();
     clearInterval(tick);
     removeEventListener('keydown', onKey, true);
     removeEventListener('resize', place);
@@ -452,6 +526,7 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     ui = null;
     index = -1;
     document.body.classList.remove('is-touring');
+    aside = false;
     if (quiet) return;
     say(finished ? END_LINES.finished : END_LINES.skipped);
     // back where the farmer was, or to the "?" that plays it again
@@ -470,11 +545,11 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     if (n >= list.length) { end(true); return; }
     leaveStep();
     const prev = list[index];
-    const step = list[n];
-    const { release: off, ensure: on } = needsChange(prev, step);
+    const { release: off, ensure: on } = needsChange(prev, list[n]);
     release(off);
     ensure(on);
     index = n;
+    const step = current();
 
     ui.count.textContent = countLabel(n, list.length);
     ui.bar.style.width = `${((n + 1) / list.length) * 100}%`;
@@ -496,14 +571,25 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     watch(step);
     place();
     // after a panel slides in or a section scrolls
-    setTimeout(() => { if (index === n) { reveal(step); place(); } }, 350);
-    if (focus) ui.card.focus({ preventScroll: true });
+    setTimeout(() => { if (index === n) { reveal(current()); place(); } }, 350);
+    if (focus && !aside) ui.card.focus({ preventScroll: true });
   }
 
+  /** This step as it is right now (another target and words while the plan view is on). */
+  function current() {
+    return resolveStep(list[index], (cls) => document.body.classList.contains(cls));
+  }
+
+  // the plans are still being worked out: no "See them on the farm" yet
+  const busyNow = (step) => !!(step.busyBody || step.try?.busyText) && !document.querySelector('#plans [data-act="futures"]');
+
   function writeBody(step) {
-    const busy = step.busyBody && !document.querySelector('#plans [data-act="futures"]');
-    const text = busy ? step.busyBody : step.body;
+    const text = busyNow(step) && step.busyBody ? step.busyBody : step.body;
     if (ui.body.textContent !== text) ui.body.textContent = text;
+    if (step.try && !ui.tryEl.classList.contains('is-done')) {
+      const t = `Try it: ${busyNow(step) && step.try.busyText ? step.try.busyText : step.try.text}`;
+      if (ui.tryText.textContent !== t) ui.tryText.textContent = t;
+    }
   }
 
   /** Scrolls the step's first target into view inside its panel (the check-up's sections). */
@@ -530,10 +616,10 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     settle = setTimeout(() => { if (index === n) go(n + 1, true); }, SETTLE_MS);
   }
   function setTried(done) {
-    const step = list[index];
     ui.tryEl.classList.toggle('is-done', done);
     ui.tryIcon.innerHTML = done ? ICON_DONE : ICON_TRY;
-    ui.tryText.textContent = done ? 'Nice! On we go…' : `Try it: ${step?.try?.text || ''}`;
+    if (done) ui.tryText.textContent = 'Nice! On we go…';
+    else writeBody(current());
   }
 
   function onKey(e) {
@@ -542,7 +628,8 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     const action = keyAction(e.key, {
       typing: isTyping(t),
       ownsArrows: ownsArrows(t),
-      dialog: document.body.classList.contains('jar-open'),
+      dialog: appDialogUp(),
+      inTour: !t || t === document.body || t === document.documentElement || ui.card.contains(t),
     });
     if (!action) return;
     e.preventDefault();
@@ -551,17 +638,34 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     else go(index + (action === 'next' ? 1 : -1), true);
   }
 
+  /** Out of the way while an app dialog is open over the hub; back when it closes. */
+  function stepAside(on) {
+    if (on === aside) return;
+    aside = on;
+    ui.card.classList.toggle('is-aside', on);
+    ui.spot.classList.toggle('is-aside', on);
+    if (on) ui.card.setAttribute('aria-hidden', 'true');
+    else ui.card.removeAttribute('aria-hidden');
+    // Manami speaks for the dialog meanwhile
+    document.body.classList.toggle('is-touring', !on);
+  }
+
   function place() {
     if (!ui) return;
-    const step = list[index];
-    if (step?.busyBody) writeBody(step);
+    stepAside(appDialogUp());
+    const step = current();
+    if (!step) return;
+    if (step.busyBody || step.try?.busyText || step.variants) writeBody(step);
     const els = targets(step);
     const vp = { width: document.documentElement.clientWidth, height: innerHeight };
     const target = unionRect(els.map((el) => {
       const b = el.getBoundingClientRect();
       return { left: b.left, top: b.top, right: b.right, bottom: b.bottom, clip: clipOf(el) };
     }), vp);
-    const p = placeCard({ target, card: { width: ui.card.offsetWidth, height: ui.card.offsetHeight }, vp, side: step?.side });
+    // its whole height, as if nothing cut it down
+    ui.card.style.maxHeight = '';
+    const p = placeCard({ target, card: { width: ui.card.offsetWidth, height: ui.card.offsetHeight }, vp, side: step.side });
+    ui.card.style.maxHeight = p.maxHeight ? `${p.maxHeight}px` : '';
     ui.spot.classList.toggle('is-none', !p.spot);
     const s = p.spot || { left: vp.width / 2, top: vp.height / 2, width: 0, height: 0 };
     Object.assign(ui.spot.style, { left: `${s.left}px`, top: `${s.top}px`, width: `${s.width}px`, height: `${s.height}px` });
@@ -577,6 +681,7 @@ export function createWalkthrough({ ctx, sources = {}, say = () => {}, storage =
     end,
     get isOpen() { return !!ui; },
     get step() { return list[index]?.id ?? null; },
+    get aside() { return aside; },
     memory,
   };
 }
