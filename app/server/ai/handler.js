@@ -5,11 +5,13 @@
 //
 //   GET  .../health   { ok, v, ai, model?, reason? }   (never the key)
 //   POST .../chat     Server-Sent Events: start, text, tool, fallback, turn, error, done
+//   POST .../jar      JSON: the jar test photo read by Claude's vision (server/ai/jar.js)
 //
 // The client runs the tool loop (src/ai/runner.js): one Messages call per request.
 
 import { CHAT_SYSTEM, FINAL_NOTE } from './prompts.js';
 import { CHAT_TOOLS, CHAT_TOOL_NAMES } from './tools.js';
+import { JAR_LIMITS, JarBadRequest, buildJarParams, normaliseJarOutput, parseJarMessage, validateJarBody } from './jar.js';
 
 export const LIMITS = Object.freeze({ chatBytes: 200_000, textChars: 4000, historyMax: 80, toolResults: 10, toolResultChars: 16_000, contextChars: 24_000 });
 export const MAX_TOKENS = 8000;
@@ -256,10 +258,10 @@ export function createAiHandler({ config, getClient, getUser = async () => null,
       if (request.method !== 'GET') return fail(405, 'method_not_allowed', 'Use GET.', { headers: { Allow: 'GET' } });
       const user = await getUser(request).catch(() => null);
       return json(200, config.ai
-        ? { ok: true, v: 1, ai: true, model: config.model, fallbacks: !!config.fallbacks, routes: ['chat'], auth: { required: false, signedIn: !!user } }
+        ? { ok: true, v: 1, ai: true, model: config.model, fallbacks: !!config.fallbacks, routes: ['chat', 'jar'], auth: { required: false, signedIn: !!user } }
         : { ok: true, v: 1, ai: false, reason: config.reason || 'disabled' });
     }
-    if (route !== 'chat') return fail(404, 'not_found', 'No such route.');
+    if (route !== 'chat' && route !== 'jar') return fail(404, 'not_found', 'No such route.');
     if (request.method !== 'POST') return fail(405, 'method_not_allowed', 'Use POST.', { headers: { Allow: 'POST' } });
     if (!config.ai) return fail(503, 'ai_unavailable', 'AI is off or has no key.');
 
@@ -267,6 +269,7 @@ export function createAiHandler({ config, getClient, getUser = async () => null,
     const rl = limiter(user ? `u:${user.id}` : `ip:${info.ip || 'unknown'}`);
     if (!rl.ok) return fail(429, 'rate_limited', 'Too many requests.', { retryable: true, headers: { 'Retry-After': String(rl.retryAfter) } });
     if (!String(request.headers.get('content-type') || '').includes('application/json')) return fail(415, 'json_only', 'Send application/json.');
+    if (route === 'jar') return handleJar(request, { config, getClient });
     const raw = await readBody(request, LIMITS.chatBytes);
     if (raw == null) return fail(413, 'too_large', 'The request is too large.');
 
@@ -334,4 +337,34 @@ export function createAiHandler({ config, getClient, getUser = async () => null,
       headers: { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' },
     });
   };
+}
+
+/** POST .../jar: one structured-output vision call; the photo is not kept or logged. */
+export async function handleJar(request, { config, getClient }) {
+  const raw = await readBody(request, JAR_LIMITS.bytes);
+  if (raw == null) return fail(413, 'too_large', 'The photo is too large.');
+  let input;
+  try {
+    input = validateJarBody(JSON.parse(raw));
+  } catch (e) {
+    if (e instanceof SyntaxError) return fail(400, 'bad_request', 'Bad JSON.');
+    if (e instanceof JarBadRequest) return fail(400, 'bad_request', e.message);
+    throw e;
+  }
+  try {
+    const msg = await getClient().beta.messages.create(buildJarParams(config, input), { signal: request.signal });
+    if (msg.stop_reason === 'refusal') return fail(502, 'refused', 'The model declined.');
+    if (msg.stop_reason === 'max_tokens') return fail(502, 'incomplete', 'The reading was cut short.', { retryable: true });
+    const reading = normaliseJarOutput(parseJarMessage(msg));
+    if (!reading) return fail(502, 'bad_output', 'The reading could not be understood.', { retryable: true });
+    const u = msg.usage || {};
+    return json(200, {
+      ok: true, v: 1, reading, model: msg.model,
+      served_by_fallback: (u.iterations ?? []).some((e) => e?.type === 'fallback_message'),
+    });
+  } catch (err) {
+    const c = classifyError(err);
+    if (c.code !== 'aborted') console.warn('[ai]', 'jar', c.code, err?.status ?? '', err?.requestID ?? '');
+    return fail(c.status, c.code, 'The request failed.', { retryable: c.retryable });
+  }
 }

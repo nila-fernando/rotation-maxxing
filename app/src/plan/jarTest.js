@@ -125,7 +125,7 @@ export function safeMove(analysis, k, y) {
  */
 export function withElapsed(analysis, elapsed, img) {
   const e = ELAPSED.includes(elapsed) ? elapsed : 'ok';
-  if (!analysis.edited && img) {
+  if (!analysis.edited && !analysis.ai && img) { // (Manami's reading isn't redone by the algorithm)
     const again = analysePhoto(img, analysis.box, e);
     if (again.analysis) return again.analysis;
   }
@@ -133,7 +133,7 @@ export function withElapsed(analysis, elapsed, img) {
 }
 
 // the median colour of the few columns at the middle of the box, over rows [y0, y1)
-function middleColour(img, box, y0, y1) {
+export function middleColour(img, box, y0, y1) {
   if (!goodImage(img)) return null;
   const xm = Math.round((box.x0 + box.x1) / 2);
   const cols = [xm - 2, xm - 1, xm, xm + 1, xm + 2].map((x) => clamp(x, 0, img.width - 1));
