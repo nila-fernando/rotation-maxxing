@@ -1,6 +1,6 @@
 # How the rotation algorithm works
 
-> **Model frozen on 2026-11-15.** No new modelling features; validation is in `reports/`. Remaining limitations are listed below and in `DATA_GAPS`.
+> **Model frozen on 2026-11-15**, with one later feature: the present-climate weather adjustment (below). Validation is in `reports/`. Remaining limitations are listed below and in `DATA_GAPS`.
 
 This is the scoring engine behind Field Shift's rotation planner. It takes a farm (paddocks, land, the last 3 years of crops), the farmer's priorities, local market prices and a pool of weather years. It returns three 3-year plans, every number in them explained.
 
@@ -457,6 +457,52 @@ With `NASS_API_KEY` set, it also pulls QuickStats county yields, detrends them l
 
 Without a key it lists the model's worst years. 2012 is the worst for every county and crop.
 
+## Present-climate weather adjustment (`climateAdjust.ts`, NEX-GDDP-CMIP6)
+
+The NASA POWER record (2000 onward) is shifted toward the climate of the season being planned. It uses the change-factor (delta) method, with trends from NASA NEX-GDDP-CMIP6 (NASA NCCS, CC0; Thrasher et al. 2022, *Scientific Data* 9, 262).
+
+**Models.** MIROC6 (2.61 °C), MPI-ESM1-2-HR (2.98), MRI-ESM2-0 (3.15), IPSL-CM6A-LR (4.56) and ACCESS-CM2 (4.72). The numbers are equilibrium climate sensitivity from IPCC AR6 WG1 Table 7.SM.5. Selection rule:
+- climate sensitivity inside the AR6 *very likely* range of 2–5 °C (SPM A.4.4)
+- all six variables for `historical` and `ssp245` in the same run, and every year present
+- a standard calendar
+- distinct modelling centres
+
+**Trends** (precomputed by `scripts/cmip6-trends.ts`; point requests only, cached, 4 at a time):
+- **Period:** historical 1995–2014 joined to SSP2-4.5 2015–2035. This close to the present, the scenario choice barely matters.
+- **Fit:** for each model, variable and calendar month, a least-squares line through **3-month centred moving-window** means (wrapping December–January). This is a design choice, made to reduce single-run noise.
+- **Standard error:** each trend stores its standard error. A shift whose trend is below 2× its standard error is flagged "likely noise" in reports.
+- **Relative trends:** precipitation, radiation and wind trends are relative to their 1995–2035 mean.
+
+**Shift for a day in year y and month m, with dt = target − y:**
+
+```
+tasmax, tasmin  += slope[m] × dt          (Tmin is kept ≤ Tmax; design)
+hurs            += slope[m] × dt, within 0–100
+pr, rsds, wind  ×= clamp(1 + relative slope[m] × dt, 0.5, 2.0)     (clamp: design; dry days stay dry)
+```
+
+Reference ET, the water balance, carryover, freeze detection and erosivity are then recomputed from the shifted days, unchanged.
+
+**Ensemble:**
+- **Deterministic search:** uses the 5-model **mean** trend.
+- **Monte Carlo:** each sample picks **one model**, shared by every paddock and plan, then whole years from that model's pool. So disagreement between climate models feeds into P10.
+
+**Target year:**
+- the farm state's `nextSeason`; `replan` rebuilds the pool from the stored `weatherSource`
+- `buildFarm` takes `targetYear` from the frontend
+- only if that's missing, it falls back to last weather year + 1, with a gap
+
+**Modes and the backtest.** `weatherAdjustment: 'present'` is the default when trends are available. **The backtest always uses `'none'`** (raw POWER).
+
+**Explanation**, e.g. "Weather adjusted to today's climate using NASA NEX-GDDP-CMIP6 (5 models); older years shifted more. 2001 replayed ~1.1 F warmer in Jul (daily highs)."
+
+**Gaps:**
+- only monthly averages shift, not extremes or variability
+- the adjusted pool can't be backtested
+- ~0.25° grid
+- bias-adjusted to GMFD, not POWER (only trends are used)
+- single-run noise
+
 ## Spring freeze injury to winter wheat (`frost.ts`)
 
 ```
@@ -555,6 +601,8 @@ Fallow is scored over the same May–Sep window as summer crops. The surface sta
 | `CALIBRATION_EXCLUDED_EVENTS` | hail, flood, replant | One-off seasons not learned from |
 | `SWITCHING_PENALTY_WEIGHT` | 0.05 | Re-planning stability |
 | `FREEZE_DAMAGE_FACTORS`, `WHEAT_GDD_STAGES` (`croptraits.ts`) | ranges above | Freeze damage (unsourced design); stage mapping (design) |
+| `MULTIPLIER_CLAMP` (`climateAdjust.ts`) | 0.5–2.0 | Clamp on precipitation/radiation/wind change factors (design) |
+| Trend window (`src/data/cmip6.ts`) | 3-month centred | Reduces single-run noise (design) |
 | `SCARCITY_CURVE` (`waterParams.ts`) | 0 at AI 0.65 → 1 at AI 0.20 | Water weight vs aridity (design; anchors are UNEP classes) |
 
 Also:

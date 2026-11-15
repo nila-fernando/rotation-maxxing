@@ -1,6 +1,6 @@
 # API for the 3D frontend
 
-> The model is frozen as of 2026-11-15: field names and shapes below won't change for modelling reasons. Wording of labels and messages may still be polished.
+> The model is frozen as of 2026-11-15, with one later feature: present-climate weather adjustment (see Changes). Field names and shapes below won't change for modelling reasons; wording of labels and messages may still be polished.
 
 How to call the rotation planner from the frontend. For how it works inside, see [ALGORITHM.md](ALGORITHM.md).
 
@@ -40,6 +40,13 @@ All functions are synchronous and pure except `buildFarm`, which fetches data. I
 | `risks[]` | Plans with winter wheat may include a freeze-risk line | Display text |
 | `waterUseIndex` (NASA POWER farms) | Dryland now means water **used** (crop ET or fallow evaporation), not the shortfall | Number stable; meaning documented |
 | `WeatherScenario` | New internal fields `climate`, `freeze` (per year) and `freezeRisk` (pool average) | Opaque: pass through |
+| `scenarios` argument (`generatePlans`, `evaluatePlan`, `createFarmState`) | Now accepts `WeatherScenario[]` **or** a `WeatherEnsemble` `{ mean, members, adjustment }` (present-climate adjustment). Pass whatever `buildFarm` returns as `weather`. | Stable; treat the contents as opaque |
+| `buildFarm` input | New `targetYear` (**pass the current planning season**), `climateTrends` (from `src/data/cmip6/<site>.json`) and `weatherAdjustment: 'none' \| 'present'` (default `'present'` when trends are given) | Stable |
+| `buildFarm` output | **Breaking:** `weather` is now the planning input (`WeatherScenario[] \| WeatherEnsemble`). The raw NASA POWER record moved to `daily`. New: `weatherSource` (pass to `createFarmState`) and `targetYear`. | Stable from now |
+| `createFarmState(farm, weather, nextSeason, weatherSource?)` | New optional 4th argument. With it, `replan` re-adjusts the weather to each new `nextSeason`. | Stable |
+| `SeasonObservations.daily` | New optional field: the season's daily NASA POWER weather, appended to the weather source | Stable |
+| `reasons[]` | With present-climate adjustment, includes e.g. "Weather adjusted to today's climate using NASA NEX-GDDP-CMIP6 (5 models); older years shifted more. 2001 replayed ~1.1 F warmer in Jul (daily highs)." | Display text |
+| `isEnsemble(weather)` | New helper export | Stable |
 
 Example `weatherRisk` for a humid Iowa farm:
 

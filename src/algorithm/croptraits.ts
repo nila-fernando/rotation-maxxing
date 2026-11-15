@@ -747,6 +747,11 @@ export const DATA_GAPS = [
   'Wet springs and excess water (planting delays, ponding, flooding) are not modelled; in humid states these drive many bad years.',
   'Freeze injury uses NASA POWER daily minimum air temperature for a ~50 km grid cell; low spots and the canopy get colder, and daily data cannot resolve the two-hour exposure C646 assumes. Snow cover protection is not modelled.',
   'Wheat freeze damage sizes (yield factor ranges for C646 qualitative effects) are unsourced design values.',
+  'Present-climate adjustment (NEX-GDDP-CMIP6) shifts monthly averages only, not changes in extremes or variability.',
+  'The present-climate-adjusted weather pool cannot be backtested; the backtest uses raw NASA POWER.',
+  'NEX-GDDP-CMIP6 grid is ~0.25 degree, so local climate trends are smoothed.',
+  'NEX-GDDP-CMIP6 is bias-adjusted to GMFD, not NASA POWER; only its trends are used, to limit the mismatch.',
+  'Each CMIP6 model trend comes from a single simulation run; 3-month windows and the 5-model mean reduce, but do not remove, that noise.',
 ];
 
 // ===========================================================================
