@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Island props preview</title>
+<!--
+  Dev-only page (not linked from the app, not part of the build). Shows every maker exported by
+  src/island/props.js on a little grass disc, lit like the prototype, so the port can be checked
+  against team-sheeeep-assets/team-sheeeep-3d/assets/asset-sheet.png.
+
+  URL options:
+    ?item=barn   show one item alone, framed with the prototype's asset-render camera
+                 (names are the labels below in lower case with dashes, e.g. tulip-yellow, sheep-pink)
+    ?still       stop the slow orbit
+-->
+<style>
+  :root { --ink: #5e4232; --cream: #fdf4e6; --wood: #c79d76; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    background: linear-gradient(180deg, #b6c4d3 0%, #d9dde7 48%, #ece5ec 100%);
+    color: var(--ink);
+    font-family: system-ui, sans-serif;
+  }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #labels { position: fixed; inset: 0; pointer-events: none; }
+  .label {
+    position: absolute; transform: translate(-50%, 0); white-space: nowrap;
+    padding: 2px 8px; border-radius: 8px; background: rgba(253, 244, 230, .85);
+    border: 2px solid var(--wood); font-size: 12px; font-weight: 600;
+  }
+  .note {
+    position: fixed; left: 16px; top: 16px; max-width: calc(100vw - 32px);
+    padding: 8px 12px; border-radius: 12px; background: rgba(253, 244, 230, .9);
+    border: 3px solid var(--wood); font-size: 13px; line-height: 1.35;
+  }
+  .note b { font-size: 15px; }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="labels"></div>
+<div class="note" id="note"><b>Island props</b><br>Dev preview of src/island/props.js. Add ?item=barn for one item, ?still to stop turning.</div>
+
+<script type="module">
+import * as THREE from 'three';
+import {
+  ISLAND_COLORS, configureRenderer, addIslandLights, addIslandFog, soft,
+  makeBarn, makeSilo, makeWindmill, makeTree, makeBush, makeRock, makeHayBale, makeHayStack,
+  makeScarecrow, makeFence, makeFenceAlong, makeBench, makeBarrel, makeCrate, makeLampPost,
+  makeMailbox, makeSignpost, makeWheelbarrow, makeFirewood, loadSheepTemplate, makeSheep,
+} from '/src/island/props.js';
+
+const params = new URLSearchParams(location.search);
+const ONLY = params.get('item');
+const STILL = params.has('still') || !!ONLY;
+
+// Everything to show, in grid order. Sheep are filled in once the model has loaded.
+const ITEMS = [
+  ['Barn', () => makeBarn()],
+  ['Windmill', () => makeWindmill()],
+  ['Silo', () => makeSilo()],
+  ['Tulip yellow', () => makeTree('tulip-yellow', 1)],
+  ['Tulip green', () => makeTree('tulip-green', 2)],
+  ['Round', () => makeTree('round', 3)],
+  ['Blossom', () => makeTree('blossom', 4)],
+  ['Pine', () => makeTree('pine', 5)],
+  ['Spiky bush', () => makeBush('spiky', 1)],
+  ['Round bush', () => makeBush('round', 2)],
+  ['Flowering bush', () => makeBush('flowering', 3)],
+  ['Rock', () => rockPile()],
+  ['Hay bale', () => makeHayBale(1)],
+  ['Hay stack', () => makeHayStack(1)],
+  ['Scarecrow', () => makeScarecrow()],
+  ['Fence', () => makeFence(2.4)],
+  ['Fence along', () => makeFenceAlong([{ x: -1, z: -0.6 }, { x: 1, z: -0.6 }, { x: 1, z: 0.8 }], { seed: 2 })],
+  ['Barrel', () => makeBarrel()],
+  ['Crate', () => makeCrate()],
+  ['Bench', () => makeBench()],
+  ['Lamp post', () => makeLampPost()],
+  ['Mailbox', () => makeMailbox()],
+  ['Signpost', () => makeSignpost()],
+  ['Wheelbarrow', () => makeWheelbarrow()],
+  ['Firewood', () => makeFirewood()],
+  ['Sheep black', { wool: 'black', pose: 'stand' }],
+  ['Sheep cream', { wool: 'cream', pose: 'graze' }],
+  ['Sheep cocoa', { wool: 'cocoa', pose: 'sit' }],
+  ['Sheep pink', { wool: 'pink', pose: 'sleep' }],
+];
+const slug = (s) => s.toLowerCase().replace(/\s+/g, '-');
+
+// Three rocks of different seeds and sizes, so the variety shows.
+function rockPile() {
+  const g = new THREE.Group();
+  [[1, 0.26, -0.3, 0.1], [2, 0.18, 0.28, -0.15], [3, 0.12, 0.15, 0.35]].forEach(([seed, size, x, z]) => {
+    const r = makeRock(seed, size);
+    r.position.set(x, 0, z);
+    g.add(r);
+  });
+  return g;
+}
+
+// ---- renderer, scene, lights ----
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+configureRenderer(renderer);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 400);
+
+// ---- grid layout ----
+const list = ONLY ? ITEMS.filter(([name]) => slug(name) === ONLY) : ITEMS;
+if (!list.length) document.getElementById('note').textContent = `No item called "${ONLY}".`;
+const COLS = ONLY ? 1 : 6;
+const CELL = 3.6;
+const rows = Math.ceil(list.length / COLS);
+const cellPos = (i) => new THREE.Vector3(
+  ((i % COLS) - (COLS - 1) / 2) * CELL, 0, (Math.floor(i / COLS) - (rows - 1) / 2) * CELL);
+const gridRadius = ONLY ? 2 : Math.hypot(COLS * CELL, rows * CELL) / 2;
+
+const lights = addIslandLights(scene, gridRadius);
+addIslandFog(scene, gridRadius);
+
+// The prototype's display disc: a grass top over a tapering sandstone rim.
+function disc(r) {
+  const g = new THREE.Group();
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.94, 0.14, 48), soft(ISLAND_COLORS.grass[0]));
+  top.receiveShadow = true;
+  top.position.y = -0.07;
+  g.add(top);
+  const rim = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.94, r * 0.6, 0.3, 48), soft(ISLAND_COLORS.cliff[0]));
+  rim.receiveShadow = true;
+  rim.position.y = -0.29;
+  g.add(rim);
+  return g;
+}
+
+const labelsEl = document.getElementById('labels');
+const slots = [];
+let shot = null;
+let windmill = null;
+
+// Put an object on its own disc in grid cell i, sized to its footprint like the prototype's renders.
+function place(i, name, obj) {
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3());
+  const r = Math.max(size.x, size.z) * 0.72 + 0.25;
+  const cell = new THREE.Group();
+  cell.position.copy(cellPos(i));
+  cell.add(disc(r));
+  cell.add(obj);
+  scene.add(cell);
+  const el = document.createElement('div');
+  el.className = 'label';
+  el.textContent = `${name}  ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)}`;
+  labelsEl.appendChild(el);
+  slots.push({ el, anchor: cell.position.clone().add(new THREE.Vector3(0, -0.5, r + 0.1)) });
+  if (obj.userData.blades) windmill = obj;
+  if (ONLY) {
+    // the prototype's ?asset= camera
+    const rad = Math.max(size.x * 0.9, size.y, size.z * 0.9, 0.6);
+    const d = rad * 2.9 + 0.8;
+    shot = { pos: new THREE.Vector3(d * 0.42, size.y * 0.5 + d * 0.42, d * 0.92), look: new THREE.Vector3(0, size.y * 0.42, 0) };
+    lights.fit(Math.max(4, r * 2) * 7 / 11);
+  }
+  // log measured sizes so FOOTPRINT values can be checked
+  console.log(name, 'w', size.x.toFixed(2), 'h', size.y.toFixed(2), 'd', size.z.toFixed(2));
+}
+
+list.forEach(([name, make], i) => {
+  if (typeof make === 'function') place(i, name, make());
+});
+
+// Sheep need the model first.
+const sheepEntries = list.map((e, i) => [e, i]).filter(([[, make]]) => typeof make !== 'function');
+if (sheepEntries.length) {
+  loadSheepTemplate().then((tpl) => {
+    for (const [[name, opts], i] of sheepEntries) {
+      const sheep = makeSheep(tpl, opts);
+      sheep.rotation.y = 0.35;
+      place(i, name, sheep);
+    }
+  }).catch((err) => {
+    console.error(err);
+    document.getElementById('note').textContent = 'Could not load /models/manami.glb, so the sheep are missing.';
+  });
+}
+
+// ---- render loop: slow orbit around the grid ----
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+const v = new THREE.Vector3();
+const start = performance.now();
+function frame() {
+  const t = (performance.now() - start) / 1000;
+  if (windmill) windmill.userData.blades.rotation.z = t * 0.6;
+  if (shot) {
+    camera.position.copy(shot.pos);
+    camera.lookAt(shot.look);
+  } else {
+    // stand back far enough to see the whole grid on a portrait or landscape screen
+    const fit = gridRadius / Math.tan((camera.fov * Math.PI) / 360) / Math.min(1, camera.aspect) * 0.62;
+    const a = STILL ? 0.35 : 0.35 + t * 0.05;
+    camera.position.set(Math.sin(a) * fit * 0.82, fit * 0.6, Math.cos(a) * fit * 0.82);
+    camera.lookAt(0, 0.4, 0);
+  }
+  renderer.render(scene, camera);
+  for (const s of slots) {
+    v.copy(s.anchor).project(camera);
+    const hidden = v.z > 1;
+    s.el.style.display = hidden ? 'none' : '';
+    s.el.style.left = `${(v.x * 0.5 + 0.5) * innerWidth}px`;
+    s.el.style.top = `${(-v.y * 0.5 + 0.5) * innerHeight}px`;
+  }
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>

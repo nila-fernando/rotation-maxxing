@@ -1,0 +1,26 @@
+Globe kit: image sources and licences
+=====================================
+
+src/assets/globe/earth-day.jpg
+  NASA Blue Marble: Shaded Relief and Bathymetry (GIBS layer BlueMarble_ShadedRelief_Bathymetry),
+  4096x2048, fetched 11 Nov 2026 from NASA GIBS (https://gibs.earthdata.nasa.gov). Public domain.
+  Credit: NASA Earth Observatory / NASA GIBS.
+
+src/assets/globe/earth-night.jpg
+  NASA Black Marble 2016 (GIBS layer VIIRS_Black_Marble), 4096x2048, fetched 11 Nov 2026 from NASA GIBS.
+  Public domain. Credit: NASA Earth Observatory / NASA GIBS.
+
+src/assets/globe/earth-bump-roughness-clouds.jpg   (red = height, green = roughness, blue = clouds)
+src/assets/globe/moon.jpg
+  From the three.js r187 examples (examples/textures/planets/earth_bump_roughness_clouds_4096.jpg and
+  moon_1024.jpg, https://github.com/mrdoob/three.js). Earth textures by Solar System Scope
+  (https://www.solarsystemscope.com/textures/), CC BY 4.0, based on NASA imagery; resized and merged
+  by three.js.
+
+At run time (not in this zip)
+  During the hand-off the globe draws Esri World Imagery tiles, the same ones the Leaflet map shows:
+  Imagery (c) Esri, Maxar, Earthstar Geographics.
+
+Code and data
+  three 0.187.0 (MIT). Planet orbits: JPL "Approximate Positions of the Planets", Table 1
+  (https://ssd.jpl.nasa.gov/planets/approx_pos.html). Reference values in validate-astro.mjs: JPL Horizons.

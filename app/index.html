@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#02030a">
+  <title>Team Sheeeep · Find your farm</title>
+  <link rel="icon" href="/manami.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- the flat satellite map waits underneath; the globe sits on top until the dive hands over -->
+  <div class="map" id="map" aria-label="Satellite map" inert></div>
+  <div class="globe" id="globe" inert>
+    <div class="globe__host" id="globeHost"></div>
+    <div class="globe__tags" id="globeTags"></div>
+  </div>
+  <p class="credit" id="credit">Earth: NASA Blue Marble &amp; Black Marble (NASA GIBS). Relief, clouds &amp; Moon: Solar System Scope, CC BY 4.0. Sky placed for today’s date.</p>
+
+  <a class="logo" id="logo" href="/" aria-label="Team Sheeeep home">
+    <img src="/manami.svg" alt="" width="30" height="27">
+    <span>TEAM SHEEEEP</span>
+  </a>
+
+  <header class="finder" id="finder" inert>
+    <form class="search" id="searchForm" role="search" autocomplete="off">
+      <svg class="search__icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M16.5 16.5 21 21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+      <input class="search__input" id="q" type="text" enterkeyhint="search" spellcheck="false"
+        placeholder="Search your farm address or county"
+        role="combobox" aria-label="Search your farm address or county" aria-autocomplete="list"
+        aria-expanded="false" aria-controls="suggestions">
+      <button class="search__go" type="submit" aria-label="Search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <ul class="suggestions" id="suggestions" role="listbox" aria-label="Places in the US" hidden></ul>
+      <p class="search__status" id="searchStatus" role="status" hidden></p>
+    </form>
+    <button class="btn btn--ghost" id="demoBtn" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12l9-7.5 9 7.5M6 10.5V20h12v-9.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 20v-5h4v5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>
+      Try a demo farm
+    </button>
+  </header>
+
+  <button class="btn btn--ghost again" id="againBtn" type="button" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Search again
+  </button>
+
+  <!-- Step 2 · Pick your fields (src/screens/fields.js) -->
+  <div class="fields-ui" id="fieldsUi" hidden>
+    <nav class="toolbar" id="toolbar" aria-label="Field tools">
+      <div class="toolbar__group" role="group" aria-label="Mode">
+        <button class="tool" type="button" data-mode="select" aria-pressed="true" title="Select (V)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3l12 9-5.2 1.2L16 20l-2.6 1.2-3.2-6.8L6 18z" fill="currentColor"/></svg><span>Select</span>
+        </button>
+        <button class="tool" type="button" data-mode="draw" aria-pressed="false" title="Draw (P)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19l3-9 9-5-3 9z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><circle cx="5" cy="19" r="2" fill="currentColor"/><circle cx="8" cy="10" r="2" fill="currentColor"/><circle cx="17" cy="5" r="2" fill="currentColor"/><circle cx="14" cy="14" r="2" fill="currentColor"/></svg><span>Draw</span>
+        </button>
+        <button class="tool" type="button" data-mode="edit" aria-pressed="false" title="Edit (E)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1-5L15.5 4.5a2.1 2.1 0 0 1 3 3L8 18z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M13.5 6.5l3 3" stroke="currentColor" stroke-width="2.2"/></svg><span>Edit</span>
+        </button>
+      </div>
+      <div class="toolbar__group toolbar__sub" role="group" aria-label="Select tools" data-for="select">
+        <button class="tool tool--small" type="button" data-tool="click" aria-pressed="true" title="Click fields (V)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4v9.5l-2-1.8a1.6 1.6 0 0 0-2.3 2.2L9 19h8.5l1.3-6.3a1.6 1.6 0 0 0-1.3-1.9L13 10V4a2 2 0 0 0-4 0z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Click</span>
+        </button>
+        <button class="tool tool--small" type="button" data-tool="lasso" aria-pressed="false" title="Lasso: drag around fields (L, or hold Shift)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="13" cy="9" rx="8" ry="5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-dasharray="3 2.4"/><path d="M8 13.5c-2 1.2-2.4 3.3-.8 4.4 1.3.9 3.2.2 3.3-1.4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>Lasso</span>
+        </button>
+      </div>
+      <div class="toolbar__group toolbar__sub" role="group" aria-label="Draw tools" data-for="draw" hidden>
+        <button class="tool tool--small" type="button" data-tool="polygon" aria-pressed="true" title="Polygon: click corners, double-click or Enter to finish (P)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 18l2-11 10-2 2 10z" fill="currentColor" opacity=".18"/><path d="M5 18l2-11 10-2 2 10z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg><span>Polygon</span>
+        </button>
+        <button class="tool tool--small" type="button" data-tool="circle" aria-pressed="false" title="Circle for center pivots: press at the center and drag (C)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="currentColor" opacity=".18"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M12 12l6-4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/></svg><span>Circle</span>
+        </button>
+      </div>
+      <div class="toolbar__group toolbar__sub" role="group" aria-label="Edit tools" data-for="edit" hidden>
+        <button class="tool tool--small" type="button" data-action="merge" title="Merge two fields (M)" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="9" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="2.2"/><rect x="12" y="6" width="9" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-dasharray="3 2"/></svg><span>Merge</span>
+        </button>
+        <button class="tool tool--small" type="button" data-action="split" title="Split: draw a line across the field (K)" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="1.5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M15 2L9 22" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="3 2.4"/></svg><span>Split</span>
+        </button>
+        <button class="tool tool--small" type="button" data-action="delete" title="Delete field (Delete)" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/></svg><span>Delete</span>
+        </button>
+      </div>
+      <div class="toolbar__group toolbar__history" role="group" aria-label="History">
+        <button class="tool tool--icon" type="button" data-action="undo" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7L4 12l5 5M4 12h10a6 6 0 0 1 0 12h-2" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 -3)"/></svg>
+        </button>
+        <button class="tool tool--icon" type="button" data-action="redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 7l5 5-5 5M20 12H10a6 6 0 0 0 0 12h2" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 -3)"/></svg>
+        </button>
+      </div>
+    </nav>
+
+    <div class="outline-switch" role="radiogroup" aria-label="Field outlines">
+      <span class="outline-switch__label">Field outlines</span>
+      <button type="button" role="radio" data-outlines="usda" aria-checked="true">USDA</button>
+      <button type="button" role="radio" data-outlines="ai" aria-checked="false">AI</button>
+      <button type="button" role="radio" data-outlines="off" aria-checked="false">Off</button>
+    </div>
+    <p class="hint" id="toolHint" aria-live="polite"></p>
+
+    <aside class="field-panel" id="fieldPanel" aria-labelledby="fieldPanelTitle">
+      <h2 class="field-panel__title" id="fieldPanelTitle" tabindex="-1">Your fields</h2>
+      <p class="field-panel__count" id="fieldCount"><b>0</b> <span></span></p>
+      <ol class="field-list" id="fieldList"></ol>
+      <p class="field-panel__empty" id="fieldEmpty">No fields yet. Click the outlines on the map, or draw your own.</p>
+      <div class="field-panel__foot">
+        <p class="field-panel__total" id="fieldTotal"></p>
+        <button class="btn btn--primary btn--wide" id="continueBtn" type="button" disabled>Continue to my farm</button>
+        <button class="linkish" id="changeLocationBtn" type="button">Change location</button>
+        <p class="field-panel__credit" id="outlineCredit"></p>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Step 3 · Manami's check-in while the data loads (src/screens/checkin.js) -->
+  <div class="checkin" id="checkin" hidden>
+    <div class="checkin__dim" aria-hidden="true"></div>
+    <section class="checkin__manami" aria-label="Manami’s questions">
+      <img class="checkin__face" src="/manami.svg" alt="" width="64" height="58">
+      <div class="checkin__card" id="checkinCard" aria-live="polite"></div>
+    </section>
+    <aside class="checklist" id="checklist" aria-labelledby="checklistTitle">
+      <h2 class="checklist__title" id="checklistTitle">Getting your farm’s data</h2>
+      <div class="checklist__bar" id="checklistBar" aria-hidden="true"><span></span></div>
+      <p class="checklist__progress" id="checklistProgress" role="status"></p>
+      <ol class="checklist__rows" id="checklistRows"></ol>
+    </aside>
+  </div>
+
+  <!-- Step 4 · the island reveal (src/screens/reveal.js) -->
+  <div class="reveal" id="reveal" hidden aria-label="Your farm as an island"></div>
+
+  <!-- Step 5 · the island hub, the farm's home screen (src/screens/hub.js) -->
+  <div class="hub" id="hub" hidden>
+    <aside class="hub-panel" id="hubPanel" aria-labelledby="hubTitle">
+      <h2 class="hub-panel__title" id="hubTitle">Your fields</h2>
+      <p class="hub-panel__count" id="hubCount"></p>
+      <ol class="hub-list" id="hubList" aria-label="Fields: hover or focus one to find it on the island, choose one to look closer"></ol>
+      <button class="hub-panel__whole" id="hubWhole" type="button" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Show the whole farm
+      </button>
+    </aside>
+    <div class="timebar" id="timebar" role="group" aria-label="The farm through the years" hidden>
+      <p class="timebar__label" id="timeLabel" aria-live="polite"></p>
+      <button class="timebar__step" id="timePrev" type="button" aria-label="Previous year">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="timebar__years" id="timeYears" role="radiogroup" aria-label="Year"></div>
+      <button class="timebar__step" id="timeNext" type="button" aria-label="Next year">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="timebar__play" id="timePlay" type="button" aria-label="Play the farm through the years"></button>
+      <div class="timebar__daywrap">
+        <button class="timebar__day" id="timeDay" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="dayPop" aria-label="Time of day"></button>
+        <div class="daypop" id="dayPop" role="dialog" aria-label="Time of day, season and festival theme" hidden>
+          <div class="daypop__head">
+            <span class="daypop__icon" id="dayIcon" aria-hidden="true"></span>
+            <p><b id="dayTime"></b><span id="dayPart"></span></p>
+          </div>
+          <input class="daypop__slider" id="daySlider" type="range" min="0" max="24" step="0.25" aria-label="Time of day">
+          <div class="daypop__scale" aria-hidden="true"><span>12 am</span><span>6 am</span><span>12 pm</span><span>6 pm</span><span>12 am</span></div>
+          <p class="daypop__label" id="daySeasonsLabel">Season</p>
+          <div class="daypop__seasons" id="daySeasons" role="radiogroup" aria-labelledby="daySeasonsLabel"></div>
+          <p class="daypop__label" id="dayThemesLabel">Festival theme</p>
+          <div class="daypop__themes" id="dayThemes" role="radiogroup" aria-labelledby="dayThemesLabel"></div>
+          <div class="daypop__row">
+            <button class="btn btn--quiet btn--small" id="dayRun" type="button">Play the day</button>
+            <button class="btn btn--quiet btn--small" id="dayNow" type="button">Back to today</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn--primary hub-plan" id="hubPlan" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M3.5 10h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M8.5 14.5l2.2 2.2 4.8-4.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Plan my next seasons</span>
+    </button>
+    <div class="hub-tip" id="hubTip" role="tooltip" hidden></div>
+  </div>
+
+  <!-- Part 4.2 · planning on the island: drag crops onto the fields (src/screens/islandPlanner.js) -->
+  <div class="isle-badges" id="isleBadges" aria-hidden="true"></div>
+  <section class="isle-dock" id="isleDock" aria-label="Plan on the island" hidden>
+    <div class="isle-dock__row">
+      <div class="isle-seasons" id="isleSeasons" role="radiogroup" aria-label="Season"></div>
+      <p class="isle-totals" id="isleTotals" aria-live="polite"></p>
+    </div>
+    <div class="isle-palette" id="islePalette" role="toolbar" aria-label="Crops to place"></div>
+    <div class="isle-dock__row isle-dock__go">
+      <button class="btn btn--quiet btn--small" id="isleBack" type="button">Back to the grid</button>
+      <button class="btn btn--primary btn--small" id="isleSave" type="button" disabled>Use my plan</button>
+    </div>
+  </section>
+
+  <!-- "See them on the farm": the island flips between the plans (src/screens/planFutures.js) -->
+  <div class="fut-chips" id="futChips" aria-hidden="true"></div>
+  <section class="fut-dock" id="futDock" role="region" aria-labelledby="futTitle" hidden>
+    <div class="fut-dock__row fut-dock__row--top">
+      <h2 class="fut-dock__title" id="futTitle" tabindex="-1">Your next 3 seasons</h2>
+      <div class="fut-plans" id="futPlans" role="radiogroup" aria-label="Plan on the island"></div>
+      <button class="fut-close" id="futClose" type="button" aria-label="Leave the plan view">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="fut-dock__row fut-dock__row--mid">
+      <div class="fut-seasons" id="futSeasons" role="radiogroup" aria-label="Season"></div>
+      <div class="fut-score" id="futScore"></div>
+      <button class="fut-more btn btn--quiet btn--small" id="futMore" type="button" aria-expanded="false" aria-controls="futScore">More</button>
+    </div>
+    <div class="fut-dock__row fut-dock__row--foot">
+      <p class="fut-caption" id="futCaption"></p>
+      <p class="fut-mix" id="futMix" aria-live="polite"></p>
+      <div class="fut-dock__go">
+        <button class="btn btn--quiet btn--small fut-iconbtn" id="futFields" type="button" aria-controls="futCard" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="6.6" height="6.6" rx="1.4" fill="currentColor" fill-opacity=".2"/><rect x="13.4" y="4" width="6.6" height="6.6" rx="1.4"/><rect x="4" y="13.4" width="6.6" height="6.6" rx="1.4"/><rect x="13.4" y="13.4" width="6.6" height="6.6" rx="1.4" fill="currentColor" fill-opacity=".2"/></svg><span>Fields</span>
+        </button>
+        <button class="btn btn--quiet btn--small fut-iconbtn" id="futNotesBtn" type="button" aria-haspopup="dialog" aria-controls="futNotes" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.6C10.2 5.2 7.4 4.6 3.6 4.8v13.4c3.8-.2 6.6.4 8.4 1.8z" fill="currentColor" fill-opacity=".2"/><path d="M12 6.6c1.8-1.4 4.6-2 8.4-1.8v13.4c-3.8-.2-6.6.4-8.4 1.8z"/></svg><span>Why and watch out</span>
+        </button>
+        <button class="btn btn--quiet btn--small fut-iconbtn" id="futBack" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 12H5M11 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Back to the plans</span>
+        </button>
+        <button class="btn btn--primary btn--small fut-save" id="futSave" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.6l4.4 4.4L19 7.4"/></svg><span>Use my pick</span>
+        </button>
+      </div>
+    </div>
+    <p class="sr-only" id="futStatus" role="status" aria-live="polite"></p>
+  </section>
+  <aside class="fut-card" id="futCard" aria-labelledby="futCardTitle" hidden></aside>
+  <section class="fut-notes" id="futNotes" role="dialog" aria-modal="false" aria-labelledby="futNotesTitle" hidden></section>
+
+  <!-- Part 4 · "Plan my next seasons": the planner's three plans (src/screens/plansPanel.js) -->
+  <section class="plans" id="plans" role="dialog" aria-labelledby="plansTitle" hidden>
+    <div class="plans__top">
+      <div>
+        <p class="plans__kicker">Plan my next seasons</p>
+        <h2 class="plans__title" id="plansTitle" tabindex="-1">Your next 3 seasons</h2>
+      </div>
+      <button class="checkup__close" id="plansClose" type="button" aria-label="Close the plans">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="plans__body" id="plansBody"></div>
+  </section>
+
+  <!-- Part 3.5 · the field check-up panel (src/screens/fieldPanel.js) -->
+  <aside class="checkup" id="checkup" aria-labelledby="checkupTitle" hidden>
+    <div class="checkup__top">
+      <div class="checkup__head" id="checkupHead"></div>
+      <button class="checkup__close" id="checkupClose" type="button" aria-label="Close the field check-up">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="checkup__body" id="checkupBody"></div>
+  </aside>
+
+  <aside id="manami" aria-label="Manami, your guide"></aside>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

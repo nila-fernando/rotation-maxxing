@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Crop preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    /* Dev-only page: every crop from src/island/crops.js, lit like the prototype island. */
+    :root { --ink: #5e4232; --cream: #fdf4e6; --wood: #c79d76; --wood-dark: #9c714f; }
+    html, body { margin: 0; height: 100%; overflow: hidden; font-family: Fredoka, system-ui, sans-serif; color: var(--ink); }
+    body { background: linear-gradient(#b4c2d6 0%, #d9dae6 55%, #ebe6ef 100%); }
+    #scene { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
+    .panel {
+      position: fixed; top: 16px; left: 16px; z-index: 2; max-width: calc(100vw - 64px);
+      background: var(--cream); border: 3px solid var(--wood); border-radius: 16px;
+      box-shadow: 0 4px 0 var(--wood-dark); padding: 12px 14px; display: grid; gap: 8px;
+    }
+    .panel h1 { margin: 0; font-size: 18px; font-weight: 600; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; }
+    button, select {
+      font: inherit; font-size: 14px; color: var(--ink); background: #f2dcbd; cursor: pointer;
+      border: 2px solid var(--wood); border-radius: 10px; padding: 5px 10px;
+    }
+    button:hover, select:hover { background: #f7e6cc; }
+    .stats { font-size: 12px; opacity: .8; font-variant-numeric: tabular-nums; }
+    .tag {
+      font-size: 13px; font-weight: 500; white-space: nowrap; pointer-events: none;
+      background: rgba(253, 244, 230, .92); border: 2px solid var(--wood); border-radius: 999px; padding: 2px 10px;
+    }
+    .tag small { font-weight: 400; opacity: .7; margin-left: 4px; }
+  </style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div class="panel">
+    <h1>Crop preview</h1>
+    <div class="row">
+      <button id="replay" type="button">Replay growth</button>
+      <label>L-shape crop <select id="lcrop"></select></label>
+      <button id="stress" type="button">Show 15 big fields</button>
+    </div>
+    <div class="stats">Click a field to look closely, click the sky to go back. Drag to orbit.</div>
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+    import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+    import { CROP_KEYS, CROP_STYLE, plantField } from '/src/island/crops.js';
+
+    // ---------- renderer, camera and lights (values copied from the prototype island) ----------
+    const canvas = document.getElementById('scene');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.12;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    const labels = new CSS2DRenderer();
+    Object.assign(labels.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none' });
+    document.body.appendChild(labels.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 300);
+    const controls = new OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.maxPolarAngle = Math.PI * 0.47;
+
+    scene.add(new THREE.HemisphereLight(0xf7f3ff, 0xb9aa8a, 1.3));
+    const sun = new THREE.DirectionalLight(0xfff0d6, 2.35);
+    sun.position.set(-11, 11, 2.5);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 0.035;
+    scene.add(sun);
+    const fill = new THREE.DirectionalLight(0xcdd6ff, 0.6);
+    fill.position.set(9, 6, -5);
+    scene.add(fill);
+
+    const flat = (color) => new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0, flatShading: true });
+
+    // Size the sun's shadow box to whatever is on show (the stress view is much bigger).
+    function fitShadow(half) {
+      const s = sun.shadow.camera;
+      sun.position.set(-11, 11, 2.5).multiplyScalar(Math.max(1, half / 10));
+      Object.assign(s, { left: -half, right: half, top: half, bottom: -half, near: 1, far: half * 5 });
+      s.updateProjectionMatrix();
+    }
+
+    // ---------- a soil slab for one field: top in the crop's soil colour, sides darker ----------
+    // rings are [[x, z], ...]; the slab's top sits at y = 0 like the planted group.
+    function slab(rings, style, depth = 0.22) {
+      const toV = ([x, z]) => new THREE.Vector2(x, -z); // shape space y = -z, see rotation below
+      const shape = new THREE.Shape(rings[0].map(toV));
+      for (const hole of rings.slice(1)) shape.holes.push(new THREE.Path(hole.map(toV)));
+      const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
+      g.rotateX(-Math.PI / 2).translate(0, -depth, 0); // extrusion now points up, top at y = 0
+      const m = new THREE.Mesh(g, [flat(style.soil), flat(style.sides ?? style.soil)]);
+      m.receiveShadow = true;
+      return m;
+    }
+    const rect = (w, d) => [[[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]]];
+
+    // An irregular L with a hole; its longest edge is slightly slanted, so the rows follow it.
+    const L_SHAPE = [
+      [[-1.5, -1.1], [1.45, -0.92], [1.5, -0.08], [-0.25, 0.02], [-0.38, 1.1], [-1.5, 1.04]],
+      [[-1.15, -0.72], [-0.62, -0.75], [-0.68, -0.28], [-1.1, -0.3]],
+    ];
+
+    // ---------- building the board ----------
+    let fields = []; // { group, label }
+    let world = null;
+
+    function grassBoard(rx, rz) {
+      const g = new THREE.CylinderGeometry(1, 0.94, 0.5, 48, 1);
+      g.scale(rx, 1, rz);
+      const m = new THREE.Mesh(g, [flat(0xd2b993), flat(0xbabd68), flat(0xb09379)]);
+      m.position.y = -0.33; // grass top at y = -0.08, so the field slabs stand a little proud
+      m.receiveShadow = true;
+      return m;
+    }
+
+    function addField(parent, key, rings, x, z, opts = {}) {
+      const style = CROP_STYLE[key];
+      const holder = new THREE.Group();
+      holder.position.set(x, 0, z);
+      const base = slab(rings, style);
+      holder.add(base);
+      const group = plantField(key, [rings], opts);
+      holder.add(group);
+      const tag = document.createElement('div');
+      tag.className = 'tag';
+      tag.innerHTML = `${style.label}<small>${key} · ${group.userData.count} plants</small>`;
+      const label = new CSS2DObject(tag);
+      let zmax = -Infinity;
+      for (const [, pz] of rings[0]) zmax = Math.max(zmax, pz);
+      label.position.set(0, 0, zmax + 0.45);
+      holder.add(label);
+      parent.add(holder);
+      fields.push({ group, holder, base });
+      return group;
+    }
+
+    function clearWorld() {
+      if (!world) return;
+      world.traverse((o) => {
+        if (o.isCSS2DObject) o.element.remove();
+        if (o.isInstancedMesh) o.dispose(); // plant geometries and material are shared: keep them
+      });
+      scene.remove(world);
+      world = null;
+      fields = [];
+    }
+
+    // The normal view: every crop on a 3 x 2.2 slab, plus the L-shape with a hole.
+    function buildGallery() {
+      clearWorld();
+      world = new THREE.Group();
+      scene.add(world);
+      const cols = 4, gapX = 3.9, gapZ = 3.4;
+      const slots = [...CROP_KEYS.map((k) => ({ key: k, rings: rect(3, 2.2) })), { key: lSelect.value, rings: L_SHAPE, isL: true }];
+      slots.forEach((s, i) => {
+        const c = i % cols, r = Math.floor(i / cols);
+        addField(world, s.key, s.rings, (c - (cols - 1) / 2) * gapX, (r - 1) * gapZ, { seed: i + 1 });
+      });
+      world.add(grassBoard(9.4, 6.4));
+      fitShadow(10);
+      camera.position.set(0, 15.5, 19);
+      controls.target.set(0, -0.4, 0.4);
+      controls.update();
+      overview = [camera.position.clone(), controls.target.clone()];
+      stressOn = false;
+      stressBtn.textContent = 'Show 15 big fields';
+      replay();
+    }
+
+    // Stress view: 15 large fields (one per crop, cycling), each capped at maxPlants = 1500.
+    function buildStress() {
+      clearWorld();
+      world = new THREE.Group();
+      scene.add(world);
+      const cols = 5, w = 7, d = 5;
+      for (let i = 0; i < 15; i++) {
+        const c = i % cols, r = Math.floor(i / cols);
+        addField(world, CROP_KEYS[i % CROP_KEYS.length], rect(w, d), (c - 2) * (w + 0.8), (r - 1) * (d + 1.2), { seed: i + 1 });
+      }
+      world.add(grassBoard(22, 12));
+      fitShadow(22);
+      camera.position.set(0, 36, 44);
+      controls.target.set(0, -0.4, 0.6);
+      controls.update();
+      overview = [camera.position.clone(), controls.target.clone()];
+      stressOn = true;
+      stressBtn.textContent = 'Back to the gallery';
+      replay();
+    }
+
+    // ---------- growth animation ----------
+    const GROW_SECONDS = 0.8;
+    let growStart = -1, worstMs = 0;
+    function replay() {
+      for (const f of fields) f.group.userData.setGrowth(0);
+      growStart = performance.now();
+      worstMs = 0;
+    }
+
+    // ---------- UI ----------
+    const lSelect = document.getElementById('lcrop');
+    for (const k of CROP_KEYS) lSelect.add(new Option(CROP_STYLE[k].label, k, k === 'corn', k === 'corn'));
+    const stressBtn = document.getElementById('stress');
+    const stats = document.getElementById('stats');
+    let stressOn = false;
+    document.getElementById('replay').addEventListener('click', replay);
+    lSelect.addEventListener('change', buildGallery);
+    stressBtn.addEventListener('click', () => (stressOn ? buildGallery() : buildStress()));
+
+    // Click a field for a close look; click empty space to go back to the overview.
+    let overview = null, downAt = null;
+    const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+    canvas.addEventListener('pointerdown', (e) => { downAt = [e.clientX, e.clientY]; });
+    canvas.addEventListener('pointerup', (e) => {
+      if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return; // was a drag
+      ndc.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+      ray.setFromCamera(ndc, camera);
+      const hit = ray.intersectObjects(fields.map((f) => f.base))[0];
+      if (hit) {
+        const p = hit.object.parent.position;
+        const k = stressOn ? 2.2 : 1;
+        controls.target.set(p.x, 0.15, p.z);
+        camera.position.set(p.x, 2.2 * k, p.z + 4.2 * k);
+      } else if (overview) {
+        camera.position.copy(overview[0]);
+        controls.target.copy(overview[1]);
+      }
+      controls.update();
+    });
+
+    function resize() {
+      const w = innerWidth, h = innerHeight;
+      renderer.setSize(w, h, false);
+      labels.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    addEventListener('resize', resize);
+    resize();
+    buildGallery();
+
+    renderer.setAnimationLoop(() => {
+      if (growStart >= 0) {
+        const t = Math.min(1, (performance.now() - growStart) / (GROW_SECONDS * 1000));
+        const t0 = performance.now();
+        for (const f of fields) f.group.userData.setGrowth(t);
+        worstMs = Math.max(worstMs, performance.now() - t0);
+        if (t >= 1) growStart = -1;
+      }
+      controls.update();
+      renderer.render(scene, camera);
+      labels.render(scene, camera);
+      const plants = fields.reduce((s, f) => s + f.group.userData.count, 0);
+      const inst = fields.reduce((s, f) => s + f.group.children.reduce((a, m) => a + m.count, 0), 0);
+      stats.textContent = `${plants.toLocaleString('en-US')} plants, ${inst.toLocaleString('en-US')} instances, ` +
+        `${renderer.info.render.calls} draw calls, setGrowth worst frame ${worstMs.toFixed(2)} ms`;
+    });
+  </script>
+</body>
+</html>
