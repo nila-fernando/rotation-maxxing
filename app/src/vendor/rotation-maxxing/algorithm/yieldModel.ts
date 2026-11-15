@@ -3,10 +3,9 @@
  * never care which model is used. Today: TraitYieldModel (national yield x
  * multipliers). Later: an APSIM lookup-table model.
  */
-import { getCrop, isFallow, salinityRelativeYield, typicalYield } from './cropData';
+import { baseYieldFor, getCrop, isFallow, salinityRelativeYield } from './cropData';
 import { FREEZE_DAMAGE_FACTORS } from './croptraits';
-import { sourceIds } from './evidence';
-import { FREEZE_GAP, freezeFactor } from './frost';
+import { FREEZE_GAP, freezeFactor, freezeRiskText, SEVERITY, worseThan } from './frost';
 import { drainageCheck, phCheck } from './landSuitability';
 import { productOf, rotationEffect, timelineOf } from './rotation';
 import { computeShade, type ShadeResult } from './shade';
@@ -123,11 +122,17 @@ export function meanScenario(pool: WeatherScenario[]): WeatherScenario {
     for (const c of crops) {
       const checked = frozen.filter((w) => c in w.freeze!);
       const hits = checked.map((w) => w.freeze![c]).filter((e): e is NonNullable<typeof e> => !!e);
-      const stages = new Map<string, number>();
-      for (const h of hits) stages.set(h.stage, (stages.get(h.stage) ?? 0) + 1);
-      const typical = [...stages.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+      // Most common stage; ties go to the more severe C646 effect (not to the stage seen first).
+      const stages = new Map<string, { n: number; severity: number }>();
+      for (const h of hits) {
+        const cur = stages.get(h.stage);
+        stages.set(h.stage, { n: (cur?.n ?? 0) + 1, severity: Math.max(cur?.severity ?? 0, SEVERITY[h.effect]) });
+      }
+      const typical = [...stages.entries()].sort((a, b) => b[1].n - a[1].n || b[1].severity - a[1].severity)[0]?.[0] ?? null;
+      let worst: (typeof hits)[number] | null = null;
+      for (const h of hits) if (!worst || worseThan(h, worst)) worst = h;
       const meanFactor = checked.reduce((a, w) => a + (w.freeze![c] ? freezeFactor(w.freeze![c]!.effect) : 1), 0) / checked.length;
-      out.freezeRisk[c] = { years: hits.length, of: checked.length, typicalStage: typical, meanFactor };
+      out.freezeRisk[c] = { years: hits.length, of: checked.length, typicalStage: typical, worstStage: worst?.stage ?? null, meanFactor };
     }
   }
   const rs = pool.flatMap((w) => (w.erosivityR !== undefined ? [w.erosivityR] : []));
@@ -167,10 +172,10 @@ export function meanScenario(pool: WeatherScenario[]): WeatherScenario {
 }
 
 /**
- * yield = national average x land suitability x rotation effect x (1 - shade loss) x weather multiplier
+ * yield = base yield (local NASS county/state, else US average) x land suitability x rotation effect x (1 - shade loss) x weather multiplier
  */
 export class TraitYieldModel implements YieldModel {
-  readonly name = 'TraitYieldModel (national yield x multipliers)';
+  readonly name = 'TraitYieldModel (base yield x multipliers)';
 
   yieldFor(
     paddock: Paddock,
@@ -187,7 +192,8 @@ export class TraitYieldModel implements YieldModel {
       const terms: Term[] = explain ? [{ label: 'Fallow: no harvest', value: 0, unit: 'per ac', basis: 'sourced' }] : [];
       return { value: 0, unit: null, terms, gaps, risks: [], shadedFraction: 0 };
     }
-    const base = typicalYield(crop);
+    const baseInfo = baseYieldFor(ctx.prepared.farm, crop);
+    const base = baseInfo.value;
     if (base === null) {
       return { value: null, unit: crop.yieldUnit, terms: [], gaps, risks: [], shadedFraction: 0 };
     }
@@ -262,7 +268,7 @@ export class TraitYieldModel implements YieldModel {
       gaps.push(FREEZE_GAP);
     } else if (risk && risk.years > 0 && ev === undefined) {
       factors.push({
-        label: `Freeze risk: in ${risk.years} of ${risk.of} years, temperatures fell below the ${risk.typicalStage ?? 'stage'} threshold (K-State C646); average effect`,
+        label: `Freeze risk: ${freezeRiskText(risk)} (K-State C646); average effect`,
         factor: risk.meanFactor,
         basis: 'design',
         sources: ['ksuC646', 'ksuMesonetWheatGdd', 'nasaPower'],
@@ -274,7 +280,7 @@ export class TraitYieldModel implements YieldModel {
 
     const terms: Term[] = [];
     if (explain) {
-      terms.push({ label: `US average ${crop.name} yield`, value: base, unit, basis: 'sourced', sources: sourceIds(crop.yieldPerAcre?.source) });
+      terms.push({ label: baseInfo.label, value: base, unit, basis: baseInfo.basis, sources: baseInfo.sources });
       let running = base;
       for (const f of factors) {
         if (f.factor === 1) {

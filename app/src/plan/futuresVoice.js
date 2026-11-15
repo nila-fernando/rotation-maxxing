@@ -241,12 +241,15 @@ const FARM_RISK = [
     say: (m) => `In a bad run of years this plan could lose about ${moneyAbout(Number(m[1].replace(/,/g, '')))} over 3 seasons.` },
   { re: /^Year (\d): the farm grows more (.+?) than local buyers take/,
     say: (m, cmp) => `In ${cmp.years[Number(m[1]) - 1] ?? 'one season'}, the farm grows more ${saidName(m[2])} than local buyers take.` },
-  // the wheat's spring freeze, with the caveat that the rule is a Kansas one
+  // the wheat's spring freeze (at its most common stage, and the worst one's when that differs),
+  // with the caveat that the rule is a Kansas one
   { re: FREEZE_TERM,
     say: (m, cmp) => {
       const how = STAGE_WORD[m[3]];
-      const caveat = frostCaveat(cmp.facts?.state ?? null, m[3]);
-      return `In ${m[1]} of ${m[2]} springs here, a freeze got cold enough to hurt the wheat${how ? ` ${how}` : ''}.${caveat ? ` ${caveat}` : ''}`;
+      const worstHow = m[4] && m[4] !== m[3] ? STAGE_WORD[m[4]] : null;
+      const caveat = frostCaveat(cmp.facts?.state ?? null);
+      const when = how ? `${worstHow ? ', most often' : ''} ${how}` : '';
+      return `In ${m[1]} of ${m[2]} springs here, a freeze got cold enough to hurt the wheat${when}.${worstHow ? ` The worst one hit it ${worstHow}.` : ''}${caveat ? ` ${caveat}` : ''}`;
     } },
 ];
 
@@ -304,7 +307,7 @@ export const GAP_PHRASE = [
   { key: 'yields', re: /Yields start from US averages/, farm: () => 'My yields start from US averages, so check them against your own records.' },
   { key: 'pests', re: /Pest and disease penalties/, farm: () => 'My pest and disease numbers are estimates. Your agronomist will know local pressure.' },
   { key: 'freeze', re: /^Freeze injury uses NASA POWER daily minimum/,
-    farm: () => 'I count a freeze when a night after March 1 gets colder than the wheat can take at its stage. I use weather for the wider area, so low spots may get colder, and I don’t count snow cover.' },
+    farm: () => 'Once the wheat greens up after a spring warm spell, I count a freeze when a night gets as cold as it can take. I use weather for the wider area, so low spots may get colder, and I don’t count snow cover.' },
 ];
 
 /** Every raw gap and local-review note, once each. */
@@ -557,7 +560,7 @@ export function frostLine(cmp) {
   const seasons = st.ids.map((id) => fieldOf(cmp, id).byKind.priority.seasons[st.season]);
   const fz = seasons.reduce((a, s) => (s.freeze.pct > a.pct ? s.freeze : a), seasons[0].freeze);
   const crops = [...new Set(seasons.map((s) => s.crop))];
-  const caveat = frostCaveat(cmp.facts?.state ?? null, fz.stage);
+  const caveat = frostCaveat(cmp.facts?.state ?? null);
   return `My pick sows ${joinAnd(crops.map(word))} on ${namesOf(cmp, st.ids)} for the ${cmp.years[st.season]} harvest. ${springsWords(fz)}, a night got cold enough to hurt it, so I take ${frostCut(fz)} off.${caveat ? ` ${caveat}` : ''}`;
 }
 

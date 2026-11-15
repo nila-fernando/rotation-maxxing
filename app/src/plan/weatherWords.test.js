@@ -14,7 +14,6 @@ const near = (actual, expected, tol, what) => assert.ok(Math.abs(actual - expect
 const EMOJI = /\p{Extended_Pictographic}/u;
 
 const HUMID = 'Water isn’t the big weather worry here. Wet springs, floods and wind matter more, and I can’t count most of those yet.';
-const DORMANT = 'My frost rule comes from Kansas, so here it may count cold nights while the wheat is still dormant.';
 const CHECK = 'My frost rule comes from Kansas, so check it with someone who grows wheat near you.';
 
 describe('the wheat’s spring freeze', () => {
@@ -26,12 +25,20 @@ describe('the wheat’s spring freeze', () => {
 
   it('reads the planner’s freeze term and the wheat price', () => {
     const fz = freezeOf(year.terms, year.yieldPerAcre);
-    assert.deepEqual([fz.years, fz.of, fz.stage], [13, 24, 'tillering']);
-    near(fz.bu, -2.74, 0.02, 'bu/ac');
-    near(fz.pct, 5.4, 0.1, '% of the crop');
-    near(fz.cashAc, -14.5, 0.2, '$/ac');
+    assert.deepEqual([fz.years, fz.of, fz.stage], [6, 24, 'tillering']);
+    near(fz.bu, -2.80, 0.02, 'bu/ac');
+    near(fz.pct, 5.5, 0.1, '% of the crop');
+    near(fz.cashAc, -14.8, 0.2, '$/ac');
     assert.match(fz.label, FREEZE_TERM);
-    assert.deepEqual(frostNumbers(fz), [['Spring freezes', '13 of 24 springs'], ['Freeze cut', '−2.7 bu/ac, about −$15/ac']]);
+    assert.equal(FREEZE_TERM.exec(fz.label)[4], 'heading', 'the worst freeze’s stage');
+    assert.deepEqual(frostNumbers(fz), [['Spring freezes', '6 of 24 springs'], ['Freeze cut', '−2.8 bu/ac, about −$15/ac']]);
+  });
+
+  it('reads the freeze term in the older planner’s words too', () => {
+    const m = FREEZE_TERM.exec('Freeze risk: in 2 of 4 years, temperatures fell below the jointing threshold (K-State C646); average effect');
+    assert.deepEqual(m.slice(1), ['2', '4', 'jointing', undefined]);
+    const n = FREEZE_TERM.exec('Freeze risk: in 3 of 24 years, temperatures fell to or below the jointing threshold (K-State C646); average effect');
+    assert.deepEqual(n.slice(1), ['3', '24', 'jointing', undefined]);
   });
 
   it('gives null with no freeze term', () => {
@@ -69,10 +76,10 @@ describe('the wheat’s spring freeze', () => {
 
 describe('the Kansas caveat', () => {
   it('in each case', () => {
-    assert.equal(frostCaveat('KS', 'tillering'), null);
-    assert.equal(frostCaveat('IA', 'tillering'), DORMANT);
-    assert.equal(frostCaveat('IA', 'jointing'), CHECK);
-    assert.equal(frostCaveat(null, 'tillering'), CHECK);
+    // the planner counts from green-up (warm days), so she no longer says it may count dormant nights
+    assert.equal(frostCaveat('KS'), null);
+    assert.equal(frostCaveat('IA'), CHECK);
+    assert.equal(frostCaveat(null), CHECK);
   });
 });
 
@@ -96,7 +103,7 @@ describe('the field check-up’s weather captions', () => {
     const data = wheatData();
     const f1 = fieldWeatherNote(data, 'f1', { startYear: START_YEAR });
     assert.equal(f1.water, HUMID);
-    assert.equal(f1.frost, `In my pick this field grows winter wheat for the 2028 harvest. In 13 of 24 springs here, a night got cold enough to hurt it. ${DORMANT}`);
+    assert.equal(f1.frost, `In my pick this field grows winter wheat for the 2028 harvest. In 6 of 24 springs here, a night got cold enough to hurt it. ${CHECK}`);
     assert.deepEqual(fieldWeatherNote(data, 'f3', { startYear: START_YEAR }), { water: HUMID, frost: null });
     assert.deepEqual(fieldWeatherNote(demoData(['profit']), 'f1', { startYear: START_YEAR }), { water: HUMID, frost: null });
     assert.deepEqual(fieldWeatherNote(null, 'f1', { startYear: START_YEAR }), { water: weatherRiskLine(null), frost: null });
@@ -147,7 +154,7 @@ describe('the weather lines in Manami’s voice, and the frost icon', () => {
     const lines = [
       ...[false, true].flatMap((wheat) => [false, true].flatMap((irrigated) => [true, false, null].map((waterLimited) => weatherRiskLine({ waterLimited }, { wheat, irrigated })))),
       weatherRiskLine({ waterLimited: true }, { fieldWatered: true }),
-      ...['KS', 'IA', null].flatMap((st) => Object.keys(STAGE_WORD).map((stage) => frostCaveat(st, stage))),
+      ...['KS', 'IA', null].map((st) => frostCaveat(st)),
       ...['f1', 'f2', 'f3', 'f4', 'f5'].flatMap((id) => Object.values(fieldWeatherNote(data, id, { startYear: START_YEAR }))),
     ].filter((s) => s != null);
     for (const line of lines) assert.deepEqual(lintLine(line), [], line);

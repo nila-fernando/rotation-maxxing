@@ -22,6 +22,19 @@ export {
   type SeasonLogEntry,
 } from './update';
 export { describeSource, planSources, DATA_SOURCES } from './evidence';
+export {
+  buildWeather,
+  adjustDailyWeather,
+  meanTrends,
+  shiftTable,
+  ADJUSTMENT_GAPS,
+  type ClimateTrendsFile,
+  type TrendSet,
+  type BuildWeatherOptions,
+  type BuiltWeather,
+} from './climateAdjust';
+export { isEnsemble } from './types';
+export type { WeatherSource } from './update';
 export { prepareFarm, lngLatToLocal, SQ_M_PER_ACRE } from './geometry';
 export { planFromCrops, continueHistory } from './plans';
 export { TraitYieldModel, withCalibration, meanScenario, type YieldModel, type YieldContext, type YieldEstimate } from './yieldModel';

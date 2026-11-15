@@ -3,9 +3,14 @@
  *
  * Common random numbers: every sample draws ONE weather year per horizon
  * year (a whole year from the pool, all crops together), one price path, and
- * one shade-tolerance value per crop with unknown tolerance. The same draws
- * are used for every paddock and every candidate plan, so differences
- * between plans are real differences, not sampling noise.
+ * one shade-tolerance value per crop with unknown tolerance, and one freeze
+ * damage draw per horizon year. The same draws are used for every paddock and
+ * every candidate plan, so differences between plans are real differences,
+ * not sampling noise.
+ *
+ * Freeze draws come from their own seeded stream (freezeRng), so adding them
+ * left every other draw unchanged: runs without freeze data are bit-identical
+ * to runs before the freeze model existed.
  *
  * Known gap: prices are log-normal and independent per crop and year; the
  * corn/soybean price correlation is not modelled yet.
@@ -13,7 +18,7 @@
 import { P_LOW } from './constants';
 import { priceVolatility, shadeTolerance } from './cropData';
 import { farmRevenue, yieldWithNeighbours, type ModelContext } from './farmModel';
-import { lognormalMultiplier, uniformInt, type Rng } from './rng';
+import { createRng, lognormalMultiplier, uniformInt, type Rng } from './rng';
 import type { CropId, WeatherScenario } from './types';
 
 export const PRICE_CORRELATION_GAP =
@@ -26,8 +31,10 @@ export interface Sample {
   price: Record<CropId, number[]>;
   /** Shade tolerance draws for crops whose tolerance is not sourced. */
   shadeTolerance: Record<CropId, number>;
-  /** Where freeze damage falls within its design range this sample (0-1), shared by every field and plan. */
-  freezeU: number;
+  /** Where freeze damage falls within its design range (0-1), per horizon year; shared by every field and plan. */
+  freezeU: number[];
+  /** Climate model used this sample (present-climate adjustment), if any. */
+  member?: string;
 }
 
 export interface Draws {
@@ -35,7 +42,12 @@ export interface Draws {
   gaps: string[];
 }
 
-export function drawSamples(ctx: ModelContext, n: number, rng: Rng): Draws {
+/** The freeze-damage stream for a run seed: separate from the main stream (see top of file). */
+export function freezeRngFor(seed: number): Rng {
+  return createRng((seed ^ 0x9e3779b9) >>> 0);
+}
+
+export function drawSamples(ctx: ModelContext, n: number, rng: Rng, freezeRng: Rng): Draws {
   const cropIds = Object.keys(ctx.crops).sort(); // fixed order -> reproducible
   const gaps = new Set<string>([PRICE_CORRELATION_GAP]);
   const sigma: Record<CropId, number> = {};
@@ -47,8 +59,11 @@ export function drawSamples(ctx: ModelContext, n: number, rng: Rng): Draws {
   }
   const samples: Sample[] = [];
   for (let i = 0; i < n; i++) {
+    // One climate model per sample (common to every paddock and plan), then whole years from its pool.
+    const member = ctx.members && ctx.members.length ? ctx.members[uniformInt(rng, ctx.members.length)]! : null;
+    const yearPool = member ? member.pool : ctx.weatherPool;
     const weather: WeatherScenario[] = [];
-    for (let y = 0; y < ctx.horizon; y++) weather.push(ctx.weatherPool[uniformInt(rng, ctx.weatherPool.length)]!);
+    for (let y = 0; y < ctx.horizon; y++) weather.push(yearPool[uniformInt(rng, yearPool.length)]!);
     const price: Record<CropId, number[]> = {};
     for (const id of cropIds) {
       const path: number[] = [];
@@ -59,7 +74,9 @@ export function drawSamples(ctx: ModelContext, n: number, rng: Rng): Draws {
     for (const id of cropIds) {
       if (shadeTolerance(ctx.crops[id]!) === null) tol[id] = rng.next();
     }
-    samples.push({ weather, price, shadeTolerance: tol, freezeU: rng.next() });
+    const freezeU: number[] = [];
+    for (let y = 0; y < ctx.horizon; y++) freezeU.push(freezeRng.next());
+    samples.push({ weather, price, shadeTolerance: tol, freezeU, ...(member ? { member: member.model } : {}) });
   }
   return { samples, gaps: [...gaps] };
 }
@@ -71,9 +88,8 @@ export function drawSamples(ctx: ModelContext, n: number, rng: Rng): Draws {
 export function simulate(ctx: ModelContext, seqs: CropId[][], fixedMoney: number, draws: Draws): number[] {
   return draws.samples.map((s) => {
     const tol = (id: CropId) => s.shadeTolerance[id];
-    const freezeDraw = () => s.freezeU;
     const yields = seqs.map((seq, p) =>
-      seq.map((_, y) => yieldWithNeighbours(ctx, seqs, p, y, s.weather[y]!, tol, false, freezeDraw).value ?? 0),
+      seq.map((_, y) => yieldWithNeighbours(ctx, seqs, p, y, s.weather[y]!, tol, false, () => s.freezeU[y]!).value ?? 0),
     );
     return farmRevenue(ctx, seqs, yields, (c, y) => s.price[c]?.[y] ?? 1) + fixedMoney;
   });

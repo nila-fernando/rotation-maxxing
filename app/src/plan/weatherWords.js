@@ -8,12 +8,17 @@
 //   weatherKey(farm)                            what of a planner farm the weather words hang on
 //
 // Pure, and it imports only money.js, so the field check-up can use it without pulling in the
-// planner. The planner's freeze rule comes from Kansas and starts counting on 1 March everywhere,
-// so outside Kansas Manami says so (frostCaveat) instead of passing the count off as local fact.
+// planner. The planner's freeze thresholds come from Kansas (K-State C646), so outside Kansas Manami
+// says so (frostCaveat) instead of passing the count off as local fact. (It starts counting once the
+// wheat greens up, from a run of warm days, so the count is no longer of nights while it is dormant.)
 import { perAcre } from '../ui/money.js';
 
-/** The planner's per-season freeze term: in N of M years, below the <stage> threshold. */
-export const FREEZE_TERM = /^Freeze risk: in (\d+) of (\d+) years, temperatures fell below the (.+?) threshold/;
+/**
+ * The planner's per-season freeze term: in N of M years, to or below the <stage> threshold, and
+ * the worst freeze's stage when it differs ("(worst: heading)"). Groups: years, of, stage, worst.
+ * (Planners before 3b03636 said "fell below"; read that too.)
+ */
+export const FREEZE_TERM = /^Freeze risk: in (\d+) of (\d+) years, temperatures fell (?:to or )?below the (.+?) threshold(?: \(worst: ([a-z]+)\))?/;
 /** The planner's freeze term for one weather year (it doesn't reach the app today, but read it anyway). */
 export const FREEZE_EVENT = /^Spring freeze at (\S+) \((-?\d+) F on (\d\d-\d\d), injury below (\d+) F, K-State C646: ([a-z ]+);/;
 /** A freeze that takes this much of the crop or more (%) is worth a Careful, not just a Note. */
@@ -59,20 +64,20 @@ export const STAGE_WORD = {
   heading: 'as the heads came out', flowering: 'in flower', milk: 'as the grain filled', dough: 'as the grain filled',
 };
 
-/** "In 13 of 24 springs here" (or, for one weather year's freeze, "In one spring I tried"). */
+/** "In 6 of 24 springs here" (or, for one weather year's freeze, "In one spring I tried"). */
 export const springsWords = (fz) => (fz?.years != null ? `In ${fz.years} of ${fz.of} springs here` : 'In one spring I tried');
 
 /** How much a freeze takes off, as said: "about 5%", or "a little" under 1%. */
 export const frostCut = (fz) => (Math.round(fz?.pct ?? 0) >= 1 ? `about ${Math.round(fz.pct)}%` : 'a little');
 
 /**
- * What to add after a freeze line outside Kansas: the rule's thresholds and its 1 March start come
- * from Kansas, so in Iowa a tillering count may be cold nights while the wheat is still dormant.
- * Null in Kansas.
+ * What to add after a freeze line outside Kansas: the rule's injury thresholds come from Kansas
+ * (K-State C646), so she asks the farmer to check them locally. Null in Kansas. (The planner now
+ * starts counting at green-up, worked out from warm days, so she no longer warns that it may count
+ * nights while the wheat is dormant.)
  */
-export function frostCaveat(state, stage) {
+export function frostCaveat(state) {
   if (state === 'KS') return null;
-  if (state && stage === 'tillering') return 'My frost rule comes from Kansas, so here it may count cold nights while the wheat is still dormant.';
   return 'My frost rule comes from Kansas, so check it with someone who grows wheat near you.';
 }
 
@@ -117,7 +122,7 @@ export function fieldWeatherNote(data, fieldId, { startYear, irrigated: fieldWat
     const fz = freezeOf(years[y].terms, years[y].yieldPerAcre);
     const y0 = Number(startYear);
     const when = Number.isFinite(y0) ? ` for the ${y0 + y} harvest` : '';
-    const caveat = frostCaveat(farm.state ?? null, fz.stage);
+    const caveat = frostCaveat(farm.state ?? null);
     frost = `In my pick this field grows winter wheat${when}. ${springsWords(fz)}, a night got cold enough to hurt it.${caveat ? ` ${caveat}` : ''}`;
   }
   return { water, frost };
@@ -135,7 +140,7 @@ export function weatherKey(farm) {
 
 /**
  * A freeze as the card's "More numbers" rows (data, never in Manami's own words):
- * [['Spring freezes', '13 of 24 springs'], ['Freeze cut', '−2.7 bu/ac, about −$15/ac']].
+ * [['Spring freezes', '6 of 24 springs'], ['Freeze cut', '−2.7 bu/ac, about −$15/ac']].
  */
 export function frostNumbers(fz) {
   if (!fz) return [];

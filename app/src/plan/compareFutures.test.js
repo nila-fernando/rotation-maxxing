@@ -1,10 +1,10 @@
 // The three plans compared field by field, on the demo farm's real plans (worked out here as the
-// app does: test/futuresDemo.mjs), plus a soil-first run, the wheat demo (a spring freeze) and
+// app does: test/futuresDemo.mjs), plus a soil-first run, the wheat demo (a colder spring, so a freeze) and
 // synthetic 1- and 15-field farms. The planner's Monte Carlo totals are pinned in one block at the
 // end, so a re-vendor that moves them is re-pinned in one place.
 import assert from 'node:assert/strict';
 import { before, describe, it } from 'node:test';
-import { demoData, clonedData, coverPickData, kansasLike, wheatData, START_YEAR } from '../../test/futuresDemo.mjs';
+import { amesWheatData, demoData, clonedData, coverPickData, kansasLike, wheatData, START_YEAR } from '../../test/futuresDemo.mjs';
 import {
   KINDS, coinPlan, compareFutures, coverAddFields, coverOnlyFields, dryIds, fineprint, flagsFor, frostIds, frostStop, headline, isGoodFit,
   mixedPlan, reelStops, seasonChanges, termsOf, tiles, viewField,
@@ -232,10 +232,10 @@ describe('the wheat demo (can’t grow soybeans): a spring freeze in 2028', () =
       const wheat = ['f1', 'f2', 'f5'].includes(f.id);
       assert.equal(s.crop, wheat ? 'winter-wheat' : 'corn', f.id);
       if (!wheat) { assert.equal(s.freeze, null, f.id); continue; }
-      assert.deepEqual([s.freeze.years, s.freeze.of, s.freeze.stage], [13, 24, 'tillering']);
-      near(s.freeze.bu, -2.74, 0.02, 'freeze bu/ac');
+      assert.deepEqual([s.freeze.years, s.freeze.of, s.freeze.stage], [6, 24, 'tillering']);
+      near(s.freeze.bu, -2.80, 0.02, 'freeze bu/ac');
       const fw = s.warnings.find((w) => w.lens === 'frost');
-      assert.equal(fw.severity, 1, 'about 5%: a Note');
+      assert.equal(fw.severity, 1, 'about 6%: a Note');
       assert.equal(fw.reason, s.freeze.label);
     }
     for (const f of cmp.fields) for (const y of [0, 2]) assert.equal(f.byKind.priority.seasons[y].freeze, null);
@@ -317,7 +317,7 @@ describe('farms of other sizes', () => {
   });
 });
 
-describe('Monte Carlo numbers on the demo (planner 7f805d2, seed 1): re-pin on re-vendor', () => {
+describe('Monte Carlo numbers on the demo (planner 3b03636, seed 1): re-pin on re-vendor', () => {
   // The farm totals (cash over 3 seasons, the bad year, beats keeping going, the price of
   // priorities, a scored mix) come from the planner's seeded Monte Carlo, so any change to the
   // planner's random draws moves them. They are pinned only here; the tests above check which way
@@ -330,9 +330,9 @@ describe('Monte Carlo numbers on the demo (planner 7f805d2, seed 1): re-pin on r
 
   it('the three plans', () => {
     const want = {
-      current: { expectedGM: 349948, p10GM: 183182, beats: null },
-      maxProfit: { expectedGM: 416354, p10GM: 261440, beats: 0.885 },
-      priority: { expectedGM: 407813, p10GM: 263359, beats: 0.975 },
+      current: { expectedGM: 346469, p10GM: 190274, beats: null },
+      maxProfit: { expectedGM: 413859, p10GM: 264613, beats: 0.855 },
+      priority: { expectedGM: 406649, p10GM: 273704, beats: 0.975 },
     };
     for (const [k, w] of Object.entries(want)) {
       near(cmp.totals[k].expectedGM, w.expectedGM, 1, `${k} cash`);
@@ -340,38 +340,48 @@ describe('Monte Carlo numbers on the demo (planner 7f805d2, seed 1): re-pin on r
       assert.equal(cmp.totals[k].probBeatsCurrent, w.beats, `${k} beats keeping going`);
     }
     const [cash, bad, , beats] = tiles(cmp, 'priority');
-    near(cash.diff, 57865, 1, 'cash diff');
-    near(bad.diff, 80177, 1, 'bad year diff');
+    near(cash.diff, 60180, 1, 'cash diff');
+    near(bad.diff, 83430, 1, 'bad year diff');
     assert.equal(beats.value, 98);
   });
 
   it('the price of the farmer’s priorities', () => {
-    near(cmp.price.cash, -8540.2, 1, 'cash given up');
-    near(cmp.price.p10, 1919, 1, 'bad year');
+    near(cmp.price.cash, -7210.6, 1, 'cash given up');
+    near(cmp.price.p10, 9091, 1, 'bad year');
   });
 
   it('a mix: Home place keeps going', () => {
     const choice = { f1: 'current' };
     const mix = data.evaluate(mixedPlan(data.result.plans, choice));
     const t = tiles(cmp, 'mix', mix, choice);
-    near(t[0].value, 387943, 1, 'mix cash');
-    near(t[0].diff, 37995, 1, 'mix diff');
-    assert.equal(t[3].value, 93);
-    near(tiles(cmp, 'mix', mix)[0].value, 387943, 1, 'a score with no choice is the mix’s');
+    near(t[0].value, 386464, 1, 'mix cash');
+    near(t[0].diff, 39995, 1, 'mix diff');
+    assert.equal(t[3].value, 91);
+    near(tiles(cmp, 'mix', mix)[0].value, 386464, 1, 'a score with no choice is the mix’s');
   });
 
   it('soil first', () => {
     const soil = compareFutures(demoData(['soil-health', 'profit']), { startYear: START_YEAR });
-    near(soil.totals.priority.expectedGM, 387767, 1, 'soil-first pick');
-    near(soil.price.cash, -28586.8, 1, 'cash given up');
-    near(soil.price.p10, -18127.2, 1, 'bad year');
+    near(soil.totals.priority.expectedGM, 386602, 1, 'soil-first pick');
+    near(soil.price.cash, -27257.2, 1, 'cash given up');
+    near(soil.price.p10, -10955.6, 1, 'bad year');
   });
 
-  it('the wheat’s spring freeze at Ames: 13 of 24 years', () => {
+  it('the wheat’s spring freeze at Ames: none in 24 springs, since green-up comes from warmth', () => {
+    // Planner 7f805d2 counted from 1 March and flagged 13 of 24 springs at tillering, mostly
+    // nights while the wheat was still dormant. Now the wheat grows and no freeze reaches it.
+    const ames = compareFutures(amesWheatData(), { startYear: START_YEAR });
+    assert.deepEqual(ames.fields.filter((f) => f.byKind.priority.seasons[1].crop === 'winter-wheat').map((f) => f.id), ['f1', 'f2', 'f3', 'f5']);
+    assert.equal(frostStop(ames), null);
+    for (const f of ames.fields) for (const k of KINDS) assert.ok(f.byKind[k].seasons.every((s) => !s.freeze), `${f.id} ${k}`);
+    assert.ok(!ames.raw.priority.risks.some((r) => /^Freeze risk: /.test(r)));
+  });
+
+  it('the wheat’s spring freeze in a colder spring: 6 of 24 years', () => {
     const wheat = compareFutures(wheatData(), { startYear: START_YEAR });
     const fz = frostStop(wheat);
     const s = wheat.fields.find((f) => f.id === fz.ids[0]).byKind.priority.seasons[fz.season];
-    assert.deepEqual([s.freeze.years, s.freeze.of], [13, 24]);
-    assert.ok(wheat.raw.priority.risks.includes('Freeze risk: in 13 of 24 years, temperatures fell below the tillering threshold (K-State C646).'));
+    assert.deepEqual([s.freeze.years, s.freeze.of], [6, 24]);
+    assert.ok(wheat.raw.priority.risks.includes('Freeze risk: in 6 of 24 years, temperatures fell to or below the tillering threshold (worst: heading) (K-State C646).'));
   });
 });

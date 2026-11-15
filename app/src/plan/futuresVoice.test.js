@@ -222,7 +222,7 @@ describe('the weather: spring freezes on the wheat, and water', () => {
 
   it('says the frost stop: 3 fields, 1 field, and under 1%', () => {
     const frost = reelStops(cmp).find((s) => s.id === 'frost');
-    assert.equal(reelLine(cmp, frost), 'My pick sows winter wheat on Home place, West 140 and East place for the 2028 harvest. In 13 of 24 springs here, a night got cold enough to hurt it, so I take about 5% off. My frost rule comes from Kansas, so here it may count cold nights while the wheat is still dormant.');
+    assert.equal(reelLine(cmp, frost), 'My pick sows winter wheat on Home place, West 140 and East place for the 2028 harvest. In 6 of 24 springs here, a night got cold enough to hurt it, so I take about 6% off. My frost rule comes from Kansas, so check it with someone who grows wheat near you.');
     assert.equal(frostLine(ks), 'My pick sows winter wheat on Home place for the 2028 harvest. In 2 of 4 springs here, a night got cold enough to hurt it, so I take about 11% off.');
     const light = structuredClone(ks);
     light.fields[0].byKind.priority.seasons[1].freeze.pct = 0.4;
@@ -232,17 +232,17 @@ describe('the weather: spring freezes on the wheat, and water', () => {
 
   it('says the freeze as a farm risk, in her words, with the Kansas caveat', () => {
     const r = farmRiskLines(cmp, 'priority');
-    assert.deepEqual(r.lines, ['In 13 of 24 springs here, a freeze got cold enough to hurt the wheat while it was still short and leafy. My frost rule comes from Kansas, so here it may count cold nights while the wheat is still dormant.']);
+    assert.deepEqual(r.lines, ['In 6 of 24 springs here, a freeze got cold enough to hurt the wheat, most often while it was still short and leafy. The worst one hit it as the heads came out. My frost rule comes from Kansas, so check it with someone who grows wheat near you.']);
     assert.deepEqual(r.unmatched, []);
     assert.deepEqual(farmRiskLines(ks, 'priority').lines, ['In 2 of 4 springs here, a freeze got cold enough to hurt the wheat as its stems began to grow.']);
     assert.equal(STAGE_WORD.tillering, 'while it was still short and leafy');
   });
 
   it('says the freeze on the card, the tooltip and the Notes', () => {
-    const line = 'Spring freezes can hurt the wheat. One got cold enough in 13 of 24 springs here, so I take about 5% off.';
+    const line = 'Spring freezes can hurt the wheat. One got cold enough in 6 of 24 springs here, so I take about 6% off.';
     assert.ok(watchItems(cmp, 'f1', 'priority').some((w) => w.lens === 'frost' && w.year === 2028 && w.label === 'Note' && w.text === line));
     assert.equal(tipFor(cmp, 'f1', 'priority', 1).note, `Note: ${line.charAt(0).toLowerCase()}${line.slice(1)}`);
-    assert.ok(watchRows(cmp, 'priority').some((r) => r.text === 'Home place · 2028 · Note: spring freezes can hurt the wheat. One got cold enough in 13 of 24 springs here, so I take about 5% off.'));
+    assert.ok(watchRows(cmp, 'priority').some((r) => r.text === 'Home place · 2028 · Note: spring freezes can hurt the wheat. One got cold enough in 6 of 24 springs here, so I take about 6% off.'));
     const careful = watchItems(ks, 'f1', 'priority').find((w) => w.lens === 'frost');
     assert.deepEqual([careful.label, careful.text], ['Careful', 'Spring freezes can hurt the wheat. One got cold enough in 2 of 4 springs here, so I take about 11% off.']);
     // a season with frost as its only careful warning: the watch stop says it
@@ -259,10 +259,10 @@ describe('the weather: spring freezes on the wheat, and water', () => {
   });
 
   it('says the freeze gap, and the water line in every case', () => {
-    assert.ok(gapLines(cmp).farm.includes('I count a freeze when a night after March 1 gets colder than the wheat can take at its stage. I use weather for the wider area, so low spots may get colder, and I don’t count snow cover.'));
+    assert.ok(gapLines(cmp).farm.includes('Once the wheat greens up after a spring warm spell, I count a freeze when a night gets as cold as it can take. I use weather for the wider area, so low spots may get colder, and I don’t count snow cover.'));
     assert.deepEqual(gapLines(cmp).unmatched.filter((g) => /reeze/.test(g)), []);
     assert.equal(weatherRiskLine(cmp.weatherRisk, { wheat: true }), 'Water isn’t the big weather worry here. Wet springs, floods and wind matter more, and I can’t count most of those yet. I do count spring freezes on wheat.');
-    assert.equal(frostCaveat('KS', 'jointing'), null);
+    assert.equal(frostCaveat('KS'), null);
   });
 
   it('says the dry stop where water is the worry', () => {
@@ -408,7 +408,7 @@ describe('the voice rules', () => {
     const frostSaid = [
       [say('frost', event, { ...ctx, freeze: { pct: 12 } }), 'A spring freeze can hurt the wheat here, so I take about 12% off.'],
       [say('frost', event), 'A spring freeze can hurt the wheat here, so I take a little off.'],
-      [say('frost', 'Freeze risk: in 2 of 4 years, temperatures fell below the boot threshold (K-State C646); average effect'), 'Spring freezes can hurt the wheat. One got cold enough in 2 of 4 springs here.'],
+      [say('frost', 'Freeze risk: in 2 of 4 years, temperatures fell to or below the boot threshold (K-State C646); average effect'), 'Spring freezes can hurt the wheat. One got cold enough in 2 of 4 springs here.'],
       [say('frost', 'Something new about frost.'), 'Spring freezes can hurt the wheat here.'],
     ];
     for (const [got, want] of frostSaid) { assert.equal(got, want); assert.deepEqual(lintLine(got), [], got); }
