@@ -10,7 +10,7 @@
 // app's planner: the client scores any adjusted sequence with evaluate() before showing it. The
 // server checks everything the model gives back (field ids it was sent, plan kinds, crop ids, plain text).
 
-export const ADVICE_LIMITS = Object.freeze({ bytes: 120_000, dataChars: 60_000, fields: 40, whyChars: 420, riskChars: 220, risks: 8, headlineChars: 300, lineChars: 220, lines: 4 });
+export const ADVICE_LIMITS = Object.freeze({ bytes: 120_000, dataChars: 60_000, fields: 40, whyChars: 420, riskChars: 220, risks: 8, headlineChars: 420, lineChars: 220, lines: 4 });
 export const PLAN_MAX_TOKENS = 12_000;
 export const PLAN_EFFORT = 'medium';
 export const FIELD_MAX_TOKENS = 4000;
@@ -105,8 +105,18 @@ export class AdviceBadRequest extends Error {}
 const bad = (msg) => { throw new AdviceBadRequest(msg); };
 const isObj = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 
-/** Plain text: no emoji, no markdown marks, no tags, one line. */
-export const plain = (s, n) => String(s ?? '').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').replace(/[*_#`<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, n);
+/** Plain text: no emoji, no markdown marks, no tags, one line, never cut mid-word (clip). */
+export const plain = (s, n) => clip(String(s ?? '').replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, '').replace(/[*_#`<>]/g, '').replace(/\s+/g, ' ').trim(), n);
+
+/** Text within n characters: the last full sentence that fits, else whole words and an ellipsis. */
+export function clip(t, n) {
+  if (t.length <= n) return t;
+  const cut = t.slice(0, n);
+  const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '), /[.!?]$/.test(cut) ? cut.length - 1 : -1);
+  if (end >= n * 0.4) return cut.slice(0, end + 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > 0 ? cut.slice(0, space) : cut).replace(/[,;:]$/, '')}…`;
+}
 
 const cleanStrings = (v) => (typeof v === 'string' ? v.replace(/</g, '‹').replace(/>/g, '›').slice(0, 2000)
   : Array.isArray(v) ? v.map(cleanStrings) : isObj(v) ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, cleanStrings(x)])) : v);

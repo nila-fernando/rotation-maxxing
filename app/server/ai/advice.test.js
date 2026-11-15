@@ -2,8 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { configFromEnv, createAiHandler, FALLBACK_BETA, ROUTES } from './handler.js';
 import {
-  FIELD_SCHEMA, PLAN_SCHEMA, buildFieldParams, buildPlanParams, normaliseFieldOutput, normalisePlanOutput, validateFieldBody, validatePlanBody,
-} from './advice.js';
+  FIELD_SCHEMA, PLAN_SCHEMA, buildFieldParams, buildPlanParams, normaliseFieldOutput, normalisePlanOutput, validateFieldBody, validatePlanBody, clip } from './advice.js';
 
 const config = configFromEnv({ ANTHROPIC_API_KEY: 'sk-test-not-real', AI_MODEL: 'claude-sonnet-5-5' });
 const PLANS = {
@@ -134,4 +133,11 @@ test('POST /field returns the read', async () => {
   const body = await res.json();
   assert.equal(body.read.summary, READ.summary);
   assert.deepEqual(body.read.watch, ['Rootworm']);
+});
+
+test('AI text is never cut mid-word: the last full sentence that fits, else whole words', () => {
+  const t = 'I would break up the corn on Home place. That gives the ground a rest. It also earns more in a normal year, with about $397k against $371k.';
+  assert.equal(clip(t, 90), 'I would break up the corn on Home place. That gives the ground a rest.');
+  assert.equal(clip('one two three four five six seven eight', 20), 'one two three four…');
+  assert.equal(clip('short', 20), 'short');
 });
