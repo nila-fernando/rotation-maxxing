@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { planIsland, PLAN, coastRadiusAt, insideCoast, coastRing } from './plan.js';
 import { pointInRing } from './layout.js';
+import { budget, medianMs } from '../../test/timing.mjs';
 
 const demo = JSON.parse(readFileSync(new URL('../../data/demo-farm.json', import.meta.url), 'utf8'));
 const lastCrop = (f) => (f.cropHistory && f.cropHistory.length ? f.cropHistory[f.cropHistory.length - 1].crop : null);
@@ -343,10 +344,8 @@ describe('planIsland: 15 fields (demo fields copied twice ~3 km away)', () => {
   test('fast: under 250 ms', () => {
     planIsland(input, { seed: 'warm up', home: HOME }); // let the JIT settle
     planIsland(input, { seed: 'warm up 2', home: HOME });
-    const t0 = performance.now();
-    planIsland(input, { seed: 'timed', home: HOME });
-    const ms = performance.now() - t0;
-    assert.ok(ms < 250, `took ${ms.toFixed(0)} ms`);
+    const ms = medianMs((i) => planIsland(input, { seed: `timed ${i}`, home: HOME }));
+    assert.ok(ms < budget(250), `took ${ms.toFixed(0)} ms (limit ${budget(250)})`);
   });
 });
 
