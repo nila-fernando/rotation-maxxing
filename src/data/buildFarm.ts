@@ -6,7 +6,6 @@
  *   SSURGO      -> soil per field (AWC, K, T, pH, EC, OM, texture, drainage, slope)
  *   CDL         -> last 3 years of crops per field (the current rotation)
  *   NASS        -> county base yields (precomputed file, or Quick Stats with a key)
- *   Jar test    -> the farmer's soil-jar photo replaces the mapped texture (optional)
  *
  * The farmer still supplies what satellites can't know: seed availability,
  * buyers, equipment, tillage, tile drainage, irrigation. Any field value the
@@ -23,8 +22,6 @@ import { fetchPowerDaily, type FetchFn } from './power';
 import { fetchSoilAtPoint } from './ssurgo';
 import { fetchCountyAtPoint } from './countySample';
 import { fetchBaseYields, type BaseYieldsFile } from './nassYields';
-import { landFromJar } from './jarSoil';
-import type { JarSoilPayload } from '../jar-test/jar_test';
 
 export interface FieldInput {
   id: string;
@@ -40,11 +37,6 @@ export interface FieldInput {
   history?: CropId[];
   /** Overrides individual soil fields from SSURGO. */
   land?: Partial<Land>;
-  /**
-   * The field's jar test (toPlannerPayload() from src/jar-test). Its sand/clay %
-   * replace SSURGO's texture; a texture typed in `land` still wins.
-   */
-  jarTest?: JarSoilPayload;
 }
 
 export interface BuildFarmInput {
@@ -115,17 +107,14 @@ export async function buildFarm(input: BuildFarmInput, fetchFn: FetchFn = fetch 
     const [lng, lat] = centroid(f.polygon);
     let land: Land;
     let soilNote: string;
-    const jar = f.jarTest ? landFromJar(f.jarTest, f.name) : null;
-    if (jar) gaps.push(...jar.gaps);
-    const entered: Partial<Land> = { ...jar?.land, ...f.land };
     try {
       const soil = await fetchSoilAtPoint(lng, lat, fetchFn);
-      land = { ...soil.land, ...entered };
+      land = { ...soil.land, ...f.land };
       soilNote = `${soil.mapUnit} (${soil.component})`;
       gaps.push(...soil.gaps.map((g) => `${f.name}: ${g}`));
     } catch (e) {
-      if (entered.slopePct === undefined || !entered.texture || !entered.drainage) throw e;
-      land = { salinityECe: 0, ...entered } as Land;
+      if (!f.land || f.land.slopePct === undefined || !f.land.texture || !f.land.drainage) throw e;
+      land = { salinityECe: 0, ...f.land } as Land;
       soilNote = 'entered by the farmer (SSURGO unavailable)';
       gaps.push(`${f.name}: SSURGO unavailable (${(e as Error).message}); using the soil values entered.`);
     }
@@ -151,7 +140,6 @@ export async function buildFarm(input: BuildFarmInput, fetchFn: FetchFn = fetch 
       ...(f.tillage ? { tillage: f.tillage } : {}),
       ...(f.tileDrained !== undefined ? { tileDrained: f.tileDrained } : {}),
     });
-    if (jar?.note && !f.land?.texture) soilNote += `; texture from ${jar.note}`;
     provenance[f.id] = { soil: soilNote, history: historyNote };
   }
 

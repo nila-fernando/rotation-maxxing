@@ -338,7 +338,6 @@ Each plan also carries `objectiveTerms`, `reasons`, `risks` and `informationGaps
 |---|---|---|
 | **NASA POWER** daily (temperature, rain, radiation, humidity, wind) | one call per farm | water balance, weather pool, rainfall erosivity |
 | **SSURGO** (Soil Data Access) at each field centroid | AWC (top 150 cm), K, T, pH, EC, OM, texture, drainage, map-unit slope | water balance, RUSLE, suitability |
-| **Jar test** (farmer's soil-jar photo, `src/jar-test`), optional per field | sand / silt / clay % → texture (same 4-bucket mapping as SSURGO). Replaces SSURGO texture unless the farmer typed one; ignored when confidence is low or silt and clay settled together | texture-based suitability and bare-soil evaporation |
 | **Cropland Data Layer** (CropScape), majority of 5 points per field | last 3 years of crops | history and "current rotation" |
 
 CropScape needs EPSG:5070 coordinates; the projection is implemented and checked against `pyproj`. CropScape's intermittent 5xx errors are retried; a year that still fails becomes "unknown" with a gap. Adapters are tested offline on recorded responses (`src/data/__tests__/fixtures`).

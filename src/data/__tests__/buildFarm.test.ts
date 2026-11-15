@@ -66,33 +66,6 @@ describe('buildFarm (offline, recorded responses)', () => {
     expect(built.gaps.join()).toMatch(/No county yields .* US averages/);
   });
 
-  it('uses the jar test texture over SSURGO, and a typed texture over both', async () => {
-    const jar = (sand: number | null, clay: number | null, confidence: 'high' | 'low' = 'high') => ({
-      source: 'jar-photo' as const, sandPct: sand, siltPct: sand === null || clay === null ? null : 100 - sand - clay, clayPct: clay,
-      textureClass: 'Sandy loam', drainage: null, waterHolding: null, organicMatterLevel: 'Little' as const, organicMatterPct: 2,
-      stoneLevel: 'None seen' as const, gravelPct: 0, siltClayCombined: sand === null, cloudyWater: false, teaColouredWater: false, foam: false,
-      layers: [], confidence, adjustedByFarmer: false, photoTakenAfter: 'ok' as const,
-    });
-    const base = { id: 'a', name: 'A', polygon: square(-93.63, 42.03), availableCrops: ['corn'], history: ['oats', 'oats', 'oats'] };
-    const ssurgoOnly = await buildFarm({ fields: [base], weatherYears: [2011, 2014] }, fake);
-    expect(ssurgoOnly.farm.paddocks[0]!.land.texture).not.toBe('sand');
-
-    const withJar = await buildFarm({ fields: [{ ...base, jarTest: jar(75, 10) }], weatherYears: [2011, 2014] }, fake);
-    expect(withJar.farm.paddocks[0]!.land.texture).toBe('sand');
-    expect(withJar.provenance['a']!.soil).toMatch(/texture from jar test: Sandy loam \(75% sand, 15% silt, 10% clay; confidence high\)/);
-    expect(withJar.farm.paddocks[0]!.land.awcInPerIn).toBe(ssurgoOnly.farm.paddocks[0]!.land.awcInPerIn);
-
-    const typed = await buildFarm({ fields: [{ ...base, jarTest: jar(75, 10), land: { texture: 'clay' } }], weatherYears: [2011, 2014] }, fake);
-    expect(typed.farm.paddocks[0]!.land.texture).toBe('clay');
-
-    const low = await buildFarm({ fields: [{ ...base, jarTest: jar(75, 10, 'low') }], weatherYears: [2011, 2014] }, fake);
-    expect(low.farm.paddocks[0]!.land.texture).toBe(ssurgoOnly.farm.paddocks[0]!.land.texture);
-    expect(low.gaps.join()).toMatch(/confidence is low/);
-
-    const combined = await buildFarm({ fields: [{ ...base, jarTest: jar(null, null) }], weatherYears: [2011, 2014] }, fake);
-    expect(combined.gaps.join()).toMatch(/silt and clay settled as one layer/);
-  });
-
   it('uses the precomputed county base yields for the farm practice', async () => {
     const by = (value: number, practice: 'non-irrigated' | 'irrigated') => ({ value, level: 'county' as const, place: 'Story County, IA', practice, years: [2021, 2025], allPracticeMean: 200, basis: 'design' as const, sources: ['nassQuickStats'] });
     const file: BaseYieldsFile = {
