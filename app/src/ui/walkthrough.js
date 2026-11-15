@@ -357,7 +357,7 @@ const ownsArrows = (t) => !!t?.closest?.('[role="radiogroup"], [role="slider"], 
 /** An app dialog or popover is open over the hub: the tour steps aside, and leaves it the keys. */
 const appDialogUp = () => {
   const b = document.body.classList;
-  if (b.contains('jar-open') || b.contains('fut-notes-open')) return true;
+  if (b.contains('jar-open') || b.contains('fut-notes-open') || b.contains('acct-open')) return true; // (acct: your farms and sign-in)
   const day = document.getElementById('dayPop');
   return !!day && !day.hidden;
 };

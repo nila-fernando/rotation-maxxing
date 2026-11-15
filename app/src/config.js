@@ -25,3 +25,10 @@ export const MIN_AREA_ZOOM = 11.5;
 
 /** The intro: how long after the globe appears the search bar and then Manami show up. */
 export const INTRO = { searchAfterMs: 450, manamiAfterMs: 1400 };
+
+/** Sign-in and saving to an account (Supabase; the schema and setup are in supabase/ at the repo root).
+ *  Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to use another project. The publishable (anon) key
+ *  is public by design: row-level security keeps each farmer's rows to themselves. Never put the
+ *  secret (service_role) key here. */
+export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://upotdwtlimiwuaaqrmlv.supabase.co';
+export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_YGyaw3OeYxuJU8s1F7OF1g_VxwoiYtR';

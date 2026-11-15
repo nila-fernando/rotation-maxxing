@@ -1,0 +1,11 @@
+-- Farmers can edit a field's crop history (app v0.11.1). Their years are saved in fields.crops like
+-- any other; this column remembers USDA's record as it was and which years are the farmer's, so the
+-- app can mark them and "Put back USDA's record" still works after a reload or on another device.
+--
+--   crop_edits = { "original": { "2023": "Corn", ... },   USDA's record before the first edit
+--                  "by_farmer": [2023, 2025],             the years the farmer set
+--                  "cleared": [2021] }                    years they said "not sure" about (optional)
+--   null when the farmer hasn't changed anything.
+--
+-- Safe to run more than once. The app keeps working before it's run (it just doesn't save the marks).
+alter table public.fields add column if not exists crop_edits jsonb;

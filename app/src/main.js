@@ -9,8 +9,10 @@
 //                                                     src/screens/planFutures.js
 //      and the soil jar test (a dialog; the jar then stands by the field's gate)
 //                                                     src/screens/jarPanel.js, src/island/jarProps.js
+// The farm is kept on this device as it changes (a reload brings it back: "Welcome back!"), and in
+// the farmer's account once they sign in                src/save/, src/screens/accountPanel.js
 import './styles.css';
-import { INTRO, LANDING_URL } from './config.js';
+import { INTRO, LANDING_URL, SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 import { DEMO_FARM } from './data/demoFarm.js';
 import * as farmData from './data/farmData.js';
 import { withCdlYears } from './data/cdlHistory.js';
@@ -52,6 +54,13 @@ import { warmUpLiveOutlines } from './fields/liveOutlines.js';
 import { createAmbience } from './audio/ambience.js';
 import { sceneOf } from './audio/mix.js';
 import { bindSoundToggle } from './audio/soundToggle.js';
+import { makeSnapshot, farmName } from './save/snapshot.js';
+import { createLocalStore } from './save/localStore.js';
+import { createScheduler } from './save/scheduler.js';
+import { createCloud, createSync } from './save/cloudSync.js';
+import { createAuth } from './save/auth.js';
+import { newId } from './save/rows.js';
+import { createAccountPanel } from './screens/accountPanel.js';
 import { weatherLine, weatherParam } from './island/weather.js';
 import { farmWeather } from './island/weatherState.js';
 import { startWeatherFeed } from './services/weatherFeed.js';
@@ -66,6 +75,51 @@ installCropTips();
 
 /** What the app knows so far; later steps add fields, answers and satellite data. */
 const app = { farm: null, fields: [], farmProfile: null };
+
+// ---------------------------------------------------------------- saving the farm
+// On this device for everyone (src/save/localStore.js), as it changes: the fields once picked, the
+// data as it lands, the check-in's answers, renames, the irrigated switch, jar tests and plans. A
+// reload then offers "Welcome back!". Signed in, the same farm goes to the account too
+// (src/save/cloudSync.js, the team's Supabase schema). The dev shortcuts (?hub, ?reveal) save nothing.
+const local = createLocalStore();
+/** The dev shortcuts that start somewhere other than the globe. */
+const devStart = params.has('reveal') || params.has('hub');
+/** The farm on screen that is being saved ({ id }: its id on this device), or null. */
+let saveCtx = null;
+let restoring = false; // opening a saved farm: landing doesn't start the field step
+let restoredLine = null; // what Manami says once a saved farm's island is up
+const auth = createAuth({
+  url: SUPABASE_URL,
+  key: SUPABASE_ANON_KEY,
+  // back to the app itself (its base path on GitHub Pages), without any dev shortcut in the address
+  redirectTo: () => new URL(import.meta.env.BASE_URL || '/', location.origin).href,
+});
+let cloudP = null;
+const getCloud = () => (cloudP ??= auth.client().then(createCloud));
+const lazyCloud = {
+  probe: (...a) => getCloud().then((c) => c.probe(...a)),
+  exists: (...a) => getCloud().then((c) => c.exists(...a)),
+  push: (...a) => getCloud().then((c) => c.push(...a)),
+};
+let account = null; // the panel (made below, once the screens exist)
+const sync = createSync({ cloud: lazyCloud, local, onStatus: () => account?.refresh() });
+
+function writeLocal() {
+  if (!saveCtx || !app.farm || !app.fields.length) return;
+  const id = saveCtx.id;
+  const snap = makeSnapshot({
+    id, farm: app.farm, fields: app.fields, profile: app.farmProfile, plan: app.plan,
+    picks: plansPanel.getChoice(), cloud: local.get(id)?.cloud || {}, // (where it lives in the cloud is the store's to keep)
+  });
+  if (local.put(snap)) sync.request(id);
+}
+const localSaver = createScheduler(writeLocal, { delay: 400, retryBase: 5000 });
+/** Something about the farm changed: keep it (after a quiet moment). */
+const persist = () => { if (saveCtx) localSaver.schedule(); };
+// the page going away (a reload, a closed tab, the phone locking): save what's waiting now
+addEventListener('pagehide', () => localSaver.flush());
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') localSaver.flush(); });
+addEventListener('online', () => sync.flush());
 
 $('logo').href = LANDING_URL;
 // the full placeholder doesn't fit a phone-width search bar
@@ -90,6 +144,9 @@ const fieldsStep = createFieldsStep({
   manami,
   onContinue: (fields) => {
     app.fields = fields;
+    if (!saveCtx && !devStart) saveCtx = { id: newId() }; // a new farm on this device (the others stay)
+    persist();
+    localSaver.flush();
     fieldsStep.hold(); // the chosen fields stay drawn on the (dimmed) map
     const b = fieldsStep.bounds();
     const wide = innerWidth > 900;
@@ -122,14 +179,18 @@ let farmLoad = null;
 function startFieldFill(fields) {
   farmLoad?.cancel(); // a newer pick replaces the last one's late answers
   const known = (f) => Object.fromEntries((demoRecordFor(f)?.cropHistory || []).map((c) => [c.year, c.crop]));
+  const runners = farmRunners({ markets, known });
+  // a saved farm: only what's missing is fetched (the other sources skip fields that already have theirs)
+  if (fields.length > 0 && fields.every((f) => f.rain)) runners.rain = async ({ settle }) => settle('done');
   const load = startFarmLoad({
     fields,
     point: farmPoint(fields),
-    runners: farmRunners({ markets, known }),
+    runners,
     current: () => app.fields,
     onData: (key, filled) => {
       if (farmLoad !== load || !MERGE[key] || !filled) return;
       app.fields = MERGE[key](app.fields, filled);
+      persist();
       if (app.island) paintStatuses(); // landed after the reveal: the flags can use it
     },
   });
@@ -228,6 +289,7 @@ const fieldPanel = createFieldPanel({
     if (app.island) app.island.fields = app.island.fields.map((x) => (x.id === id ? { ...x, name: clean } : x));
     hub.renameField(id, clean); // the sidebar row and the island tooltip
     fieldPanel.rename(id, clean); // no redraw: the click that ended the edit must still land
+    persist();
     return clean;
   },
   onIrrigated: (id, on) => {
@@ -235,6 +297,7 @@ const fieldPanel = createFieldPanel({
     const ids = new Set(p.irrigatedFieldIds || []);
     if (on) ids.add(id); else ids.delete(id);
     app.farmProfile = { ...p, irrigatedFieldIds: [...ids] };
+    persist();
     fieldPanel.update(reportFor(id));
     paintStatuses();
   },
@@ -294,12 +357,22 @@ const plansPanel = createPlansPanel({
     islandPlanner.start(builder, { startYear, view: app.island.view });
   },
   onSave: (plan, info) => {
-    app.plan = { plan, ...info }; // the season loop (Phase 5) builds on this
+    const saved = app.plan = { plan, ...info }; // the season loop (Phase 5) builds on this
+    persist();
+    // the planner's numbers for it go with it (cash, a bad year, soil, how often it beats keeping going)
+    evaluateMix(plan).then((r) => {
+      if (app.plan !== saved || !r) return;
+      const scores = Object.fromEntries(['expectedGM', 'p10GM', 'soilHealth', 'endSoilHealth', 'probBeatsCurrent'].filter((k) => Number.isFinite(r[k])).map((k) => [k, r[k]]));
+      if (Object.keys(scores).length) { saved.scores = scores; persist(); }
+    }).catch(() => { /* saved without them */ });
     // a plan picked plan by plan can be seen on the farm again (a hand-built one is "Plan on the island")
     const actions = info.choice ? [{ label: 'See it on the farm', onClick: () => openFutures('mix', { reel: false }) }] : [];
     manami.say(`Saved. That’s your plan for ${info.startYear} to ${info.startYear + 2}. You can change it any time from “Plan my next seasons”.`, { actions, focus: true });
   },
 });
+
+// a plan picked for a field in the table is kept with the farm
+$('plansBody').addEventListener('click', (e) => { if (e.target.closest('.plan-cell')) persist(); });
 
 // "See them on the farm": the plans on the island itself, flipped season by season (its own chunk,
 // loaded the first time it opens)
@@ -329,7 +402,7 @@ async function openFutures(kind, opts = {}) {
     getData: () => plansPanel.ensureData(),
     getCurrentData: () => plansPanel.data,
     getChoice: () => plansPanel.getChoice(),
-    setChoice: (c) => plansPanel.setChoice(c),
+    setChoice: (c) => { plansPanel.setChoice(c); persist(); },
     evaluateMix,
     onStart: () => {
       islandPlanner.stop();
@@ -431,6 +504,7 @@ function setJar(id, record) {
   app.fields = put(app.fields);
   if (app.island) app.island.fields = put(app.island.fields);
   const spots = jars?.set(jarRecords()) ?? new Map();
+  persist();
   hub.session?.repick();
   paintStatuses();
   if (fieldPanel.openId === id) fieldPanel.update(reportFor(id));
@@ -448,6 +522,7 @@ function setCrops(id, edits) {
   const next = edits === 'restore' ? restoreCrops(f) : applyCropEdits(f, edits);
   if (next === f) return;
   app.fields = app.fields.map((x) => (x.id === id ? next : x));
+  persist(); // on this device, and in the account when signed in
   // "now" on the island: the field's latest year on record
   const last = [...(reportFor(id)?.history || [])].reverse().find((h) => h.crop != null) || null;
   const key = last?.key || 'other';
@@ -675,6 +750,7 @@ const reveal = createReveal({
     ambience.attach({ getScene: () => sceneOf(timeTravel.session), hasWindmill: () => !!island.view.spinners?.length });
     farmSpins?.dispose();
     farmSpins = createFarmSpins(island.view); // now and then Manami turns on the spot: "When they see me rotate…"
+    if (restoredLine) { manami.say(restoredLine); restoredLine = null; } // a saved farm, opened again
     seaLife?.dispose();
     // an orca, dolphins and fish round the island, and now and then a whale (dev: ?whale=1 brings it)
     seaLife = createSeaLife(island.view, { manami, date: today(), whaleNow: import.meta.env.DEV && params.has('whale') });
@@ -749,6 +825,7 @@ const checkIn = createCheckIn({
   manami,
   onDone: async (profile) => {
     app.farmProfile = profile;
+    persist();
     console.log('farmProfile', profile);
     // (the check-in only ends once every data source has settled, so the island has the crop years)
     startReveal();
@@ -777,6 +854,7 @@ addEventListener('keydown', (e) => {
 function setFinder(visible) {
   $('finder').classList.toggle('is-shown', visible);
   $('finder').inert = !visible;
+  document.body.classList.toggle('finder-on', visible); // (the account button shows with it)
 }
 function setAgain(visible) {
   $('againBtn').hidden = !visible;
@@ -801,7 +879,7 @@ function handle(event) {
       // landing flows straight into picking fields; the field step does the talking
       app.farm = event.place;
       setAgain(false);
-      fieldsStep.start(event.place);
+      if (!restoring) fieldsStep.start(event.place); // (a saved farm goes straight to its island)
       break;
     case 'returned':
       tour.stop();
@@ -816,6 +894,8 @@ function handle(event) {
       app.farm = null;
       app.fields = [];
       app.farmProfile = null;
+      app.plan = null;
+      saveCtx = null;
       fieldPanel.close();
       openSeq++;
       planFutures?.stop();
@@ -870,7 +950,127 @@ function testFields(n) {
   return out;
 }
 
-if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, markets, farmMarket, jarPanel, tour, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now(), ambience, weather: farmWeather, whale: () => seaLife?.whale(), seaLife: () => seaLife }; // for poking at in the console
+// ---------------------------------------------------------------- saved farms: opening one again
+/**
+ * Opens a saved farm: straight to its island with everything as it was (the time slider, the
+ * check-ups, the jars, the plan and picks); only data that never arrived is asked for again. A farm
+ * saved before the check-in was finished picks up at the check-in.
+ */
+function openSaved(snap) {
+  journeyStarted = true;
+  introDone = true;
+  saveCtx = { id: snap.id };
+  local.setCurrent(snap.id);
+  app.plan = snap.plan || null;
+  restoring = true;
+  try {
+    globe.flyTo(snap.farm); // ('flying' then 'landed', at once)
+    globe.landNow();
+  } finally {
+    restoring = false;
+  }
+  app.farm = snap.farm;
+  app.fields = snap.fields;
+  app.farmProfile = snap.profile;
+  if (snap.picks) plansPanel.setChoice(snap.picks);
+  const load = startFieldFill(app.fields);
+  if (!snap.profile) {
+    checkIn.start({ fields: app.fields, load });
+    return;
+  }
+  restoredLine = `Welcome back to ${farmName(snap.farm)}! Everything’s just as you left it.`;
+  startReveal({ instant: true });
+}
+
+/** Reloads the app on its own address (no dev shortcut), after leaving a note for the next load. */
+function reloadWith(key, value) {
+  try { sessionStorage.setItem(key, value); } catch { /* then it simply starts at the globe */ }
+  const u = new URL(location.href);
+  for (const k of ['hub', 'reveal', 'demo', 'futures', 'tour']) u.searchParams.delete(k);
+  u.hash = '';
+  location.assign(u.toString());
+}
+/** A note left by reloadWith, read once. */
+function takeNote(key) {
+  try {
+    const v = sessionStorage.getItem(key);
+    sessionStorage.removeItem(key);
+    return v;
+  } catch {
+    return null;
+  }
+}
+
+account = createAccountPanel({
+  auth,
+  sync,
+  getCloud,
+  local,
+  getOpen: () => ({ localId: saveCtx?.id ?? null, demo: !!app.farm?.demo, busy: journeyStarted }),
+  onOpenFarm: (localId) => {
+    if (saveCtx?.id === localId && journeyStarted) return;
+    if (journeyStarted) { localSaver.flush(); reloadWith('rm.open', localId); return; } // a clean start for the other farm
+    const snap = local.get(localId);
+    if (snap) openSaved(snap);
+  },
+  onNewFarm: () => { localSaver.flush(); reloadWith('rm.fresh', '1'); },
+  onDeletedOpen: (localId) => {
+    if (saveCtx?.id !== localId) return;
+    saveCtx = null; // it stays on screen, unsaved
+    localSaver.cancel();
+  },
+});
+
+// a session from before, or coming back from a sign-in link (supabase-js loads only then)
+const authReady = auth.pending ? auth.init() : Promise.resolve({ user: null, linkError: null });
+authReady.then(({ user, linkError }) => {
+  sync.setUser(user);
+  account.refresh();
+  if (linkError) {
+    account.notice(linkError.expired
+      ? 'That sign-in link has expired or was already used. Pop your email in again and I’ll send a new one.'
+      : 'That sign-in link didn’t work. Pop your email in again and I’ll send a new one.');
+  }
+});
+auth.onChange((user) => { sync.setUser(user); account.refresh(); });
+
+/** "Welcome back! Open West Farm?" for the farm saved last (or, signed in, the newest in the account). */
+function offerSaved(snapOrRow, { signedIn = false } = {}) {
+  const name = snapOrRow.snap ? farmName(snapOrRow.snap.farm) : snapOrRow.name;
+  const hello = signedIn ? 'You’re signed in! ' : '';
+  manami.say(`${hello}Welcome back! Open ${name}?`, {
+    actions: [
+      {
+        label: 'Open',
+        primary: true,
+        onClick: async () => {
+          if (journeyStarted) return;
+          if (snapOrRow.snap) { openSaved(snapOrRow.snap); return; }
+          manami.say(`Opening ${name}…`);
+          try {
+            const snap = await (await getCloud()).loadFarm(snapOrRow.id, auth.user.id);
+            if (!snap?.fields.length || !local.put(snap)) throw new Error('nothing to open');
+            if (!journeyStarted) openSaved(snap);
+          } catch (e) {
+            console.warn('Open farm', e);
+            if (!journeyStarted) manami.say('I couldn’t open it just now. Let’s find a farm: type an address or a county.');
+          }
+        },
+      },
+      {
+        label: 'Start a new farm',
+        onClick: () => {
+          if (journeyStarted) return;
+          manami.say(HELLO);
+          search.focus();
+        },
+      },
+    ],
+    focus: true,
+  });
+}
+
+if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsStep, checkIn, farmData, reveal, hub, fieldPanel, timeTravel, planner, planSeasons, plansPanel, islandPlanner, testFields, futures: () => planFutures, markets, farmMarket, jarPanel, tour, jars: () => jars, jarSession, rotateManami: () => farmSpins?.now(), ambience, weather: farmWeather, whale: () => seaLife?.whale(), seaLife: () => seaLife, local, sync, auth, account }; // for poking at in the console
 
 // ---------------------------------------------------------------- the first five seconds
 (async function intro() {
@@ -900,12 +1100,33 @@ if (import.meta.env.DEV) window.__sheep = { app, globe, manami, search, fieldsSt
     introDone = true;
     return;
   }
+  // a farm picked in "Your farms" (the page reloaded for it), or "Start a new farm"
+  const asked = takeNote('rm.open');
+  const fresh = takeNote('rm.fresh');
+  const askedSnap = asked ? local.get(asked) : null;
+  if (askedSnap) { openSaved(askedSnap); return; }
+  const saved = fresh ? null : local.current();
   await wait(INTRO.searchAfterMs);
   if (!journeyStarted) {
     setFinder(true);
-    search.focus();
+    if (!saved) search.focus();
   }
   await wait(INTRO.manamiAfterMs - INTRO.searchAfterMs);
   introDone = true;
-  if (!journeyStarted) manami.say(fallbackNote ? `${HELLO} ${fallbackNote}` : HELLO);
+  if (journeyStarted) return;
+  // signed in on a new device: the newest farm in the account (a quick look; never holds the page up)
+  const a = await Promise.race([authReady, wait(2500).then(() => ({}))]);
+  if (journeyStarted) return;
+  let row = null;
+  if (!saved && !fresh && a.user) {
+    try {
+      const farms = await Promise.race([getCloud().then((c) => c.listFarms(a.user.id)), wait(4000).then(() => [])]);
+      row = farms.find((f) => f.fields > 0) || null;
+    } catch { /* tables not there yet, or offline: start as usual */ }
+    if (journeyStarted) return;
+  }
+  if (saved) offerSaved({ snap: saved }, { signedIn: !!a.justSignedIn });
+  else if (row) offerSaved(row, { signedIn: !!a.justSignedIn });
+  else if (a.justSignedIn) manami.say('You’re signed in, so I’ll keep your farms in your account. Let’s find your farm!');
+  else manami.say(fallbackNote ? `${HELLO} ${fallbackNote}` : HELLO);
 })();
