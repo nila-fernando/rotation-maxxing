@@ -22,6 +22,7 @@
 // island-wide (eggs, bows, flags, bunnies, flowers) is one InstancedMesh per kind.
 import * as THREE from 'three';
 import { jitter, mat, mesh, rng } from '../props.js';
+import { towerRadiusAt as lhR, LIGHTHOUSE } from '../lighthouse.js';
 
 const C = {
   pink: 0xff5fa8, violet: 0x9a5cff, yellow: 0xffd23a, sky: 0x46b4ff, mint: 0x3fd6a0, orange: 0xff9a3c,
@@ -316,6 +317,15 @@ function buildingPlan(b) {
     case 'windmill':
       // round the gallery band (the sails turn in front of the cap)
       return { ears: [0, 2.66, 0], len: 0.75, swags: [sw(arc(0, 1.0, 0, 0.54, -1.6, 1.6, 4), 0.08, [0, 0])], bows: [[0, 1.02, 0.6], [0.56, 1.02, 0, Math.PI / 2], [-0.56, 1.02, 0, -Math.PI / 2]] };
+    case 'lighthouse': {
+      // ears up off the cap, a swag round the gallery rail and one round the tower under its window
+      const y = 0.9, r = lhR(y) + 0.04;
+      return {
+        ears: [0, LIGHTHOUSE.capTop - 0.04, 0], len: 0.6,
+        swags: [sw(arc(0, LIGHTHOUSE.railY - 0.02, 0, LIGHTHOUSE.railR + 0.04, -1.6, 1.6, 4), 0.06, [0, 0]), sw(arc(0, y, 0, r, -1.6, 1.6, 4), 0.07, [0, 0])],
+        bows: [[0, y + 0.02, r + 0.02], [r + 0.02, y + 0.02, 0, Math.PI / 2], [-r - 0.02, y + 0.02, 0, -Math.PI / 2]],
+      };
+    }
     case 'dock': case 'boat': case 'rowboat':
       return null;
     default: {

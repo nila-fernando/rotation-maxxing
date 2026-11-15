@@ -9,6 +9,7 @@
 // See ./index.js for the module contract.
 import * as THREE from 'three';
 import { mat } from '../props.js';
+import { towerRadiusAt as lhR, LIGHTHOUSE } from '../lighthouse.js';
 
 const RED = 0xd42a3a, WHITE = 0xf7f4ec, BLUE = 0x2b50ad, NAVY = 0x1d3473, GOLD = 0xf0b93a;
 const WOOD = 0x9a6b45, DARK = 0x2b2725, GREEN = 0x3f8a3a, POLE = 0xe9e6e0;
@@ -195,6 +196,9 @@ const DRESS = {
   silo: { flag: [0, 2.5, 0], fans: [towerFan(0.62, 0.56, 1.5, 0.24), towerFan(-0.62, 0.56, 1.5, 0.24)], ring: [0.6, 1.86] },
   // four fans round the front of the tower above the door, bunting under the cap
   windmill: { flag: [0, 2.62, 0], fans: [towerFan(-3 * Q8, 0.47, 0.96, 0.2), towerFan(-Q8, 0.47, 0.96, 0.2), towerFan(Q8, 0.47, 0.96, 0.2), towerFan(3 * Q8, 0.47, 0.96, 0.2)], ring: [0.45, 1.9] },
+  // the flag up off the cap's brass ball, four fans round the top of the tower under the gallery,
+  // bunting round the rail
+  lighthouse: { flag: [0, LIGHTHOUSE.top - 0.02, 0], fans: [towerFan(-3 * Q8, lhR(2.35), 2.42, 0.17), towerFan(-Q8, lhR(2.35), 2.42, 0.17), towerFan(Q8, lhR(2.35), 2.42, 0.17), towerFan(3 * Q8, lhR(2.35), 2.42, 0.17)], ring: [LIGHTHOUSE.railR + 0.03, LIGHTHOUSE.railY - 0.02] },
   // fans hung from the porch roof's front edge and on both gable ends
   farmhouse: { flag: [0, 1.42, -0.06], fans: [[0, 0.72, 0.83, 0, 0.24], [-0.42, 0.72, 0.83, 0, 0.16], [0.42, 0.72, 0.83, 0, 0.16], [0.69, 1.12, -0.06, Math.PI / 2, 0.2], [-0.69, 1.12, -0.06, -Math.PI / 2, 0.2]] },
   // fans on the header over the open front, bunting swagged between the posts below them

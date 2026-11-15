@@ -1,8 +1,9 @@
-// The tour camera must never go through the windmill, the barn, the silo, a tree or a hill. These
-// build real islands (planIsland and the terrain's height field, on 1, 5 and 15 fields), put the
-// real props on them the way the reveal does (src/screens/reveal.js: the barn on the farmstead, the
-// silo beside it, the windmill on the high ground, trees on the tree pads, a farmhouse on the
-// nearest building pad), and fly the tour's shots and the farmer's wildest poses through them.
+// The tour camera must never go through the lighthouse, the windmill, the barn, the silo, a tree or
+// a hill. These build real islands (planIsland and the terrain's height field, on 1, 5 and 15
+// fields), put the real props on them the way the reveal does (src/screens/reveal.js: the barn on
+// the farmstead, the silo beside it, a farmhouse on the nearest building pad, the lighthouse on the
+// highest point and the windmill on other high ground (src/island/landmarks.js), trees on the tree
+// pads), and fly the tour's shots and the farmer's wildest poses through them.
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { readFileSync } from 'node:fs';
@@ -19,6 +20,8 @@ const { planIsland, mulberry32 } = await import('./plan.js');
 const { makeHeightField, levelHeight } = await import('./terrain.js');
 const { footprint, pointInPolygons, distanceToEdges } = await import('./picking.js');
 const { pointInPropBox, propTop } = await import('./clearance.js');
+const { makeLighthouse } = await import('./lighthouse.js');
+const { openGround, placeLighthouse, placeWindmill } = await import('./landmarks.js');
 const { fitDistance } = await import('./cameraRig.js');
 const S = await import('./cameraSafety.js');
 
@@ -101,22 +104,19 @@ function buildFarm(input) {
   // a farmhouse on the building pad nearest the farmstead
   const pad = plan.slots.filter((sl) => sl.kind === 'building').sort((a, b) => Math.hypot(a.at[0] - at[0], a.at[1] - at[1]) - Math.hypot(b.at[0] - at[0], b.at[1] - at[1]))[0];
   if (pad) add('farmhouse', makeFarmhouse, pad.at, Math.min(PROP_SCALE, pad.r / BUILDING_FOOTPRINT.farmhouse), 0);
-  // the windmill on the highest open ground, turned toward the camera's side (+z)
-  const millR = FOOTPRINT.windmill * PROP_SCALE;
-  const [cx, cz] = heightAt.center;
-  let best = null;
-  for (let x = cx - radius; x <= cx + radius; x += 0.25) {
-    for (let z = cz - radius; z <= cz + radius; z += 0.25) {
-      if (heightAt.isFree(x, z, millR, { strict: true }) === false || inField(x, z, millR + 0.25) || onSlot(x, z, millR + 0.15) || !clearOfProps(x, z, millR)) continue;
-      const score = heightAt(x, z) + (z - cz) * 0.012 - Math.hypot(x - cx, z - cz) * 0.004;
-      if (!best || score > best.score) best = { x, z, score };
-    }
-  }
+  // the lighthouse on the highest point and the windmill on other high ground, as the reveal places them
+  const obstacles = props.map((p) => ({ x: p.x, z: p.z, r: p.r }));
+  const terrain = { heightAt, field: heightAt };
+  const open = openGround({ terrain, plan, obstacles });
+  const placed = {};
+  const addProp = (obj, [x, z], scale, ry, key) => {
+    placed[key] = add(key, () => obj, [x, z], scale, ry);
+    obstacles.push({ x, z, r: placed[key].r });
+  };
+  const lighthouse = placeLighthouse({ terrain, plan, obstacles, open, addProp, make: makeLighthouse, props, scale: PROP_SCALE });
+  placeWindmill({ terrain, plan, obstacles, open, addProp, make: makeWindmill, lighthouse, scale: PROP_SCALE });
   const sails = [];
-  if (best) {
-    const mill = add('windmill', makeWindmill, [best.x, best.z], PROP_SCALE, Math.atan2(cx - best.x, cz + 12 - best.z));
-    sails.push(sailBall(mill));
-  }
+  if (placed.windmill) sails.push(sailBall(placed.windmill));
   // trees on the tree pads
   const kinds = ['tulip-green', 'round', 'pine', 'blossom', 'tulip-yellow', 'round'];
   plan.slots.filter((sl) => sl.kind === 'tree').forEach((sl, i) => {
@@ -179,6 +179,9 @@ describe('the floor', () => {
       const tallest = Math.max(...farm.props.map(propTop), ...farm.sails.map((s) => s.y + s.r));
       assert.ok(farm.floor >= tallest + 0.6 - 1e-9, `${name}: floor ${farm.floor.toFixed(2)} vs tallest ${tallest.toFixed(2)}`);
       assert.ok(farm.props.some((p) => p.key === 'windmill') && farm.sails.length === 1, `${name}: has a windmill`);
+      const lh = farm.props.find((p) => p.key === 'lighthouse');
+      assert.ok(lh, `${name}: has a lighthouse`);
+      assert.ok(farm.floor >= propTop(lh) + 0.6 - 1e-9, `${name}: the floor is over the lighthouse's cap`);
     }
     assert.equal(S.floorY({ tops: [1, 3, 2], margin: 0.5 }), 3.5);
     assert.equal(S.floorY({ tops: [1], heightAt: () => 2, center: [0, 0], maxCoast: 5 }), 2.6);

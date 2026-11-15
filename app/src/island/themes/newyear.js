@@ -7,6 +7,7 @@
 // (The fireworks, the barn's own lights and the tree by the barn come from ../decor.js.)
 import * as THREE from 'three';
 import { mat, mergeStatic, mesh } from '../props.js';
+import { towerRadiusAt as lhR, LIGHTHOUSE } from '../lighthouse.js';
 
 const GOLD = 0xffc94a, GOLD_DEEP = 0xe8a92a, SILVER = 0xe6ecf6, WHITE = 0xfffaf0, MAGENTA = 0xff4fc3, MIDNIGHT = 0x1f2a5c, ICE = 0x9cc8ff;
 const BULB_COLORS = [GOLD, SILVER, GOLD, WHITE];
@@ -78,6 +79,9 @@ function buildingDress(b) {
       return { lines: [spiral(0, 0, (y) => 0.56, 0.15, 1.88, 3), ring(0, 0, 0.56, 1.9)], round: [0.56, 1.86], stars: [[0, 2.78, 0, 0.22]] };
     case 'windmill':
       return { lines: [spiral(0, 0, (y) => 0.62 - 0.22 * (y / 2.1), 0.2, 2.05, 2.5)], round: null, stars: [[0, 2.92, 0, 0.24]] };
+    case 'lighthouse':
+      // lights spiralling up the tower and round the gallery rail, a star over the cap
+      return { lines: [spiral(0, 0, (y) => lhR(y) + 0.025, 0.3, 2.5, 2.5), ring(0, 0, LIGHTHOUSE.railR + 0.03, LIGHTHOUSE.railY + 0.01)], round: null, stars: [[0, LIGHTHOUSE.top + 0.3, 0, 0.24]] };
     case 'well':
       return { lines: [ring(0, 0, 0.27, 0.42)], front: null, stars: [[0, H + 0.16, 0, 0.14]] };
     default: {

@@ -82,6 +82,7 @@ export const FOOTPRINT = {
   boat: 0.85,
   silo: 0.6,
   windmill: 0.7,    // the base; the sails sweep a 1.3 unit radius higher up
+  lighthouse: 0.66, // the plinth (src/island/lighthouse.js); its beam sweeps 2.7 round, high up
   tree: 0.45,       // tulip and round trees
   pine: 0.4,
   bush: 0.35,

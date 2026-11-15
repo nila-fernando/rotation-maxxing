@@ -265,12 +265,13 @@ describe('jar spots', () => {
         jars.set(view.fields.map((f) => rec(f.id)));
         const { api } = await theme(view, key);
         jars.refresh();
+        const seen = jarKeepOuts(view.island); // (what the jars kept off, padded: the theme moves on after)
         const all = pieces(api.root);
         const spots = new Map(view.fields.map((f) => [f.id, jars.spotOf(f.id)]));
         for (const [id, s] of spots) if (s) for (const { b, kid } of all) assert.ok(!meets(jarBox(s.x, s.z, s.ground), b), `${key}: ${kid.name} is in ${id}'s jar`);
         clearThroughTime(api, view, jars.spotOf, key);
         shown[key] = [...spots.values()].filter(Boolean).length;
-        checkFarm(view, new Map([...spots].map(([id, s]) => [id, s && { ...s, box: jarBox(s.x, s.z, s.ground) }])), jarKeepOuts(view.island));
+        checkFarm(view, new Map([...spots].map(([id, s]) => [id, s && { ...s, box: jarBox(s.x, s.z, s.ground) }])), seen);
         jars.dispose();
       }
       // (a festival hangs lights, bunting and bows along most fences, so some jars go while it's on)
