@@ -9,6 +9,7 @@
 import { asset } from '../ui/asset.js';
 import { buildFarmContext, createClientTools, toolStatusLine } from '../ai/context.js';
 import { createSession, errorLine, probeHealth } from '../ai/runner.js';
+import { transcriptOf } from '../save/conversations.js';
 
 const FACE = asset('/manami.svg');
 const SEEN_KEY = 'askManami.seen';
@@ -16,6 +17,7 @@ const CLOSE_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 
 const SEND_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l15-7-5 15-2.5-6z" fill="currentColor" fill-opacity=".25" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>';
 
 export const ASK_LINES = {
+  welcomeBack: 'That’s where we left off last time. Ask me more, or press “Start over”.',
   hello: 'Ask me anything about your farm: your fields, their history, the soil, the plans, or how the app works.',
   helloField: (name) => `Ask me anything about ${name}.`,
   privacy: 'Your questions and farm details go to Anthropic’s Claude so I can answer.',
@@ -40,7 +42,7 @@ export function suggestionsFor(focus) {
  * @param {string|null} o.endpoint  null when there is no AI server (GitHub Pages)
  * @param {() => void} [o.onOpen] [o.onClose]
  */
-export function createAskManami({ host, endpoint, onOpen, onClose }) {
+export function createAskManami({ host, endpoint, onOpen, onClose , conversations = null }) {
   const root = document.createElement('section');
   root.className = 'ask';
   root.id = 'ask';
@@ -76,6 +78,7 @@ export function createAskManami({ host, endpoint, onOpen, onClose }) {
   let focus = null;
   let opener = null;
   let ac = null;
+  let reopened = false; // the last saved conversation was looked for (once per sign-in or farm)
 
   const line = (who, text) => {
     const li = document.createElement('li');
@@ -125,6 +128,7 @@ export function createAskManami({ host, endpoint, onOpen, onClose }) {
     out.parentElement.classList.add('is-typing');
     setEnabled(false);
     ac = new AbortController();
+    const before = session.history.length;
     try {
       const answer = await session.ask(q, {
         focus,
@@ -137,6 +141,8 @@ export function createAskManami({ host, endpoint, onOpen, onClose }) {
         },
       });
       out.textContent = answer;
+      // signed in: this question and its answer go to the account (quietly; the chat never waits)
+      conversations?.save(session.history.slice(before), { title: q });
     } catch (e) {
       if (e?.name === 'AbortError') { out.textContent = 'I stopped there.'; } else out.textContent = errorLine(e?.code);
     } finally {
@@ -159,6 +165,7 @@ export function createAskManami({ host, endpoint, onOpen, onClose }) {
   reset.addEventListener('click', () => {
     if (session?.busy) return;
     session?.reset();
+    conversations?.startNew();
     log.replaceChildren();
     reset.hidden = true;
     greet();
@@ -191,6 +198,20 @@ export function createAskManami({ host, endpoint, onOpen, onClose }) {
       $('.ask__close').focus({ preventScroll: true });
       return;
     }
+    // signed in, and nothing asked yet here: the last conversation about this farm comes back
+    if (conversations && !session.history.length && !session.busy && !reopened) {
+      reopened = true;
+      const h = await conversations.latest();
+      if (h?.length && !session.history.length && !root.hidden) {
+        session.restore(h);
+        log.replaceChildren();
+        const shown = transcriptOf(h);
+        for (const l of shown.slice(-20)) line(l.who, l.text);
+        line('manami', ASK_LINES.welcomeBack).parentElement.classList.add('ask__msg--note');
+        chips.hidden = true;
+        reset.hidden = false;
+      }
+    }
     if (!safeGet(SEEN_KEY)) {
       const p = line('manami', ASK_LINES.privacy);
       p.parentElement.classList.add('ask__msg--note');
@@ -210,5 +231,15 @@ export function createAskManami({ host, endpoint, onOpen, onClose }) {
     opener = null;
   }
 
-  return { open, close, get isOpen() { return !root.hidden; }, el: root };
+  /** Signed in or out, or another farm: the next open looks for that farm's last conversation. */
+  function resetSaved() {
+    reopened = false;
+    conversations?.forget();
+    if (session?.busy) return;
+    session?.reset();
+    log.replaceChildren();
+    if (reset) reset.hidden = true;
+  }
+
+  return { open, close, resetSaved, get isOpen() { return !root.hidden; }, el: root };
 }

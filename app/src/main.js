@@ -47,6 +47,10 @@ import { createManami } from './ui/manami.js';
 import { createWalkthrough } from './ui/walkthrough.js';
 import { createAskManami } from './screens/askManami.js';
 import { aiEndpoint } from './ai/runner.js';
+import { adviceFailLine, adviceRoutes, askAdvice, fieldBody, planBody } from './ai/advice.js';
+import { fieldDetail } from './ai/context.js';
+import { createPlanTake } from './screens/planTake.js';
+import { createConversationStore } from './save/conversations.js';
 import { createFarmSpins } from './ui/rotateManami.js';
 import { createSearchBox } from './ui/searchBox.js';
 import { installCropTips } from './ui/cropTip.js';
@@ -277,7 +281,29 @@ function paintStatuses() {
   for (const f of app.fields) hub.setStatus(f.id, reportFor(f.id)?.status || 'unknown');
 }
 
+// Manami's AI helpers (server/ai): Ask Manami, her take on the plans and her read on a field. They
+// all read the farm through this one host. Without an AI server (GitHub Pages, no key) they hide.
+const AI_ENDPOINT = aiEndpoint(import.meta.env.VITE_AI_ENDPOINT, import.meta.env.BASE_URL);
+const aiHost = {
+  fields: () => app.fields,
+  report: (id) => reportFor(id),
+  profile: () => app.farmProfile,
+  place: () => app.farm,
+  plansData: () => plansPanel.data,
+  savedPlan: () => (app.plan ? { source: app.plan.source === 'ai' ? 'ai' : app.plan.choice ? 'pick' : 'built', startYear: app.plan.startYear } : null),
+  today: () => today(),
+};
+const fieldRead = {
+  available: () => adviceRoutes(AI_ENDPOINT).then((r) => r.has('field')),
+  sig: (r) => JSON.stringify(fieldDetail(r)),
+  ask: async (r) => {
+    const res = await askAdvice(AI_ENDPOINT, 'field', fieldBody(aiHost, r));
+    return res.read ? res : { line: adviceFailLine(res.error) };
+  },
+};
+
 const fieldPanel = createFieldPanel({
+  fieldRead,
   onRename: (id, name) => {
     const f = app.fields.find((x) => x.id === id);
     if (!f) return name;
@@ -337,17 +363,16 @@ const plansPanel = createPlansPanel({
   today: () => today(),
   getSaved: () => app.plan?.plan || null, // "Build your own" starts from the plan saved last
   evaluateMix,
+  aiTake: createPlanTake({ endpoint: AI_ENDPOINT, buildBody: () => planBody(aiHost), evaluate: evaluateMix }),
   onOpen: () => {
     jarPanel.close({ restore: false }); // (the jar test, if it was open over the farm)
     openSeq++; // a "See them on the farm" still loading stays shut
     planFutures?.stop(); // back from the plans on the island
     islandPlanner.stop(); // back from planning on the island, or opened over it
     hub.overview(); // the whole farm behind it, any field check-up closed
-    document.getElementById('hubPanel').inert = true; // the field list waits while the plans are open
     queueMicrotask(syncManami);
   },
   onClose: () => {
-    document.getElementById('hubPanel').inert = false;
     syncManami();
   },
   onPreview: (info) => showPlanOnIsland(info, 0),
@@ -489,7 +514,7 @@ const jarPanel = createJarPanel({
     jarInert.clear();
     // the field list from how things are now, not as they were at open (the plans may have shut since)
     const list = $('hubPanel');
-    if (list) list.inert = plansPanel.isOpen || !!planFutures?.active || islandPlanner.active;
+    if (list) list.inert = !!planFutures?.active || islandPlanner.active;
     syncManami();
   },
   onUse: (record, { from }) => useJar(record, from),
@@ -772,17 +797,16 @@ let seaLife = null;
 // the island's ambient sound, and its switch on the top bar (src/audio/)
 // "Ask Manami": questions about the farm, answered by Claude through the app's own server (server/ai).
 // Her tools read the farm here; without the server (GitHub Pages, or no key) she says so plainly.
+// signed in, her conversations are kept in the account (one thread per farm, reopened next time)
+const conversations = createConversationStore({
+  getClient: () => auth.client(),
+  getUser: () => auth.user,
+  getFarmId: () => (saveCtx && auth.user ? local.get(saveCtx.id)?.cloud?.[auth.user.id]?.id ?? null : null),
+});
 const askManami = createAskManami({
-  endpoint: aiEndpoint(import.meta.env.VITE_AI_ENDPOINT, import.meta.env.BASE_URL),
-  host: {
-    fields: () => app.fields,
-    report: (id) => reportFor(id),
-    profile: () => app.farmProfile,
-    place: () => app.farm,
-    plansData: () => plansPanel.data,
-    savedPlan: () => (app.plan ? { source: app.plan.choice ? 'pick' : 'built', startYear: app.plan.startYear } : null),
-    today: () => today(),
-  },
+  endpoint: AI_ENDPOINT,
+  host: aiHost,
+  conversations: { latest: () => conversations.latest(), save: (m, o) => conversations.save(m, o), startNew: () => conversations.startNew(), forget: () => conversations.forget() },
   onOpen: () => syncManami(),
   onClose: () => syncManami(),
 });
@@ -960,6 +984,7 @@ function openSaved(snap) {
   journeyStarted = true;
   introDone = true;
   saveCtx = { id: snap.id };
+  askManami.resetSaved(); // her last conversation about this farm, not the one on screen before
   local.setCurrent(snap.id);
   app.plan = snap.plan || null;
   restoring = true;
@@ -1001,6 +1026,47 @@ function takeNote(key) {
   }
 }
 
+// ---------------------------------------------------------------- how the panels share the screen
+// The layers are listed at the top of styles.css. The rules, kept here in one place:
+//   1. One workspace at a time: the plans, the jar test, the plans on the farm, planning on the island
+//      (each one closes the others when it opens).
+//   2. A workspace covers the farm, so the farm's own controls under it wait (the year bar, inert and
+//      dimmed). The header (the logo, "Plan my next seasons", your farms) stays live.
+//   3. Popovers (the time of day, your farms) close as soon as anything else opens.
+//   4. Ask Manami is a side panel: a workspace opening closes it (Ask me / Ask about this field bring
+//      it back, on top of the check-up if one is open).
+const WORKSPACES = ['plans-open', 'jar-open', 'plan-futures', 'isle-planning'];
+const SHEETS = ['checkup-open', 'ask-open'];
+let surfacesWere = new Set();
+function syncSurfaces() {
+  const cl = document.body.classList;
+  const now = new Set([...WORKSPACES, ...SHEETS, 'acct-open'].filter((c) => cl.contains(c)));
+  const opened = [...now].filter((c) => !surfacesWere.has(c));
+  surfacesWere = now;
+  if (opened.length) timeTravel.closeDay();
+  if (opened.some((c) => c !== 'acct-open') && account?.isOpen) account.close({ restoreFocus: false });
+  if (opened.some((c) => WORKSPACES.includes(c)) && askManami.isOpen) askManami.close();
+  const busy = cl.contains('plans-open') || cl.contains('jar-open');
+  const bar = $('timebar');
+  if (bar && bar.inert !== busy) bar.inert = busy;
+}
+new MutationObserver(syncSurfaces).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+// While the plans are open the field list stays live beside them: a field picked there shows its row
+// in the plans (instead of opening its check-up under them). "Test your soil" switches to the jar test.
+for (const type of ['click', 'keydown']) {
+  $('hubList').addEventListener(type, (e) => {
+    if (!plansPanel.isOpen || (type === 'keydown' && e.key !== 'Enter' && e.key !== ' ')) return;
+    const row = e.target.closest?.('[data-id]');
+    if (!row) return;
+    e.preventDefault();
+    e.stopPropagation();
+    plansPanel.showField(row.dataset.id);
+  }, true);
+}
+// the time-of-day popover has no class on <body>: watch it, so the two popovers never show together
+new MutationObserver(() => { if (!$('dayPop').hidden && account?.isOpen) account.close({ restoreFocus: false }); })
+  .observe($('dayPop'), { attributes: true, attributeFilter: ['hidden'] });
+
 account = createAccountPanel({
   auth,
   sync,
@@ -1032,7 +1098,7 @@ authReady.then(({ user, linkError }) => {
       : 'That sign-in link didn’t work. Pop your email in again and I’ll send a new one.');
   }
 });
-auth.onChange((user) => { sync.setUser(user); account.refresh(); });
+auth.onChange((user) => { sync.setUser(user); account.refresh(); askManami.resetSaved(); });
 
 /** "Welcome back! Open West Farm?" for the farm saved last (or, signed in, the newest in the account). */
 function offerSaved(snapOrRow, { signedIn = false } = {}) {

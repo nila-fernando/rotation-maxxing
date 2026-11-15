@@ -33,7 +33,7 @@ function profileOf(host) {
 }
 function savedOf(host) {
   const s = safe(() => host.savedPlan());
-  return s ? { source: s.source === 'built' ? 'built' : 'pick', start_year: s.startYear ?? null } : null;
+  return s ? { source: s.source === 'built' || s.source === 'ai' ? s.source : 'pick', start_year: s.startYear ?? null } : null;
 }
 
 /** The farm as it is now (same app state, identical JSON). */

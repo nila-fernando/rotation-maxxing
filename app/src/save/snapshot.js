@@ -10,7 +10,7 @@
 //   fields   each field: outline, name, acres, crop history, and the data fetched for it
 //            (soil, slopePct, rain, ndvi, cdlYears) and its jar test in use (jar)
 //   profile  the check-in answers { priorities, irrigatedFieldIds, excludedCrops }, or null before then
-//   plan     the plan they saved { plan: { sequences }, startYear, choice? , source?, scores? }, or null
+//   plan     the plan they saved { plan: { sequences }, startYear, choice? , source? ('built' | 'ai'), scores? }, or null
 //   picks    the plan picked per field in "Plan my next seasons" ({ fieldId: kind }), or null
 //   cloud    where this farm lives in each account that saved it: { [userId]: { id, synced?, gone? } }
 // Photos from the jar test are never part of it (they stay in this session only).
@@ -53,7 +53,7 @@ function plainPlan(p) {
   if (!isObj(p) || !isObj(p.plan?.sequences) || !Number.isFinite(p.startYear)) return null;
   const out = { plan: { sequences: p.plan.sequences }, startYear: p.startYear };
   if (isObj(p.choice)) out.choice = p.choice;
-  if (p.source === 'built') out.source = 'built';
+  if (p.source === 'built' || p.source === 'ai') out.source = p.source;
   if (isObj(p.scores)) out.scores = p.scores;
   return plain(out);
 }

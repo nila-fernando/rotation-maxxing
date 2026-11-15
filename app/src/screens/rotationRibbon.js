@@ -253,8 +253,9 @@ export function checkHtml(rows = [], { baseLabel = 'keeping going' } = {}) {
     const base = r.base == null || r.base === '' ? '' : /^(keeping going|my pick)\b/i.test(String(r.base)) ? String(r.base) : `${baseLabel}: ${r.base}`;
     const mood = r.better === true ? ' is-better' : r.better === false ? ' is-worse' : '';
     return `<li class="rot-check__row rot-check__row--${esc(r.key)}${mood}"><span class="rot-check__icon" aria-hidden="true">${CHECK_ICON[r.key] || ''}</span>`
-      + `<span class="rot-check__label">${esc(r.label)}<span class="sr-only">:</span></span> <span class="rot-check__value">${esc(r.value)}</span>`
-      + `${base ? `<span class="rot-check__base"><span class="sr-only">, </span>${esc(base)}</span>` : ''}</li>`;
+      + `<span class="rot-check__label">${esc(r.label)}<span class="sr-only">:</span></span> <span class="rot-check__value">${esc(r.value)}`
+      // (the comparison follows its value, as a small tag, wherever the value ends)
+      + `${base ? ` <span class="rot-check__base"><span class="sr-only">, </span>${esc(base)}</span>` : ''}</span></li>`;
   }).join('');
   return `<section class="rot-check" aria-labelledby="rotCheckH"><h3 class="plans__h" id="rotCheckH">Rotation check</h3><ul class="rot-check__list">${items}</ul></section>`;
 }
